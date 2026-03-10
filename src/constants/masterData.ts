@@ -115,6 +115,94 @@ export const CATALOGO_CENTROS = [
   }
 ];
 
+// ---------------------------------------------------------------------------
+// CATÁLOGO MAESTRO DE LEYENDAS FOTOGRÁFICAS
+// Descripciones validadas extraídas de Informes Técnicos reales.
+// Usadas como autocompletado en la grilla de imágenes del Informe.
+// Placeholders dinámicos: {m3} → capacidad estanque, {kva} → potencia generador.
+// ---------------------------------------------------------------------------
+
+export const CATALOGO_FOTOS: Record<'Extracción' | 'Desnaturalización' | 'Almacenamiento' | 'General', string[]> = {
+  'Extracción': [
+    // Compresores
+    'Electrocompresor Kaeser Mobilair M50E.',
+    'Compresor M100.',
+    'Atlas Copco GA90VSD.',
+    'Compresor Atlas Copco H250 VSD.',
+    'Compresor Atlas Copco XAS 98.',
+    'Compresores operativos.',
+    'Tablero de compresor utilizado para extracción.',
+    // Manga y Bins
+    'Manga de extracción operativa (todo el módulo).',
+    'Bin de extracción de mortalidad en buen estado y operativo.',
+    'Bins de extracción en buen estado y operativos.',
+    'Manga y bin asegurados al módulo de cultivo correctamente.',
+    // Líneas y Válvulas
+    'Líneas de aire comprimido que recorren el centro, en buen estado y sin fisuras.',
+    'Línea de aire comprimido desde el compresor al módulo.',
+    'Línea de aire comprimido desde el compresor en buen estado y operativa.',
+    'Válvulas de aire para extracción por jaula, operativas y en buen estado.',
+    'Válvulas de Línea de aire comprimido desde los compresores.',
+    // Seguridad y Sistema General
+    'Sistemas de extracción asegurados correctamente.',
+    'Sistema de mortalidad instalado en todo el módulo correctamente.',
+    'Equipos de extracción correctamente instalados.',
+    'Extintor PQS operativo.',
+    'La Extracción de mortalidad presente en el módulo es mediante equipo R.O.V., apoyado por buceo semiautónomo y embarcación.',
+  ],
+  'Desnaturalización': [
+    // Olla y Molienda
+    'Olla trituradora operativa.',
+    'Sistema de molienda operativo.',
+    'Prepicado utilizado en sistema de ensilaje, en buen estado y operativo.',
+    'Prepicador y motor operativo.',
+    // Tableros Eléctricos
+    'Tablero de equipos desnaturalización en norma.',
+    'Tablero Sistema de Ensilaje en norma.',
+    'Tablero de equipos desnaturalización operativos y en norma.',
+    // Ácido y Piping
+    'Bomba y pipeta de ácido fórmico en buen estado y operativo.',
+    'Bomba de ácido en buen estado y operativa.',
+    'Pipeta de ácido de sistema de desnaturalización, en buen estado y operativo.',
+    'Piping en buen estado y operativo.',
+    'Estanque de almacenamiento de ácido fórmico.',
+    'Estanque de ácido fórmico con pretil en buen estado.',
+    'Bomba de recirculación operativa.',
+    // Logística Mortalidad
+    'Tachos extracción de mortalidad rotulados.',
+    'Tachos de transporte de mortalidad rotulados.',
+    'Mesa de necropsia en buen estado.',
+    // Seguridad E.P.P.
+    'Lavaojos operativo.',
+    'Lavaojos en buen estado y operativo.',
+    'Cajón de E.P.P. e insumos del sistema de ensilaje.',
+    'Casillero de E.P.P. en buen estado y operativo.',
+    'Extintor PQS en norma.',
+    // Incineración (centros Magallanes)
+    'Sistema de incineración operativo.',
+    'Proceso desnaturalización por Incineración efectiva.',
+    'Escotilla de registro en buen estado.',
+    'Infraestructura gas rotulada y protegida.',
+    'Estanque gas de sistema incineración.',
+  ],
+  'Almacenamiento': [
+    // Estanques
+    'Estanques de almacenamiento en buen estado.',
+    'Estanque con capacidad para {m3} m³ con recirculación.',
+    // Recirculación
+    'Bomba de recirculación en buen estado y operativa.',
+    // Fondeo y Estructura
+    'Plataforma asegurada a línea del pontón directamente, debido al arreglo de conexión propia.',
+    'Cáncamo de fondeo correctamente instalado e asegurado.',
+  ],
+  'General': [
+    // Generación Eléctrica
+    'Generador de {kva} kVA.',
+    // Orden y Limpieza
+    'Área limpia, manejo de residuos eficiente.',
+  ],
+};
+
 export const HISTORICO_CERTIFICACIONES = [
   {
     estado: "Enviado",

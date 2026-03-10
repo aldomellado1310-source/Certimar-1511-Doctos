@@ -17,8 +17,18 @@ export default defineConfig(({mode}) => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modify - file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
+    },
+    test: {
+      // Vitest - tests unitarios de calculos regulatorios (Res. Exenta N 1511/2021)
+      environment: 'node',
+      include: ['src/**/*.test.ts'],
+      coverage: {
+        provider: 'v8',
+        include: ['src/domain/**'],
+        reporter: ['text', 'lcov'],
+      },
     },
   };
 });

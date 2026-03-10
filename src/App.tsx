@@ -1,12 +1,12 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { 
-  LayoutDashboard, 
-  Waves, 
-  FlaskConical, 
-  Database, 
-  FileText, 
-  CheckCircle2, 
-  AlertCircle, 
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import {
+  LayoutDashboard,
+  Waves,
+  FlaskConical,
+  Database,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
   XCircle,
   FileDown,
   Camera,
@@ -18,29 +18,34 @@ import {
   ArrowRight,
   ShieldCheck,
   History,
-  Menu,
-  X,
   Fish,
   Anchor,
   Moon,
   Sun,
   Star,
-  Grid3X3
+  Cloud,
+  Save,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useDropzone } from 'react-dropzone';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import { cn } from './lib/utils';
-import { AppState, ReportImage, HistoryEntry } from './types';
-import { 
-  CATALOGO_EXTRACCION, 
-  CATALOGO_DESNATURALIZACION, 
-  CATALOGO_GENERADORES, 
+import { AppState, ReportImage } from './types';
+import {
+  CATALOGO_EXTRACCION,
+  CATALOGO_DESNATURALIZACION,
+  CATALOGO_GENERADORES,
   CATALOGO_ALMACENAMIENTO,
-  CATALOGO_CENTROS,
+  CATALOGO_FOTOS,
   HISTORICO_CERTIFICACIONES
 } from './constants/masterData';
+import { CONCESIONES_DB, type ConcesionCentro } from './data/concesiones';
+import {
+  calculateExtraction,
+  calculateDenaturation,
+  calculateStorage,
+} from './domain/calculations';
 
 // --- Constants & Defaults ---
 const DEFAULT_STATE: AppState = {
@@ -169,140 +174,286 @@ const StatusBadge = ({ status }: { status: boolean }) => (
   </div>
 );
 
+// Elementos marinos estáticos (posiciones fijas para evitar re-renders)
+const FISH_DATA = [
+  { dir: 1, y: 22, dur: 28, delay: 0,  size: 28 },
+  { dir: -1, y: 38, dur: 35, delay: 5,  size: 20 },
+  { dir: 1, y: 55, dur: 22, delay: 9,  size: 36 },
+  { dir: -1, y: 18, dur: 40, delay: 2,  size: 18 },
+  { dir: 1, y: 68, dur: 30, delay: 14, size: 24 },
+  { dir: -1, y: 45, dur: 26, delay: 7,  size: 32 },
+  { dir: 1, y: 30, dur: 45, delay: 18, size: 16 },
+  { dir: -1, y: 62, dur: 33, delay: 11, size: 22 },
+  { dir: 1, y: 75, dur: 20, delay: 3,  size: 40 },
+  { dir: -1, y: 50, dur: 38, delay: 20, size: 14 },
+  { dir: 1, y: 85, dur: 25, delay: 16, size: 20 },
+  { dir: -1, y: 35, dur: 42, delay: 8,  size: 26 },
+];
+const BUBBLE_DATA = Array.from({ length: 28 }, (_, i) => ({
+  x: (i * 37 + 13) % 100,
+  dur: 14 + (i * 7) % 18,
+  delay: (i * 3.7) % 22,
+  size: i % 4 === 0 ? 'w-4 h-4' : i % 3 === 0 ? 'w-2.5 h-2.5' : i % 2 === 0 ? 'w-2 h-2' : 'w-1 h-1',
+}));
+const STAR_FLOOR = [12, 26, 40, 54, 68, 82, 20, 35, 50, 65];
+const STAR_FLOAT = [
+  { top: 15, left: 18, dur: 12, delay: 0 },
+  { top: 42, left: 73, dur: 9,  delay: 3 },
+  { top: 28, left: 55, dur: 15, delay: 6 },
+  { top: 60, left: 30, dur: 11, delay: 2 },
+  { top: 78, left: 85, dur: 13, delay: 8 },
+  { top: 20, left: 90, dur: 10, delay: 4 },
+];
+const JELLYFISH_DATA = [
+  { left: 12, top: 28, dur: 8,  delay: 0 },
+  { left: 38, top: 50, dur: 11, delay: 3 },
+  { left: 65, top: 35, dur: 9,  delay: 6 },
+  { left: 82, top: 60, dur: 12, delay: 1 },
+];
+const SEAWEED_DATA = [
+  { left: 4,  h: 200, color: 'bg-emerald-500/25', dur: 4, delay: 0 },
+  { left: 10, h: 280, color: 'bg-teal-500/20',    dur: 6, delay: 1 },
+  { left: 18, h: 160, color: 'bg-emerald-400/20', dur: 5, delay: 2 },
+  { left: 68, h: 240, color: 'bg-cyan-500/20',    dur: 7, delay: 0.5 },
+  { left: 76, h: 190, color: 'bg-emerald-600/20', dur: 4, delay: 1.5 },
+  { left: 84, h: 260, color: 'bg-teal-400/25',    dur: 5, delay: 3 },
+  { left: 92, h: 170, color: 'bg-emerald-500/15', dur: 6, delay: 2 },
+];
+const CORAL_DATA = [
+  { left: 22, stems: [{ h: 90, w: 8, color: 'bg-rose-500/25'   }, { h: 65, w: 5, color: 'bg-pink-400/20', ml: -14 }, { h: 75, w: 6, color: 'bg-rose-400/20', ml: 10 }] },
+  { left: 45, stems: [{ h: 70, w: 6, color: 'bg-orange-400/20' }, { h: 55, w: 4, color: 'bg-amber-400/15', ml: -10 }, { h: 60, w: 5, color: 'bg-orange-300/15', ml: 8 }] },
+  { left: 60, stems: [{ h: 85, w: 7, color: 'bg-violet-400/20' }, { h: 60, w: 5, color: 'bg-purple-400/15', ml: -12 }, { h: 70, w: 6, color: 'bg-violet-300/15', ml: 9 }] },
+  { left: 78, stems: [{ h: 75, w: 6, color: 'bg-rose-400/20'   }, { h: 50, w: 4, color: 'bg-pink-300/15', ml: -9 },  { h: 65, w: 5, color: 'bg-rose-300/15', ml: 7 }] },
+];
+const RAY_DATA = [
+  { left: 5,  skew: -8,  h: 50, dur: 9,  delay: 0 },
+  { left: 18, skew: -5,  h: 42, dur: 13, delay: 2 },
+  { left: 32, skew: -2,  h: 58, dur: 8,  delay: 5 },
+  { left: 50, skew: 2,   h: 45, dur: 11, delay: 1 },
+  { left: 65, skew: 5,   h: 38, dur: 10, delay: 3.5 },
+  { left: 78, skew: 7,   h: 55, dur: 14, delay: 2.5 },
+  { left: 90, skew: 10,  h: 40, dur: 7,  delay: 6 },
+];
+
 const MarineBackground = () => (
   <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden opacity-40 transition-colors duration-700">
-    {/* Deep water gradient */}
-    <div className="absolute inset-0 bg-gradient-to-b from-indigo-50/30 via-white to-cyan-50/30 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950/30" />
-    
-    {/* Subtle Waves at the bottom */}
-    <div className="absolute bottom-0 left-0 right-0 h-96 opacity-20 select-none">
+
+    {/* === FONDO: gradiente profundidad oceánica === */}
+    <div className="absolute inset-0 bg-gradient-to-b from-sky-50/40 via-indigo-50/20 via-60% to-cyan-100/40 dark:from-slate-950 dark:via-indigo-950/60 dark:to-slate-900" />
+    <div className="absolute inset-0 bg-gradient-to-r from-blue-50/10 via-transparent to-teal-50/10 dark:from-blue-950/20 dark:to-teal-950/20" />
+
+    {/* === RAYOS DE LUZ desde la superficie === */}
+    {RAY_DATA.map((r, i) => (
+      <motion.div
+        key={`ray-${i}`}
+        className="absolute top-0 origin-top"
+        style={{
+          left: `${r.left}%`,
+          width: '70px',
+          height: `${r.h}%`,
+          background: 'linear-gradient(to bottom, rgba(147,197,253,0.12), transparent)',
+          transform: `skewX(${r.skew}deg)`,
+        }}
+        animate={{ opacity: [0.3, 0.7, 0.3], scaleX: [1, 1.4, 1] }}
+        transition={{ duration: r.dur, repeat: Infinity, ease: "easeInOut", delay: r.delay }}
+      />
+    ))}
+
+    {/* === RED DE PESCA (dos capas) === */}
+    <div className="absolute inset-0 opacity-[0.06] dark:opacity-[0.03] pointer-events-none">
+      <div className="w-full h-full" style={{
+        backgroundImage: `
+          linear-gradient(rgba(99,102,241,0.6) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(99,102,241,0.6) 1px, transparent 1px)`,
+        backgroundSize: '32px 32px',
+      }} />
+    </div>
+    <div className="absolute inset-0 opacity-[0.04] dark:opacity-[0.02] pointer-events-none" style={{ transform: 'rotate(15deg) scale(1.5)' }}>
+      <div className="w-full h-full" style={{
+        backgroundImage: `
+          linear-gradient(rgba(34,211,238,0.5) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(34,211,238,0.5) 1px, transparent 1px)`,
+        backgroundSize: '48px 48px',
+      }} />
+    </div>
+
+    {/* === ALGAS MARINAS — múltiples variedades === */}
+    {SEAWEED_DATA.map((sw, i) => (
+      <motion.div
+        key={`sw-${i}`}
+        className={`absolute bottom-0 rounded-t-full blur-xl origin-bottom ${sw.color}`}
+        style={{ left: `${sw.left}%`, width: '28px', height: `${sw.h}px` }}
+        animate={{ rotate: [0, 6, -6, 3, 0], scaleY: [1, 1.06, 0.94, 1.03, 1] }}
+        transition={{ duration: sw.dur, repeat: Infinity, ease: "easeInOut", delay: sw.delay }}
+      />
+    ))}
+
+    {/* === CORAL en el fondo === */}
+    {CORAL_DATA.map((c, i) => (
+      <motion.div
+        key={`coral-${i}`}
+        className="absolute bottom-0 flex items-end"
+        style={{ left: `${c.left}%` }}
+        animate={{ scaleY: [1, 1.02, 0.99, 1] }}
+        transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut", delay: i * 0.8 }}
+      >
+        {c.stems.map((s, j) => (
+          <div
+            key={j}
+            className={`rounded-t-full ${s.color} blur-sm`}
+            style={{ width: `${s.w}px`, height: `${s.h}px`, marginLeft: j > 0 ? `${s.ml}px` : 0 }}
+          />
+        ))}
+      </motion.div>
+    ))}
+
+    {/* === MEDUSAS === */}
+    {JELLYFISH_DATA.map((j, i) => (
+      <motion.div
+        key={`jelly-${i}`}
+        className="absolute"
+        style={{ left: `${j.left}%`, top: `${j.top}%` }}
+        animate={{ y: [0, -28, 0], rotate: [-2, 2, -2] }}
+        transition={{ duration: j.dur, repeat: Infinity, ease: "easeInOut", delay: j.delay }}
+      >
+        {/* cuerpo */}
+        <div className="w-10 h-7 bg-gradient-to-b from-cyan-200/25 to-indigo-100/10 dark:from-cyan-400/15 dark:to-indigo-200/5 rounded-t-full border-t border-x border-cyan-300/20" />
+        {/* tentáculos */}
+        <div className="flex justify-around px-0.5">
+          {[14, 20, 12, 18, 16, 10].map((h, k) => (
+            <motion.div
+              key={k}
+              className="bg-gradient-to-b from-cyan-300/20 to-transparent"
+              style={{ width: '1px', height: `${h}px` }}
+              animate={{ scaleX: [1, 2, 1], opacity: [0.6, 1, 0.6] }}
+              transition={{ duration: 1.8, repeat: Infinity, delay: k * 0.18, ease: "easeInOut" }}
+            />
+          ))}
+        </div>
+      </motion.div>
+    ))}
+
+    {/* === ESTRELLAS DE MAR — piso marino === */}
+    {STAR_FLOOR.map((left, i) => (
+      <motion.div
+        key={`sf-${i}`}
+        className="absolute bottom-3 text-amber-400/40 dark:text-amber-300/20"
+        style={{ left: `${left}%` }}
+        animate={{ rotate: [0, 15, -10, 0], scale: [1, 1.08, 0.95, 1] }}
+        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay: i * 0.6, repeatType: "reverse" }}
+      >
+        <Star size={14 + (i % 3) * 7} fill="currentColor" />
+      </motion.div>
+    ))}
+
+    {/* === ESTRELLAS FLOTANTES === */}
+    {STAR_FLOAT.map((s, i) => (
+      <motion.div
+        key={`sfloat-${i}`}
+        className="absolute text-amber-300/20 dark:text-amber-400/15"
+        style={{ top: `${s.top}%`, left: `${s.left}%` }}
+        animate={{ opacity: [0, 0.4, 0], scale: [0.7, 1.3, 0.7], rotate: [0, 120, 240] }}
+        transition={{ duration: s.dur, repeat: Infinity, ease: "easeInOut", delay: s.delay }}
+      >
+        <Star size={20 + (i % 3) * 10} />
+      </motion.div>
+    ))}
+
+    {/* === BURBUJAS — variedad de tamaños === */}
+    {BUBBLE_DATA.map((b, i) => (
+      <motion.div
+        key={`bub-${i}`}
+        className={`absolute ${b.size} rounded-full border border-indigo-300/25 bg-white/10 blur-[1px]`}
+        initial={{ y: "108vh" }}
+        animate={{
+          y: "-8vh",
+          x: [0, Math.sin(i) * 30, Math.sin(i + 1) * 15, 0],
+          opacity: [0, 0.5, 0.5, 0],
+        }}
+        transition={{
+          duration: b.dur,
+          repeat: Infinity,
+          delay: b.delay,
+          ease: "linear",
+        }}
+        style={{ left: `${b.x}%` }}
+      />
+    ))}
+
+    {/* === PECES — escuela grande con variedad === */}
+    {FISH_DATA.map((f, i) => (
+      <motion.div
+        key={`fish-${i}`}
+        className={cn(
+          "absolute",
+          i < 4  ? "text-indigo-400/35 dark:text-indigo-300/25" :
+          i < 8  ? "text-cyan-500/30 dark:text-cyan-400/20" :
+                   "text-teal-500/25 dark:text-teal-400/15"
+        )}
+        initial={{ x: f.dir > 0 ? "-8vw" : "108vw" }}
+        animate={{
+          x: f.dir > 0 ? "108vw" : "-8vw",
+          y: [0, Math.sin(i) * 25, 0],
+          opacity: [0, 0.8, 0.8, 0.8, 0],
+        }}
+        transition={{
+          duration: f.dur,
+          repeat: Infinity,
+          delay: f.delay,
+          ease: "linear",
+        }}
+        style={{ top: `${f.y}%` }}
+      >
+        <Fish
+          size={f.size}
+          className={f.dir < 0 ? "scale-x-[-1]" : ""}
+        />
+      </motion.div>
+    ))}
+
+    {/* === ANCLAS flotando suavemente === */}
+    {[{ left: 8, top: 60, dur: 14, delay: 0 }, { left: 90, top: 40, dur: 18, delay: 7 }].map((a, i) => (
+      <motion.div
+        key={`anchor-${i}`}
+        className="absolute text-slate-400/15 dark:text-slate-300/10"
+        style={{ left: `${a.left}%`, top: `${a.top}%` }}
+        animate={{ y: [0, -18, 0], rotate: [-5, 5, -5], opacity: [0.3, 0.6, 0.3] }}
+        transition={{ duration: a.dur, repeat: Infinity, ease: "easeInOut", delay: a.delay }}
+      >
+        <Anchor size={32 + i * 10} />
+      </motion.div>
+    ))}
+
+    {/* === OLAS DOBLES en la parte inferior === */}
+    <div className="absolute bottom-0 left-0 right-0 h-80 select-none pointer-events-none">
       <svg className="w-full h-full" viewBox="0 0 1440 320" preserveAspectRatio="none">
         <motion.path
+          initial={{ d: "M0,200L60,186C120,171,240,143,360,149.3C480,155,600,197,720,202.7C840,208,960,176,1080,160C1200,144,1320,144,1380,144L1440,144L1440,320L0,320Z" }}
           animate={{
             d: [
-              "M0,160L48,176C96,192,192,224,288,213.3C384,203,480,149,576,144C672,139,768,181,864,181.3C960,181,1056,139,1152,122.7C1248,107,1344,117,1392,122.7L1440,128L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z",
-              "M0,160L48,144C96,128,192,96,288,106.7C384,117,480,171,576,176C672,181,768,139,864,138.7C960,139,1056,181,1152,197.3C1248,213,1344,203,1392,197.3L1440,192L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z",
-              "M0,160L48,176C96,192,192,224,288,213.3C384,203,480,149,576,144C672,139,768,181,864,181.3C960,181,1056,139,1152,122.7C1248,107,1344,117,1392,122.7L1440,128L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"
+              "M0,200L60,186C120,171,240,143,360,149.3C480,155,600,197,720,202.7C840,208,960,176,1080,160C1200,144,1320,144,1380,144L1440,144L1440,320L0,320Z",
+              "M0,180L60,197C120,213,240,245,360,234.7C480,224,600,171,720,165.3C840,160,960,203,1080,218.7C1200,235,1320,224,1380,218.7L1440,213L1440,320L0,320Z",
+              "M0,200L60,186C120,171,240,143,360,149.3C480,155,600,197,720,202.7C840,208,960,176,1080,160C1200,144,1320,144,1380,144L1440,144L1440,320L0,320Z",
             ]
           }}
-          transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
-          className="fill-indigo-500/20 dark:fill-indigo-400/10"
+          transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+          className="fill-indigo-400/10 dark:fill-indigo-400/8"
+        />
+        <motion.path
+          initial={{ d: "M0,240L80,224C160,208,320,176,480,181.3C640,187,800,229,960,234.7C1120,240,1280,208,1360,192L1440,176L1440,320L0,320Z" }}
+          animate={{
+            d: [
+              "M0,240L80,224C160,208,320,176,480,181.3C640,187,800,229,960,234.7C1120,240,1280,208,1360,192L1440,176L1440,320L0,320Z",
+              "M0,256L80,240C160,224,320,192,480,197.3C640,203,800,245,960,250.7C1120,256,1280,224,1360,208L1440,192L1440,320L0,320Z",
+              "M0,240L80,224C160,208,320,176,480,181.3C640,187,800,229,960,234.7C1120,240,1280,208,1360,192L1440,176L1440,320L0,320Z",
+            ]
+          }}
+          transition={{ duration: 18, repeat: Infinity, ease: "easeInOut", delay: 3 }}
+          className="fill-cyan-400/8 dark:fill-cyan-400/5"
         />
       </svg>
     </div>
 
-    {/* Seaweed / Sea Elements */}
-    <div className="absolute bottom-0 left-10 w-32 h-64 opacity-20 dark:opacity-10 pointer-events-none">
-      <motion.div 
-        animate={{ rotate: [0, 5, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-        className="w-full h-full bg-emerald-500/30 rounded-t-full blur-xl origin-bottom"
-      />
-    </div>
-    <div className="absolute bottom-0 right-20 w-40 h-80 opacity-20 dark:opacity-10 pointer-events-none">
-      <motion.div 
-        animate={{ rotate: [0, -7, 0] }}
-        transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-        className="w-full h-full bg-cyan-500/30 rounded-t-full blur-xl origin-bottom"
-      />
-    </div>
-
-    {/* Sea Stars */}
-    {[...Array(5)].map((_, i) => (
-      <motion.div
-        key={`star-${i}`}
-        initial={{ opacity: 0, scale: 0 }}
-        animate={{ opacity: [0, 0.3, 0], scale: [0.8, 1.2, 0.8], rotate: [0, 90, 180] }}
-        transition={{ duration: 10, repeat: Infinity, delay: i * 3 }}
-        className="absolute text-amber-300/30 dark:text-amber-500/20"
-        style={{ 
-          top: `${10 + Math.random() * 80}vh`, 
-          left: `${10 + Math.random() * 80}vw` 
-        }}
-      >
-        <Star size={24 + Math.random() * 24} />
-      </motion.div>
-    ))}
-
-    {/* Net Pattern */}
-    <div className="absolute top-0 left-0 w-full h-full opacity-[0.03] dark:opacity-[0.01] pointer-events-none">
-      <div className="w-full h-full" style={{ backgroundImage: 'radial-gradient(circle, currentColor 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-    </div>
-
-    {/* Floating Bubbles */}
-    {[...Array(20)].map((_, i) => (
-      <motion.div
-        key={`bubble-${i}`}
-        initial={{ y: "110vh", x: `${Math.random() * 100}vw`, opacity: 0 }}
-        animate={{ 
-          y: "-10vh",
-          opacity: [0, 0.4, 0],
-          x: `${(Math.random() * 100) + (Math.sin(i) * 15)}vw`
-        }}
-        transition={{ 
-          duration: 12 + Math.random() * 20, 
-          repeat: Infinity, 
-          delay: Math.random() * 20,
-          ease: "linear"
-        }}
-        className="absolute w-1 h-1 md:w-3 md:h-3 rounded-full border border-indigo-300/20 bg-white/10 blur-[1px] dark:shadow-[0_0_8px_rgba(255,255,255,0.3)]"
-      />
-    ))}
-
-    {/* Swimming Fish */}
-    {[...Array(8)].map((_, i) => (
-      <motion.div
-        key={`fish-${i}`}
-        initial={{ x: i % 2 === 0 ? "-10vw" : "110vw", y: `${20 + Math.random() * 60}vh`, opacity: 0 }}
-        animate={{ 
-          x: i % 2 === 0 ? "110vw" : "-10vw",
-          opacity: [0, 0.3, 0.3, 0],
-          y: `${20 + Math.random() * 60 + Math.sin(Date.now() / 1000 + i) * 20}vh`
-        }}
-        transition={{ 
-          duration: 20 + Math.random() * 30, 
-          repeat: Infinity, 
-          delay: Math.random() * 15,
-          ease: "linear"
-        }}
-        className="absolute text-indigo-400/30 dark:text-indigo-300/20"
-      >
-        <Fish size={24 + Math.random() * 20} className={i % 2 !== 0 ? "scale-x-[-1]" : ""} />
-      </motion.div>
-    ))}
-
-    {/* Sea Stars at the bottom */}
-    {[...Array(6)].map((_, i) => (
-      <motion.div
-        key={`star-${i}`}
-        initial={{ opacity: 0, scale: 0 }}
-        animate={{ opacity: 0.2, scale: 1, rotate: [0, 10, -10, 0] }}
-        transition={{ duration: 2, delay: i * 0.5, repeat: Infinity, repeatType: "reverse" }}
-        className="absolute bottom-4 text-indigo-400/40 dark:text-indigo-300/20"
-        style={{ left: `${15 + i * 15}%` }}
-      >
-        <Star size={20 + Math.random() * 15} fill="currentColor" />
-      </motion.div>
-    ))}
-
-    {/* Subtle Net patterns */}
-    <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.01] pointer-events-none">
-      <div className="absolute top-0 left-0 w-full h-full" style={{ backgroundImage: 'radial-gradient(circle, currentColor 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-    </div>
-
-    {/* Subtle Seaweed-like elements */}
-    {[...Array(5)].map((_, i) => (
-      <motion.div
-        key={`seaweed-${i}`}
-        animate={{
-          rotate: [0, 5, -5, 0],
-          scaleY: [1, 1.05, 0.95, 1]
-        }}
-        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut", delay: i * 2 }}
-        className="absolute bottom-0 w-8 h-64 bg-indigo-600/5 dark:bg-indigo-400/5 rounded-full blur-2xl"
-        style={{ left: `${10 + i * 20}%` }}
-      />
-    ))}
   </div>
 );
 
@@ -374,7 +525,13 @@ const FormCard = ({ title, children, className }: { title?: string, children: Re
   </div>
 );
 
-const InputField = ({ label, value, onChange, type = "text", placeholder, suffix, inputRef, highlight }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string, suffix?: string, inputRef?: React.RefObject<HTMLInputElement | null>, highlight?: boolean }) => (
+const InputField = ({
+  label, value, onChange, type = "text", placeholder, suffix, inputRef, highlight, min, max
+}: {
+  label: string, value: any, onChange: (val: any) => void, type?: string,
+  placeholder?: string, suffix?: string, inputRef?: React.RefObject<HTMLInputElement | null>,
+  highlight?: boolean, min?: number, max?: number
+}) => (
   <div className="space-y-1.5">
     <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
     <div className="relative">
@@ -382,7 +539,19 @@ const InputField = ({ label, value, onChange, type = "text", placeholder, suffix
         ref={inputRef}
         type={type}
         value={value}
-        onChange={(e) => onChange(type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value)}
+        min={min}
+        max={max}
+        onChange={(e) => {
+          if (type === 'number') {
+            let v = parseFloat(e.target.value);
+            if (isNaN(v)) v = min ?? 0;
+            if (min !== undefined && v < min) v = min;
+            if (max !== undefined && v > max) v = max;
+            onChange(v);
+          } else {
+            onChange(e.target.value);
+          }
+        }}
         placeholder={placeholder}
         className={cn(
           "w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium",
@@ -397,6 +566,127 @@ const InputField = ({ label, value, onChange, type = "text", placeholder, suffix
     </div>
   </div>
 );
+
+// Combo de autocompletado para leyendas fotográficas.
+// Filtra el catálogo según la sección y resuelve placeholders dinámicos ({m3}, {kva}).
+const LeyendaCombo = ({
+  seccion, value, onChange, m3, kva
+}: {
+  seccion: 'Extracción' | 'Desnaturalización' | 'Almacenamiento' | 'General';
+  value: string;
+  onChange: (v: string) => void;
+  m3: number;
+  kva: number;
+}) => {
+  const listId = `leyenda-list-${seccion.replace(/\s/g, '-').replace(/[áéíóú]/g, c => ({ á:'a',é:'e',í:'i',ó:'o',ú:'u' } as Record<string,string>)[c] ?? c)}`;
+  const opciones = (CATALOGO_FOTOS[seccion] ?? []).map(s =>
+    s.replace(/\{m3\}/g, String(m3)).replace(/\{kva\}/g, String(kva))
+  );
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Leyenda</label>
+      <input
+        list={listId}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Seleccione o escriba una descripción..."
+        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
+      />
+      <datalist id={listId}>
+        {opciones.map((op, i) => <option key={i} value={op} />)}
+      </datalist>
+    </div>
+  );
+};
+
+const CenterCodeAutocomplete = ({
+  label, value, onChange, inputRef, highlight
+}: {
+  label: string, value: string, onChange: (code: string, center?: ConcesionCentro) => void,
+  inputRef?: React.RefObject<HTMLInputElement | null>, highlight?: boolean
+}) => {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Sync from external changes only (e.g. reset or auto-fill from center selection).
+  // The ref prevents re-syncing when the change originated from the user's own typing.
+  const internalTyping = useRef(false);
+  useEffect(() => {
+    if (!internalTyping.current) {
+      setQuery(value);
+    }
+    internalTyping.current = false;
+  }, [value]);
+
+  const suggestions = useMemo(() => {
+    if (!query || query.length < 2) return [];
+    const q = query.toLowerCase();
+    return CONCESIONES_DB
+      .filter(c => c.codigo.startsWith(query) || c.nombre.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [query]);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const handleSelect = (center: ConcesionCentro) => {
+    setQuery(center.codigo);
+    setOpen(false);
+    onChange(center.codigo, center);
+  };
+
+  return (
+    <div className="space-y-1.5" ref={containerRef}>
+      <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={(e) => {
+            internalTyping.current = true;
+            setQuery(e.target.value);
+            setOpen(true);
+            onChange(e.target.value);
+          }}
+          onFocus={() => { if (query.length >= 2) setOpen(true); }}
+          onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
+          placeholder="Ej. 102345"
+          className={cn(
+            "w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium",
+            highlight && "ring-2 ring-indigo-500 ring-offset-2 border-indigo-500 bg-white dark:bg-slate-900"
+          )}
+        />
+        {open && suggestions.length > 0 && (
+          <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl overflow-auto max-h-64">
+            {suggestions.map(c => (
+              <button
+                key={c.codigo}
+                type="button"
+                onMouseDown={() => handleSelect(c)}
+                className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
+              >
+                <div className="flex items-baseline gap-2">
+                  <span className="font-bold text-indigo-600 dark:text-indigo-400 text-sm">{c.codigo}</span>
+                  <span className="text-slate-700 dark:text-slate-200 text-sm truncate">{c.nombre}</span>
+                </div>
+                <div className="text-xs text-slate-400 dark:text-slate-500 truncate">{c.titular}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const MarineButton = ({ children, onClick, disabled, className, variant = "primary" }: { children: React.ReactNode, onClick?: () => void, disabled?: boolean, className?: string, variant?: "primary" | "secondary" }) => (
   <button
@@ -458,9 +748,25 @@ export default function App() {
     return DEFAULT_STATE;
   });
 
+  // Auto-guardado en localStorage — indicador visual de estado
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [saveAnim, setSaveAnim] = useState(false);
+
   useEffect(() => {
     localStorage.setItem('certimar-draft-state', JSON.stringify(state));
+    setSavedAt(new Date());
+    setSaveAnim(true);
+    const t = setTimeout(() => setSaveAnim(false), 1800);
+    return () => clearTimeout(t);
   }, [state]);
+
+  const savedLabel = useCallback(() => {
+    if (!savedAt) return null;
+    const diff = Math.floor((Date.now() - savedAt.getTime()) / 1000);
+    if (diff < 5)  return 'ahora mismo';
+    if (diff < 60) return `hace ${diff}s`;
+    return `hace ${Math.floor(diff / 60)}min`;
+  }, [savedAt]);
 
   const resetState = () => {
     if (window.confirm("¿Está seguro de que desea borrar el borrador actual y comenzar de nuevo?")) {
@@ -495,8 +801,7 @@ export default function App() {
     }
   }, [showWelcome]);
 
-  const handleCenterCodeChange = (code: string) => {
-    const center = CATALOGO_CENTROS.find(c => c.codigo === code);
+  const handleCenterCodeChange = (code: string, center?: ConcesionCentro) => {
     if (center) {
       setState(prev => ({
         ...prev,
@@ -504,7 +809,7 @@ export default function App() {
           ...prev.general,
           centro_cultivo: {
             ...prev.general.centro_cultivo,
-            codigo_centro: code,
+            codigo_centro: center.codigo,
             nombre_centro: center.nombre,
             titular: center.titular,
             acs: center.acs,
@@ -518,104 +823,27 @@ export default function App() {
   };
 
   // --- Calculations ---
-  const calculatedExtraction = useMemo(() => {
-    const { parametros } = state.extraction;
-    
-    // 1. Determine base times and biomass limits based on fish size
-    let t_trabajo_base = 15;
-    let t_pausa_base = 2.15;
-    let limite_biomasa = 270;
+  // Las fórmulas están en src/domain/calculations.ts (funciones puras testeables).
+  // Res. Exenta N°1511/2021 — Umbrales: Extracción ≥15 TN/día, Desnaturalización ≥15 TN/día, Almacenamiento ≥20 TN.
 
-    if (parametros.talla_pez === 'Mediano (1.5-4.5kg)') {
-      t_trabajo_base = 12;
-      t_pausa_base = 2.0;
-      limite_biomasa = 375;
-    } else if (parametros.talla_pez === 'Pequeño (<1.5kg)') {
-      t_trabajo_base = 10;
-      t_pausa_base = 1.8;
-      limite_biomasa = 360;
-    }
+  const calculatedExtraction = useMemo(
+    () => calculateExtraction(state.extraction.parametros),
+    [state.extraction.parametros]
+  );
 
-    // 2. Adjust efficiency based on depth and system
-    let η = 0.95; // Default LIFT-UP
-    if (parametros.sistema_principal === 'Mortex HW') η = 0.92;
-    if (parametros.sistema_principal === 'ROV') η = 0.75;
-    if (parametros.sistema_principal === 'Succión por Yoma') η = 0.80;
+  const calculatedDenaturation = useMemo(
+    () => calculateDenaturation(
+      state.denaturation.equipos,
+      state.denaturation.parametros_batch,
+      state.denaturation.parametros_incineracion
+    ),
+    [state.denaturation.equipos, state.denaturation.parametros_batch, state.denaturation.parametros_incineracion]
+  );
 
-    if (parametros.profundidad_operacion_m > 25) {
-      if (parametros.sistema_principal === 'LIFT-UP (Novatech)') η = 0.85;
-      if (parametros.sistema_principal === 'Mortex HW') η = 0.82;
-      if (parametros.sistema_principal === 'ROV') η = 0.70;
-    }
-
-    // 3. Availability adjustment based on personnel
-    let fd = parametros.disponibilidad_base_fd;
-    if (parametros.personal_operativo < 3) {
-      fd = fd * 0.90;
-    }
-
-    // 4. Cycle time calculation
-    const pausa_proporcional = (t_pausa_base * 0.01) * parametros.numero_total_jaulas;
-    const t_ciclo_total = t_trabajo_base + t_pausa_base + pausa_proporcional;
-
-    // 5. Daily cycles
-    const ciclos_por_dia = (parametros.horas_efectivas_trabajo * 60) / t_ciclo_total;
-
-    // 6. Final capacity (TN/Día)
-    const kg_bins = limite_biomasa * parametros.factor_ajuste_biomasa;
-    const capacidad_diaria_ton = (parametros.jaulas_simultaneas * ciclos_por_dia * kg_bins * η * fd) / 1000;
-    
-    return {
-      ciclos_por_dia: parseFloat(ciclos_por_dia.toFixed(2)),
-      capacidad_diaria_ton: parseFloat(capacidad_diaria_ton.toFixed(2)),
-      cumple_norma: capacidad_diaria_ton >= 15
-    };
-  }, [state.extraction.parametros]);
-
-  const calculatedDenaturation = useMemo(() => {
-    const { parametros_batch, equipos, parametros_incineracion } = state.denaturation;
-    const total_work_min = equipos.horas_funcionamiento_dia * 60;
-    
-    if (equipos.tipo_sistema === 'Incineración') {
-      const capacity_ton = (parametros_incineracion.capacidad_carga_kg_h * equipos.horas_funcionamiento_dia) / 1000;
-      return {
-        duracion_total_batch_min: 0,
-        numero_batches_dia: 0,
-        capacidad_diaria_ton: parseFloat(capacity_ton.toFixed(2)),
-        cumple_norma: capacity_ton >= 15,
-        observacion_automatica: `Sistema de incineración térmica con capacidad de carga de ${parametros_incineracion.capacidad_carga_kg_h} kg/h. Operando ${equipos.horas_funcionamiento_dia} horas diarias, alcanza una capacidad de ${capacity_ton.toFixed(2)} toneladas/día.`
-      };
-    }
-
-    // Ensilaje Logic
-    let batch_duration = parametros_batch.tiempo_procesamiento_min + parametros_batch.tiempo_pausa_min;
-    if (equipos.cuenta_con_prepicador) {
-      batch_duration = batch_duration * 0.70;
-    }
-
-    const num_batches = total_work_min / batch_duration;
-    const capacity_kg = num_batches * parametros_batch.kilos_por_batch;
-    const capacity_ton = capacity_kg / 1000;
-
-    const observacion = `La eficiencia del sistema depende directamente del tiempo total de cada ciclo (batch + pausa)... (kg/batch=${parametros_batch.kilos_por_batch} -- Horas de trabajo diario: ${equipos.horas_funcionamiento_dia} = ${total_work_min} min) Duración total por batch: ${batch_duration.toFixed(2)} min / Número de batches por día: ${total_work_min} ÷ ${batch_duration.toFixed(2)} = ${num_batches.toFixed(2)} batches Capacidad diaria ${parametros_batch.kilos_por_batch} kg * ${num_batches.toFixed(2)} = ${capacity_kg.toFixed(0)} kg = ${capacity_ton.toFixed(2)} toneladas`;
-
-    return {
-      duracion_total_batch_min: parseFloat(batch_duration.toFixed(2)),
-      numero_batches_dia: parseFloat(num_batches.toFixed(2)),
-      capacidad_diaria_ton: parseFloat(capacity_ton.toFixed(2)),
-      cumple_norma: capacity_ton >= 15,
-      observacion_automatica: observacion
-    };
-  }, [state.denaturation.parametros_batch, state.denaturation.equipos, state.denaturation.parametros_incineracion]);
-
-  const calculatedStorage = useMemo(() => {
-    const { parametros } = state.storage;
-    const capacity_ton = parametros.capacidad_almacenaje_m3 * parametros.factor_densidad;
-    return {
-      capacidad_almacenaje_ton: parseFloat(capacity_ton.toFixed(2)),
-      cumple_norma: capacity_ton >= 20
-    };
-  }, [state.storage.parametros]);
+  const calculatedStorage = useMemo(
+    () => calculateStorage(state.storage.parametros),
+    [state.storage.parametros]
+  );
 
   // Sync results to state
   useEffect(() => {
@@ -875,13 +1103,12 @@ export default function App() {
         <FormCard title="Identificación del Centro">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <InputField 
+              <CenterCodeAutocomplete
                 inputRef={centerCodeRef}
                 highlight={state.general.centro_cultivo.codigo_centro === ""}
-                label="Código Centro" 
-                value={state.general.centro_cultivo.codigo_centro} 
-                onChange={handleCenterCodeChange} 
-                placeholder="Ej. 102345"
+                label="Código Centro"
+                value={state.general.centro_cultivo.codigo_centro}
+                onChange={handleCenterCodeChange}
               />
               <InputField 
                 label="A.C.S / RNA" 
@@ -1084,9 +1311,9 @@ export default function App() {
                 <InputField label="Personal Op." type="number" value={state.extraction.parametros.personal_operativo} onChange={(v) => updateExtraction('parametros.personal_operativo', v)} />
                 <InputField label="Profundidad" type="number" value={state.extraction.parametros.profundidad_operacion_m} onChange={(v) => updateExtraction('parametros.profundidad_operacion_m', v)} suffix="m" />
               </div>
-              <InputField label="Horas Trabajo" type="number" value={state.extraction.parametros.horas_efectivas_trabajo} onChange={(v) => updateExtraction('parametros.horas_efectivas_trabajo', v)} suffix="Hrs" />
-              <InputField label="Ajuste Biomasa" type="number" value={state.extraction.parametros.factor_ajuste_biomasa} onChange={(v) => updateExtraction('parametros.factor_ajuste_biomasa', v)} />
-              <InputField label="Disponibilidad fd₀" type="number" value={state.extraction.parametros.disponibilidad_base_fd} onChange={(v) => updateExtraction('parametros.disponibilidad_base_fd', v)} />
+              <InputField label="Horas Trabajo" type="number" value={state.extraction.parametros.horas_efectivas_trabajo} onChange={(v) => updateExtraction('parametros.horas_efectivas_trabajo', v)} suffix="Hrs" min={0.5} max={24} />
+              <InputField label="Ajuste Biomasa" type="number" value={state.extraction.parametros.factor_ajuste_biomasa} onChange={(v) => updateExtraction('parametros.factor_ajuste_biomasa', v)} min={0.1} max={2.0} />
+              <InputField label="Disponibilidad fd₀" type="number" value={state.extraction.parametros.disponibilidad_base_fd} onChange={(v) => updateExtraction('parametros.disponibilidad_base_fd', v)} min={0.1} max={1.0} />
             </div>
           </div>
         </FormCard>
@@ -1122,10 +1349,12 @@ export default function App() {
   const DenaturationView = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
       <div className="flex justify-between items-start">
-        <SectionHeader 
-          title="Desnaturalización (Ensilaje)" 
-          icon={FlaskConical} 
-          description="Cálculo de capacidad por ciclos (Batch) y equipos de trituración (Mínimo 15 TN/Día)."
+        <SectionHeader
+          title={`Desnaturalización (${state.denaturation.equipos.tipo_sistema === 'Incineración' ? 'Incineración Térmica' : 'Ensilaje Químico'})`}
+          icon={FlaskConical}
+          description={state.denaturation.equipos.tipo_sistema === 'Incineración'
+            ? 'Cálculo de capacidad por incineración térmica (Mínimo 15 TN/Día).'
+            : 'Cálculo de capacidad por ciclos (Batch) y equipos de trituración (Mínimo 15 TN/Día).'}
         />
         <StatusBadge status={state.denaturation.resultados.cumple_norma} />
       </div>
@@ -1194,9 +1423,9 @@ export default function App() {
 
               <FormCard title="Cálculo de Ciclo (Batch)">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <InputField label="Kilos por Batch" type="number" value={state.denaturation.parametros_batch.kilos_por_batch} onChange={(v) => updateDenaturation('parametros_batch.kilos_por_batch', v)} suffix="Kg" />
-                  <InputField label="Tiempo Proceso" type="number" value={state.denaturation.parametros_batch.tiempo_procesamiento_min} onChange={(v) => updateDenaturation('parametros_batch.tiempo_procesamiento_min', v)} suffix="Min" />
-                  <InputField label="Tiempo Pausa" type="number" value={state.denaturation.parametros_batch.tiempo_pausa_min} onChange={(v) => updateDenaturation('parametros_batch.tiempo_pausa_min', v)} suffix="Min" />
+                  <InputField label="Kilos por Batch" type="number" value={state.denaturation.parametros_batch.kilos_por_batch} onChange={(v) => updateDenaturation('parametros_batch.kilos_por_batch', v)} suffix="Kg" min={1} max={5000} />
+                  <InputField label="Tiempo Proceso" type="number" value={state.denaturation.parametros_batch.tiempo_procesamiento_min} onChange={(v) => updateDenaturation('parametros_batch.tiempo_procesamiento_min', v)} suffix="Min" min={1} max={240} />
+                  <InputField label="Tiempo Pausa" type="number" value={state.denaturation.parametros_batch.tiempo_pausa_min} onChange={(v) => updateDenaturation('parametros_batch.tiempo_pausa_min', v)} suffix="Min" min={0} max={120} />
                 </div>
               </FormCard>
             </>
@@ -1322,7 +1551,7 @@ export default function App() {
                 </select>
               </div>
               <InputField label="Capacidad Estanque" type="number" value={state.storage.parametros.capacidad_almacenaje_m3} onChange={(v) => updateStorage('parametros.capacidad_almacenaje_m3', v)} suffix="m³" />
-              <InputField label="Factor Densidad" type="number" value={state.storage.parametros.factor_densidad} onChange={(v) => updateStorage('parametros.factor_densidad', v)} suffix="TN/m³" />
+              <InputField label="Factor Densidad" type="number" value={state.storage.parametros.factor_densidad} onChange={(v) => updateStorage('parametros.factor_densidad', v)} suffix="TN/m³" min={0.5} max={2.5} />
               <div className="md:col-span-2">
                 <InputField label="Observaciones" value={state.storage.parametros.observaciones} onChange={(v) => updateStorage('parametros.observaciones', v)} />
               </div>
@@ -1464,11 +1693,12 @@ export default function App() {
                       </select>
                     </div>
                   </div>
-                  <InputField 
-                    label="Leyenda" 
-                    value={img.leyenda} 
-                    onChange={(v) => updateImage(img.id, { leyenda: v })} 
-                    placeholder="Ej. Imagen 1. Olla trituradora..."
+                  <LeyendaCombo
+                    seccion={img.seccion as any}
+                    value={img.leyenda}
+                    onChange={(v) => updateImage(img.id, { leyenda: v })}
+                    m3={state.storage.parametros.capacidad_almacenaje_m3}
+                    kva={state.denaturation.generacion_electrica[0]?.capacidad_kva ?? 0}
                   />
                 </div>
               </motion.div>
@@ -1723,10 +1953,49 @@ export default function App() {
             {!isSidebarCollapsed && <span className="font-bold text-sm tracking-tight">{darkMode ? 'Modo Claro' : 'Modo Oscuro'}</span>}
           </button>
 
+          {/* Indicador de auto-guardado */}
+          {!isSidebarCollapsed && (
+            <div className="flex items-center gap-2 py-1">
+              <motion.div
+                animate={saveAnim ? { scale: [1, 1.4, 1], opacity: [0.6, 1, 0.6] } : {}}
+                transition={{ duration: 0.6 }}
+                className={cn(
+                  "w-1.5 h-1.5 rounded-full transition-colors duration-500",
+                  saveAnim ? "bg-emerald-400" : "bg-slate-300 dark:bg-slate-600"
+                )}
+              />
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={savedAt?.getTime() ?? 0}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  className="text-[10px] text-slate-400 dark:text-slate-500 font-medium"
+                >
+                  {saveAnim ? (
+                    <span className="text-emerald-500 dark:text-emerald-400 font-semibold">Guardado</span>
+                  ) : (
+                    savedAt ? `Borrador: ${savedLabel()}` : 'Sin cambios'
+                  )}
+                </motion.span>
+              </AnimatePresence>
+            </div>
+          )}
+
           <p className={cn("text-[10px] font-bold text-slate-300 dark:text-slate-600 uppercase tracking-widest", isSidebarCollapsed ? "hidden" : "")}>
             © 2026 Certimar SpA
           </p>
-          {isSidebarCollapsed && <Anchor size={16} className="text-slate-200 dark:text-slate-700 mx-auto" />}
+          {isSidebarCollapsed && (
+            <motion.div
+              animate={saveAnim ? { scale: [1, 1.3, 1] } : {}}
+              transition={{ duration: 0.5 }}
+            >
+              <Anchor size={16} className={cn(
+                "mx-auto transition-colors duration-500",
+                saveAnim ? "text-emerald-400" : "text-slate-200 dark:text-slate-700"
+              )} />
+            </motion.div>
+          )}
         </div>
       </aside>
 
