@@ -10,6 +10,10 @@ export interface GeneralData {
     titular: string;
     acs: string;
     ubicacion: string;
+    formato_modulo: string;       // Ej. "24 jaulas, tipo Metálicas"
+    tamano_jaulas: string;        // Ej. "30 x 30 metros"
+    coordenadas_ensilaje: string; // GPS del A/N Ensilaje
+    nombre_an_ensilaje: string;   // Nombre del A/N donde opera el ensilaje
   };
   fechas: {
     evaluacion_documental: string;
@@ -44,6 +48,9 @@ export interface ExtractionData {
     potencia_cfm: number;
     capacidad_receptor_bins_litros: number;
     disponibilidad_base_fd: number;
+    motocompresores_por_jaula: number;  // N° motocompresores por jaula
+    ubicacion_compresor: string;        // Ubicación física del compresor de aire
+    observacion_sistema: string;        // Observación libre del sistema automático
   };
   resultados: {
     ciclos_por_dia: number;
@@ -65,6 +72,7 @@ export interface DenaturationData {
     cuenta_con_recirculacion_acido: boolean;
     material_construccion: string;
     tipo_sistema: 'Ensilaje' | 'Incineración';
+    estado_olla: 'Bueno' | 'Regular' | 'Malo';
   };
   parametros_batch: {
     kilos_por_batch: number;
@@ -77,6 +85,18 @@ export interface DenaturationData {
     camara_primaria: string;
     camara_secundaria: string;
   };
+  incinerador: {
+    activo: boolean;
+    id_catalogo: string;
+    marca_modelo: string;
+    capacidad_carga_kg_h: number;
+    horas_funcionamiento_dia: number;
+    sistema_carga: string;
+    sistema_descarga: string;
+    disposicion_final: string;
+    almacenamiento_gas: string;
+    observaciones: string;
+  };
   generacion_electrica: Array<{
     tipo: string;
     marca: string;
@@ -87,6 +107,8 @@ export interface DenaturationData {
   resultados: {
     duracion_total_batch_min: number;
     numero_batches_dia: number;
+    capacidad_ensilaje_ton: number;
+    capacidad_incinerador_ton: number;
     capacidad_diaria_ton: number;
     cumple_norma: boolean;
     observacion_automatica: string;
@@ -106,6 +128,9 @@ export interface StorageData {
     piping_diametro: string;
     piping_valvulas: string;
     piping_estado: 'Bueno' | 'Regular' | 'Malo';
+    eslora_m: string;   // Dimensiones A/N Pontón — Eslora
+    manga_m: string;    // Manga
+    puntual_m: string;  // Puntual
   };
   resultados: {
     capacidad_almacenaje_ton: number;
@@ -113,10 +138,18 @@ export interface StorageData {
   };
 }
 
+export type ImageSeccion =
+  | 'Portada'
+  | 'Ubicación Espacial'
+  | 'Extracción'
+  | 'Desnaturalización'
+  | 'Almacenamiento'
+  | 'General';
+
 export interface ReportImage {
   id: string;
   url: string;
-  seccion: 'Extracción' | 'Desnaturalización' | 'Almacenamiento' | 'General';
+  seccion: ImageSeccion;
   leyenda: string;
   estado: 'Verde' | 'Amarillo' | 'Rojo';
   observacion: string;

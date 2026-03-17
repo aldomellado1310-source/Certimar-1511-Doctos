@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find c:/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos -name *.png -o -name *.jpg -o -name *.svg)",
+      "Bash(node -e \":*)",
+      "Read(//c/Users/aldon/Downloads/**)",
+      "Bash(ls -la 110XXX*)",
+      "Bash(unzip -o \"110XXX-DD_MM_AA-ACTA.zip\" -d /tmp/acta_zip)",
+      "Read(//tmp/acta_zip/**)",
+      "Bash(unzip -o \"C:/Users/aldon/Downloads/110XXX-DD_MM_AA-ACTA.zip\" -d \"C:/Users/aldon/Downloads/acta_zip\")",
+      "Read(//c/Users/aldon/.claude/projects/c--Users-aldon-Documents-Proyectos-Certimar-1511-Doctos/memory/**)",
+      "Bash(sed 's/<[^>]*>//g')",
+      "Read(//tmp/**)",
+      "Bash(mkdir -p src/assets)",
+      "Bash(cp \"110XXXDD_MM_AAACTA.html\" src/assets/acta-template.html)",
+      "Bash(npx vite:*)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\aldon\\Documents\\Proyectos\\Certimar-1511-Doctos",
+      "c:\\Users\\aldon\\.claude\\projects\\c--Users-aldon-Documents-Proyectos-Certimar-1511-Doctos\\memory"
+    ]
+  }
+}

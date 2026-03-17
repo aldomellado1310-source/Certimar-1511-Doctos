@@ -55,11 +55,27 @@ export const CATALOGO_DESNATURALIZACION = {
   incineradores: [
     {
       id: 'addfield-thunder-1000',
-      marca_modelo: 'Addfield THUNDER 1000',
+      marca_modelo: 'ADDFIELD / THUNDER 1000',
       capacidad_carga_kg_h: 150,
-      temperatura: '850–1100°C',
-      camara_primaria: '1.45m',
-      camara_secundaria: '2.0m'
+      camara_primaria: '1.450 m diámetro interior',
+      num_quemadores_primaria: 1,
+      temperatura_camara_primaria_c: 950,
+      camara_secundaria: '2 m',
+      num_quemadores_secundaria: 1,
+      temperatura_camara_secundaria_c: 850,
+      requerimiento_energetico: '390 kWh',
+    },
+    {
+      id: 'incinerador-300',
+      marca_modelo: 'INCINERADOR 300',
+      capacidad_carga_kg_h: 50,
+      camara_primaria: '1.6 m diámetro interior',
+      num_quemadores_primaria: 1,
+      temperatura_camara_primaria_c: 950,
+      camara_secundaria: '2 m Diámetro Interior',
+      num_quemadores_secundaria: 1,
+      temperatura_camara_secundaria_c: 850,
+      requerimiento_energetico: '8 KW/hora',
     }
   ]
 };
@@ -122,7 +138,133 @@ export const CATALOGO_CENTROS = [
 // Placeholders dinámicos: {m3} → capacidad estanque, {kva} → potencia generador.
 // ---------------------------------------------------------------------------
 
-export const CATALOGO_FOTOS: Record<'Extracción' | 'Desnaturalización' | 'Almacenamiento' | 'General', string[]> = {
+// ---------------------------------------------------------------------------
+// LISTAS DE AUTOCOMPLETADO — Datos de identificación frecuentes
+// ---------------------------------------------------------------------------
+
+export const TITULARES_CONOCIDOS = [
+  'EXPORTADORA LOS FIORDOS LTDA.',
+  'MOWI CHILE S.A.',
+  'CERMAQ CHILE S.A.',
+  'AQUACHILE S.A.',
+  'BLUMAR S.A.',
+  'AUSTRALIS MAR S.A.',
+  'MARINE HARVEST CHILE S.A.',
+  'SALMONES MULTIEXPORT S.A.',
+  'MULTIEXPORT FOODS S.A.',
+  'SALMONES CAMANCHACA S.A.',
+  'CAMANCHACA CULTIVOS SUR S.A.',
+  'SALMONES ANTARTICA S.A.',
+  'VENTISQUEROS S.A.',
+  'COMPAÑÍA PESQUERA CAMANCHACA S.A.',
+  'COOKE AQUACULTURE CHILE S.A.',
+  'SALMONES AYSÉN S.A.',
+  'PACIFIC STAR S.A.',
+  'SALMONES BIO BIO S.A.',
+  'INVERMAR S.A.',
+];
+
+export const EMPRESA_HINTS: {
+  keywords: string[];
+  extraccion: string;
+  desnaturalizacion: string;
+  almacenamiento: string;
+}[] = [
+  {
+    keywords: ['MOWI'],
+    extraccion: 'Mowi opera habitualmente con LIFT-UP Novatech 10" y compresor Kaeser M50E (185 CFM). Cap. típica certificada: ~18 TN/día.',
+    desnaturalizacion: 'Sistema de ensilaje con AQUAINOX 1430 L (2 500 kg/h). Operación en jornada de 8 h con 1–2 equipos.',
+    almacenamiento: 'Estanques de ~49 m³ reportados. Verificar número de estanques para superar las 20 TN mínimas.',
+  },
+  {
+    keywords: ['CERMAQ'],
+    extraccion: 'Cermaq usa LIFT-UP Novatech 8"–10" con Kaeser M50E. Capacidades reportadas entre 16–22 TN/día según módulo.',
+    desnaturalizacion: 'Ensilaje con AQUAINOX 1430 L o OCEA SW-700. Cap. desnaturalización frecuentemente alta (>50 TN/día) en módulos grandes.',
+    almacenamiento: 'Almacenamiento habitual en rangos de 50–80 m³. Centro Aguantao: 59.78 TN reportadas.',
+  },
+  {
+    keywords: ['AQUACHILE'],
+    extraccion: 'AquaChile emplea LIFT-UP Novatech o Polinox 10". Jornadas de 8 h; capacidad certificada típica: ~20 TN/día.',
+    desnaturalizacion: 'Uso frecuente de OPTIMO MIX OM 500 (2 100 kg/h) o AQUAINOX 1430 L. Sistema de ensilaje en 1 equipo.',
+    almacenamiento: 'Almacenamiento ajustado al mínimo regulatorio; centro Lalanca 2 reportó 20.58 TN. Verificar volumen real de estanques.',
+  },
+  {
+    keywords: ['BLUMAR'],
+    extraccion: 'Blumar utiliza LIFT-UP Novatech 10" con compresor Kaeser. Capacidades certificadas en torno a 20 TN/día.',
+    desnaturalizacion: 'Ensilaje con AQUAINOX 1430 L (1 equipo estándar). Operación de 8 h/día.',
+    almacenamiento: 'Estanques de 40–50 m³ en centros tipo. Centro Elena Norte registró 44.1 TN.',
+  },
+  {
+    keywords: ['CAMANCHACA'],
+    extraccion: 'Camanchaca opera con LIFT-UP Novatech 10" y compresores Atlas Copco XAS 97 o Kaeser M50E.',
+    desnaturalizacion: 'Ensilaje con AQUAINOX 1430 L o ACUIMASTER AC-715 LT. Velocidades nominales en torno a 1 700–2 500 kg/h.',
+    almacenamiento: 'Estanques de 35–45 m³ habituales. Centro Williams 1 reportó 39.2 TN.',
+  },
+  {
+    keywords: ['LOS FIORDOS', 'FIORDOS'],
+    extraccion: 'Los Fiordos (EWOS/Cargill) emplea LIFT-UP Novatech 10". Módulos grandes con múltiples jaulas simultáneas.',
+    desnaturalizacion: 'Sistema de ensilaje con AQUAINOX 1430 L. En módulos de alta biomasa se observan 2 equipos en paralelo.',
+    almacenamiento: 'Almacenamiento entre 40–70 m³ dependiendo del módulo. Verificar número y capacidad de estanques actuales.',
+  },
+  {
+    keywords: ['MULTIEXPORT', 'SALMONES MULTIEXPORT'],
+    extraccion: 'Multiexport usa LIFT-UP Novatech 10" o Scale AQ 10". Jornadas de 8 h con personal de 2–3 operarios.',
+    desnaturalizacion: 'Ensilaje con AQUAINOX 1430 L o OPTIMO MIX OM 500 según disponibilidad por zona.',
+    almacenamiento: 'Estanques de 30–50 m³. Verificar si el centro dispone de estanque de respaldo.',
+  },
+  {
+    keywords: ['AUSTRALIS', 'AUSTRALIS MAR'],
+    extraccion: 'Australis Mar (ahora parte de WH Group/Cooke) opera con LIFT-UP Novatech 10". Revisar actualizaciones post-fusión.',
+    desnaturalizacion: 'Ensilaje con AQUAINOX 1430 L histórico. Confirmar modelo vigente en inspección.',
+    almacenamiento: 'Estanques de 40–60 m³ típicos en sus centros. Verificar número de unidades activas.',
+  },
+  {
+    keywords: ['VENTISQUEROS'],
+    extraccion: 'Ventisqueros utiliza LIFT-UP Novatech 10" en la mayoría de sus centros. Compresor Kaeser M50E frecuente.',
+    desnaturalizacion: 'Ensilaje con AQUAINOX 1430 L o OCEA SW-700. Operación de 8 h en 1 equipo.',
+    almacenamiento: 'Almacenamiento habitual en 30–50 m³. Confirmar cantidad y estado de estanques.',
+  },
+  {
+    keywords: ['COOKE'],
+    extraccion: 'Cooke Aquaculture opera con LIFT-UP Novatech 10". Revisar manual de equipos actualizado del centro.',
+    desnaturalizacion: 'Ensilaje con AQUAINOX 1430 L en configuración estándar. Confirmar con documentación del centro.',
+    almacenamiento: 'Verificar número de estanques: Cooke suele operar con 2–3 unidades de 20 m³ c/u.',
+  },
+];
+
+export const FORMATOS_MODULO_CONOCIDOS = [
+  '20 jaulas, tipo Metálicas',
+  '24 jaulas, tipo Metálicas',
+  '28 jaulas, tipo Metálicas',
+  '30 jaulas, tipo Metálicas',
+  '20 jaulas, tipo HDPE',
+  '24 jaulas, tipo HDPE',
+  '16 jaulas, tipo Metálicas',
+  '12 jaulas, tipo Metálicas',
+  '18 jaulas, tipo Metálicas',
+];
+
+export const TAMANOS_JAULAS_CONOCIDOS = [
+  '20 x 20 metros',
+  '25 x 25 metros',
+  '28 x 28 metros',
+  '30 x 30 metros',
+  '32 x 32 metros',
+  '35 x 35 metros',
+  '40 x 40 metros',
+];
+
+export const NOMBRES_AN_CONOCIDOS = [
+  'A/N Pontón Alimentador',
+  'A/N Pontón de Servicio',
+  'A/N Pontón Principal',
+  'A/N Pontón Ensilaje',
+  'A/N Barcaza Alimentadora',
+  'A/N Barcaza de Servicio',
+  'A/N Plataforma de Servicio',
+];
+
+export const CATALOGO_FOTOS: Record<'Extracción' | 'Desnaturalización' | 'Almacenamiento' | 'General' | 'Portada' | 'Ubicación Espacial', string[]> = {
   'Extracción': [
     // Compresores
     'Electrocompresor Kaeser Mobilair M50E.',
@@ -200,6 +342,22 @@ export const CATALOGO_FOTOS: Record<'Extracción' | 'Desnaturalización' | 'Alma
     'Generador de {kva} kVA.',
     // Orden y Limpieza
     'Área limpia, manejo de residuos eficiente.',
+  ],
+  'Portada': [
+    'Vista aérea del centro de cultivo.',
+    'Vista aérea del módulo de cultivo.',
+    'Vista panorámica del centro de cultivo.',
+    'Vista frontal del módulo de cultivo.',
+    'Vista general de instalaciones del centro.',
+  ],
+  'Ubicación Espacial': [
+    'Vista aérea general del centro — contexto geográfico.',
+    'Vista lateral del módulo de cultivo.',
+    'Vista de jaulas y estructura del módulo.',
+    'Vista del pontón y sistema de apoyo.',
+    'Vista aérea del sector de ensilaje y almacenamiento.',
+    'Vista del centro desde la orilla.',
+    'Vista diagonal del arreglo de jaulas.',
   ],
 };
 
@@ -340,3 +498,10 @@ export const HISTORICO_CERTIFICACIONES = [
     hes: "OK"
   }
 ];
+
+export const OPCIONES_INCINERADOR = {
+  sistema_carga: ['CARGA MANUAL TACHOS 60L', 'N/A'],
+  sistema_descarga: ['MANUAL HACIA MAXISACOS', 'N/A'],
+  disposicion_final: ['VERTEDERO MUNICIPAL PTA ARENAS', 'N/A'],
+  almacenamiento_gas: ['4000L X 2 = 8.000L GAS GLP', '4000L X 4 = 16.000L GAS GLP', 'N/A'],
+};

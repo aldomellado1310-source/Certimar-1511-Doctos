@@ -38,6 +38,9 @@ const BASE_EXTRACTION_PARAMS = {
   potencia_cfm: 185,
   capacidad_receptor_bins_litros: 500,
   disponibilidad_base_fd: 0.90,
+  motocompresores_por_jaula: 1,
+  ubicacion_compresor: 'A/N Pontón',
+  observacion_sistema: '',
 };
 
 const BASE_EQUIPOS_ENSILAJE = {
@@ -52,6 +55,7 @@ const BASE_EQUIPOS_ENSILAJE = {
   cuenta_con_recirculacion_acido: true,
   material_construccion: 'Acero inoxidable AISI 304',
   tipo_sistema: 'Ensilaje' as const,
+  estado_olla: 'Bueno' as const,
 };
 
 const BASE_BATCH_PARAMS = {

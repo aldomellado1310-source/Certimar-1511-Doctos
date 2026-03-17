@@ -63,8 +63,10 @@ export function calculateExtraction(
   const kg_bins = biomasa_max_kg * parametros.factor_ajuste_biomasa;
 
   // Res. Exenta N°1511/2021 — Umbral mínimo Extracción: 15 TN/día
+  // motocompresores_por_jaula multiplica las líneas de extracción paralelas por jaula
+  const motocomp = parametros.motocompresores_por_jaula > 0 ? parametros.motocompresores_por_jaula : 1;
   const capacidad_diaria_ton =
-    (parametros.jaulas_simultaneas * ciclos_por_dia * kg_bins * eta * fd) / 1000;
+    (parametros.jaulas_simultaneas * motocomp * ciclos_por_dia * kg_bins * eta * fd) / 1000;
 
   return {
     ciclos_por_dia: parseFloat(ciclos_por_dia.toFixed(2)),
@@ -97,11 +99,12 @@ export function calculateExtraction(
 export function calculateDenaturation(
   equipos: DenaturationData['equipos'],
   parametros_batch: DenaturationData['parametros_batch'],
-  parametros_incineracion: DenaturationData['parametros_incineracion']
+  parametros_incineracion: DenaturationData['parametros_incineracion'],
+  incinerador?: DenaturationData['incinerador']
 ): DenaturationData['resultados'] {
   const total_work_min = equipos.horas_funcionamiento_dia * 60;
 
-  // --- Ruta: Incineración Térmica ---
+  // --- Ruta: Incineración Térmica (primary) ---
   if (equipos.tipo_sistema === 'Incineración') {
     // Res. Exenta N°1511/2021 — Umbral mínimo Desnaturalización: 15 TN/día
     const capacity_ton =
@@ -109,6 +112,8 @@ export function calculateDenaturation(
     return {
       duracion_total_batch_min: 0,
       numero_batches_dia: 0,
+      capacidad_ensilaje_ton: 0,
+      capacidad_incinerador_ton: 0,
       capacidad_diaria_ton: parseFloat(capacity_ton.toFixed(2)),
       cumple_norma: capacity_ton >= MIN_DENATURATION_TON_DIA,
       observacion_automatica:
@@ -134,6 +139,8 @@ export function calculateDenaturation(
     return {
       duracion_total_batch_min: 0,
       numero_batches_dia: 0,
+      capacidad_ensilaje_ton: 0,
+      capacidad_incinerador_ton: 0,
       capacidad_diaria_ton: 0,
       cumple_norma: false,
       observacion_automatica:
@@ -146,6 +153,14 @@ export function calculateDenaturation(
   const capacity_kg = num_batches * parametros_batch.kilos_por_batch;
   const capacity_ton = capacity_kg / 1000;
 
+  // Secondary incinerador capacity (only for Ensilaje primary route)
+  const capacidad_incinerador_ton =
+    incinerador?.activo
+      ? (incinerador.capacidad_carga_kg_h * incinerador.horas_funcionamiento_dia) / 1000
+      : 0;
+
+  const combined_ton = capacity_ton + capacidad_incinerador_ton;
+
   const observacion =
     `La eficiencia del sistema depende directamente del tiempo total de cada ciclo (batch + pausa)... ` +
     `(kg/batch=${parametros_batch.kilos_por_batch} -- Horas de trabajo diario: ` +
@@ -154,14 +169,19 @@ export function calculateDenaturation(
     `Número de batches por día: ${total_work_min} ÷ ${batch_duration.toFixed(2)} = ` +
     `${num_batches.toFixed(2)} batches ` +
     `Capacidad diaria ${parametros_batch.kilos_por_batch} kg * ` +
-    `${num_batches.toFixed(2)} = ${capacity_kg.toFixed(0)} kg = ${capacity_ton.toFixed(2)} toneladas`;
+    `${num_batches.toFixed(2)} = ${capacity_kg.toFixed(0)} kg = ${capacity_ton.toFixed(2)} toneladas` +
+    (incinerador?.activo
+      ? ` + Incinerador secundario: ${capacidad_incinerador_ton.toFixed(2)} TN/día. Total combinado: ${combined_ton.toFixed(2)} TN/día.`
+      : '');
 
   // Res. Exenta N°1511/2021 — Umbral mínimo Desnaturalización: 15 TN/día
   return {
     duracion_total_batch_min: parseFloat(batch_duration.toFixed(2)),
     numero_batches_dia: parseFloat(num_batches.toFixed(2)),
-    capacidad_diaria_ton: parseFloat(capacity_ton.toFixed(2)),
-    cumple_norma: capacity_ton >= MIN_DENATURATION_TON_DIA,
+    capacidad_ensilaje_ton: parseFloat(capacity_ton.toFixed(2)),
+    capacidad_incinerador_ton: parseFloat(capacidad_incinerador_ton.toFixed(2)),
+    capacidad_diaria_ton: parseFloat(combined_ton.toFixed(2)),
+    cumple_norma: combined_ton >= MIN_DENATURATION_TON_DIA,
     observacion_automatica: observacion,
   };
 }
