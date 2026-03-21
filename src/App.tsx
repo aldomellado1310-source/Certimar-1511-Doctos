@@ -1997,12 +1997,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // ── Header: fondo blanco + ondas + logo izquierda + banda azul marino ──
       doc.setFillColor(255, 255, 255);
       doc.rect(0, 0, W, 22, 'F');
-      // Ondas decorativas sobre fondo blanco del header (también con opacidad)
-      doc.setGState(gState25);
-      [4, 8, 12, 16].forEach((y, idx) =>
-        drawWave(y, 1.0 + (idx % 3) * 0.35)
-      );
-      doc.setGState(gState100);
+      // Líneas horizontales muy sutiles — color casi blanco para simular 5% opacidad
+      doc.setDrawColor(246, 248, 252);
+      doc.setLineWidth(0.15);
+      for (let ly = 3; ly < 17; ly += 3.5) doc.line(0, ly, W, ly);
       // Logo a la izquierda
       if (logo) {
         const props = doc.getImageProperties(logo);
