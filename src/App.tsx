@@ -64,6 +64,7 @@ import {
   buildActaInspeccionData,
 } from './domain/documents';
 import { generateActaPdf } from './domain/actaHtml';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 // ─── Credenciales desde variables de entorno (.env — no subir a git) ────────
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
@@ -793,6 +794,7 @@ const WelcomeScreen = ({
         setGoogleEmail(email);
         setStep('pin');
       } else {
+        localStorage.setItem('certimar-session', JSON.stringify({ role: 'reader', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
         setUserRole('reader');
         setShowWelcome(false);
       }
@@ -807,9 +809,11 @@ const WelcomeScreen = ({
 
   const handlePin = () => {
     if (ADMIN_PIN && pin === ADMIN_PIN) {
+      localStorage.setItem('certimar-session', JSON.stringify({ role: 'admin', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
       setUserRole('admin');
       setShowWelcome(false);
     } else if (pin === '') {
+      localStorage.setItem('certimar-session', JSON.stringify({ role: 'reader', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
       setUserRole('reader');
       setShowWelcome(false);
     } else {
@@ -1078,14 +1082,17 @@ export default function App() {
   });
 
   // Restaurar URLs de imágenes desde IndexedDB al montar
+  const [imagesRestoring, setImagesRestoring] = useState(false);
   useEffect(() => {
+    setImagesRestoring(true);
     idbGetAll().then(urlMap => {
-      if (!Object.keys(urlMap).length) return;
-      setState(prev => ({
-        ...prev,
-        images: prev.images.map(img => ({ ...img, url: urlMap[img.id] ?? img.url }))
-      }));
-    });
+      if (Object.keys(urlMap).length) {
+        setState(prev => ({
+          ...prev,
+          images: prev.images.map(img => ({ ...img, url: urlMap[img.id] ?? img.url }))
+        }));
+      }
+    }).finally(() => setImagesRestoring(false));
   }, []); // solo al montar
 
   // Auto-guardado en localStorage — SIN URLs (van en IndexedDB)
@@ -1237,21 +1244,42 @@ export default function App() {
   // Importar borrador desde archivo JSON
   const importDraftRef = useRef<HTMLInputElement>(null);
 
-  // Registro de Visita PDF — almacenado como ArrayBuffer en memoria (no en estado)
-  const registroVisitaRef = useRef<ArrayBuffer | null>(null);
+  // Registro de Visita PDF — almacenado como snapshots JPEG (comprimidos) por página
+  const registroVisitaRef = useRef<string[] | null>(null);
   const [registroVisitaName, setRegistroVisitaName] = useState<string | null>(null);
+  const [registroVisitaProcessing, setRegistroVisitaProcessing] = useState(false);
+  const [registroVisitaProgress, setRegistroVisitaProgress] = useState(0);
   const registroVisitaInputRef = useRef<HTMLInputElement>(null);
 
-  const handleRegistroVisitaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRegistroVisitaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || file.type !== 'application/pdf') return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      registroVisitaRef.current = ev.target?.result as ArrayBuffer;
-      setRegistroVisitaName(file.name);
-    };
-    reader.readAsArrayBuffer(file);
     e.target.value = '';
+    setRegistroVisitaProcessing(true);
+    setRegistroVisitaProgress(0);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist');
+      GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+      const pdf = await getDocument({ data: arrayBuffer }).promise;
+      const snapshots: string[] = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d')!;
+        await page.render({ canvasContext: ctx as any, canvas, viewport }).promise;
+        snapshots.push(canvas.toDataURL('image/jpeg', 0.80));
+        setRegistroVisitaProgress(Math.round((i / pdf.numPages) * 100));
+      }
+      registroVisitaRef.current = snapshots;
+      setRegistroVisitaName(file.name);
+    } finally {
+      setRegistroVisitaProcessing(false);
+      setRegistroVisitaProgress(0);
+    }
   };
   const importDraft = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1386,8 +1414,25 @@ export default function App() {
     setActiveTab('general');
   };
   const centerCodeRef = useRef<HTMLInputElement>(null);
-  const [showWelcome, setShowWelcome] = useState(true);
-  const [userRole, setUserRole] = useState<'admin' | 'reader' | null>(null);
+  const SESSION_KEY = 'certimar-session';
+  const SESSION_TTL = 8 * 60 * 60 * 1000; // 8 horas
+
+  const readSession = (): { role: 'admin' | 'reader'; expiry: number } | null => {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      if (!s?.role || !s?.expiry || Date.now() > s.expiry) {
+        localStorage.removeItem(SESSION_KEY);
+        return null;
+      }
+      return s;
+    } catch { return null; }
+  };
+
+  const savedSession = readSession();
+  const [showWelcome, setShowWelcome] = useState(!savedSession);
+  const [userRole, setUserRole] = useState<'admin' | 'reader' | null>(savedSession?.role ?? null);
   const isAdmin = userRole === 'admin';
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() =>
     typeof window !== 'undefined' && window.innerWidth < 768
@@ -1772,7 +1817,14 @@ export default function App() {
       reader.readAsDataURL(file);
     });
 
+  const [imagesUploadProgress, setImagesUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  const [aiClassifying, setAiClassifying] = useState<Set<string>>(new Set());
+  const [aiMeta, setAiMeta] = useState<Record<string, { confianza: number; justificacion: string }>>({});
+
   const addImage = (files: File[]) => {
+    if (!files.length) return;
+    setImagesUploadProgress({ done: 0, total: files.length });
+    let done = 0;
     files.forEach(async (file) => {
       const base64 = await compressImage(file);
       const id = Math.random().toString(36).substr(2, 9);
@@ -1783,6 +1835,29 @@ export default function App() {
         observacion: 'CUMPLE CON LO DECLARADO',
       };
       setState(prev => ({ ...prev, images: [...prev.images, newImg] }));
+      done += 1;
+      if (done >= files.length) {
+        setImagesUploadProgress(null);
+      } else {
+        setImagesUploadProgress({ done, total: files.length });
+      }
+
+      // Clasificación IA — no bloquea la subida
+      if (CLAUDE_API_KEY) {
+        setAiClassifying(prev => new Set(prev).add(id));
+        classifyImage(base64).then(result => {
+          if (result) {
+            setState(prev => ({
+              ...prev,
+              images: prev.images.map(img =>
+                img.id === id ? { ...img, seccion: result.seccion } : img
+              ),
+            }));
+            setAiMeta(prev => ({ ...prev, [id]: { confianza: result.confianza, justificacion: result.justificacion } }));
+          }
+          setAiClassifying(prev => { const s = new Set(prev); s.delete(id); return s; });
+        });
+      }
     });
   };
 
@@ -1833,6 +1908,69 @@ export default function App() {
     } catch { return null; }
   };
 
+  const CLAUDE_API_KEY = import.meta.env.VITE_CLAUDE_API_KEY as string | undefined;
+
+  const CLASSIFY_SYSTEM = `Actúa como un experto certificador ambiental de la industria acuícola chilena (Norma D.S. N° 320 y Res. 1511).
+Tu tarea es analizar la imagen proporcionada de un centro de cultivo de salmones y clasificarla estrictamente en UNA de las siguientes categorías, devolviendo la respuesta en formato JSON.
+
+CATEGORÍAS PERMITIDAS Y SUS CARACTERÍSTICAS:
+1. "PORTADA": Vistas aéreas, paisajes marítimos, vista general de pontones o jaulas de cultivo.
+2. "UBICACION": Vistas de dron o satélite mostrando la cuadrícula de jaulas en el mar, para ubicar espacialmente el centro.
+3. "EXTRACCION": Compresores de aire industriales, mangas neumáticas, bins plásticos de transporte, tuberías de HDPE y válvulas asociadas a las jaulas.
+4. "DESNATURALIZACION": Ollas trituradoras de acero inoxidable (ensilaje), motores prepicadores, tableros eléctricos de control, bombas de ácido, mesas de necropsia, lavaojos de emergencia, extintores, o chimeneas/cámaras de incineradores.
+5. "ALMACENAMIENTO": Estanques cúbicos IBC (blancos con rejilla), grandes plataformas de fondeo, agrupaciones de bidones azules.
+6. "GENERAL": Fotografías de hojas de papel, actas de inspección, escritura a mano, firmas, o imágenes que no encajan en las anteriores.
+
+INSTRUCCIONES ADICIONALES:
+- Si detectas acero inoxidable cilíndrico, es altamente probable que sea "DESNATURALIZACION".
+- Si la imagen es claramente aérea/dron mostrando jaulas en cuadrícula en el mar, usa "UBICACION".
+- Si la imagen es una panorámica del centro o fachada del pontón, usa "PORTADA".
+
+FORMATO DE SALIDA (Solo JSON puro, sin markdown):
+{"categoria_sugerida":"NOMBRE","confianza":0.95,"justificacion_breve":"..."}`;
+
+  const AI_SECCION_MAP: Record<string, ImageSeccion> = {
+    PORTADA: 'Portada',
+    UBICACION: 'Ubicación Espacial',
+    EXTRACCION: 'Extracción',
+    DESNATURALIZACION: 'Desnaturalización',
+    ALMACENAMIENTO: 'Almacenamiento',
+    GENERAL: 'General',
+  };
+
+  async function classifyImage(base64: string): Promise<{ seccion: ImageSeccion; confianza: number; justificacion: string } | null> {
+    if (!CLAUDE_API_KEY) return null;
+    try {
+      const mediaType = base64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
+      const imageData = base64.split(',')[1];
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': CLAUDE_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-allow-browser': 'true',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 200,
+          system: CLASSIFY_SYSTEM,
+          messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageData } },
+            { type: 'text', text: 'Clasifica esta imagen.' }
+          ]}],
+        }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const parsed = JSON.parse(data.content[0].text);
+      const seccion: ImageSeccion = AI_SECCION_MAP[parsed.categoria_sugerida] ?? 'General';
+      return { seccion, confianza: parsed.confianza ?? 0, justificacion: parsed.justificacion_breve ?? '' };
+    } catch {
+      return null;
+    }
+  }
+
   const addInformePageFrame = (doc: jsPDF, docCode: string, logo: string | null, pageLabel: string) => {
     const n = (doc as any).internal.getNumberOfPages();
     // Empieza en la p.2 — la portada (p.1) tiene su propio diseño de cabecera/pie
@@ -1840,10 +1978,12 @@ export default function App() {
       doc.setPage(i);
       const W = 215.9, H = 279.4;
 
-      // ── Helper onda decorativa #a8c8e8 ──
+      // ── Helper onda decorativa #a8c8e8 — con opacidad para no tapar el texto ──
+      const gState25 = (doc as any).GState({ opacity: 0.25, 'fill-opacity': 0.25 });
+      const gState100 = (doc as any).GState({ opacity: 1, 'fill-opacity': 1 });
       const drawWave = (y0: number, amp: number) => {
         doc.setDrawColor(168, 200, 232);
-        doc.setLineWidth(0.3);
+        doc.setLineWidth(0.35);
         const w = W / 4;
         doc.lines(
           [[w*0.38,-amp,w*0.62,-amp,w,0],[w*0.38,amp,w*0.62,amp,w,0],
@@ -1851,39 +1991,39 @@ export default function App() {
           0, y0, [1, 1], 'S', false
         );
       };
-      // Ondas de marca de agua en el cuerpo (debajo del header)
-      [60, 80, 105, 130, 155, 180, 205, 230].forEach((y, idx) =>
-        drawWave(y, 1.0 + (idx % 3) * 0.35)
-      );
+      // Las ondas del cuerpo se dibujan ANTES del contenido (via drawBodyWaves) para
+      // quedar detrás del texto. Aquí solo dibujamos header + footer.
 
       // ── Header: fondo blanco + ondas + logo izquierda + banda azul marino ──
       doc.setFillColor(255, 255, 255);
-      doc.rect(0, 0, W, 50, 'F');
-      // Ondas decorativas sobre fondo blanco del header
-      [8, 14, 20, 26, 32, 38, 44].forEach((y, idx) =>
+      doc.rect(0, 0, W, 22, 'F');
+      // Ondas decorativas sobre fondo blanco del header (también con opacidad)
+      doc.setGState(gState25);
+      [4, 8, 12, 16].forEach((y, idx) =>
         drawWave(y, 1.0 + (idx % 3) * 0.35)
       );
-      // Logo a la izquierda (igual que certificado)
+      doc.setGState(gState100);
+      // Logo a la izquierda
       if (logo) {
         const props = doc.getImageProperties(logo);
-        const maxW = 52, maxH = 40;
+        const maxW = 30, maxH = 15;
         const scale = Math.min(maxW / props.width, maxH / props.height);
         const imgW = props.width * scale, imgH = props.height * scale;
-        doc.addImage(logo, 'PNG', 5 + (maxW - imgW) / 2, 5 + (maxH - imgH) / 2, imgW, imgH);
+        doc.addImage(logo, 'PNG', 3 + (maxW - imgW) / 2, 2 + (maxH - imgH) / 2, imgW, imgH);
       }
       // Normativa y folio
       doc.setTextColor(26, 58, 92);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
-      doc.text('Res. Exenta N°1511/2021 — D.S. N°320', 62, 11);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+      doc.text('Res. Exenta N°1511/2021 — D.S. N°320', 37, 6);
       doc.setFont('helvetica', 'bold');
-      doc.text(docCode, W - 6, 11, { align: 'right' });
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-      doc.text(pageLabel, W - 6, 19, { align: 'right' });
-      // Banda azul marino #1a3a5c al pie del header
+      doc.text(docCode, W - 5, 6, { align: 'right' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+      doc.text(pageLabel, W - 5, 12, { align: 'right' });
+      // Banda azul marino al pie del header (subida)
       doc.setFillColor(26, 58, 92);
-      doc.rect(0, 44, W, 8, 'F');
+      doc.rect(0, 17, W, 4, 'F');
       doc.setFillColor(10, 28, 70);
-      doc.rect(0, 51, W, 1.5, 'F');
+      doc.rect(0, 21, W, 0.8, 'F');
 
       // ── Footer liviano (igual que certificado) ──
       doc.setDrawColor(26, 58, 92);
@@ -1944,11 +2084,11 @@ export default function App() {
 
       // Header blanco con acento azul — decoración sutil solo en la cabecera
       doc.setFillColor(255, 255, 255);
-      doc.rect(0, 0, 210, 50, 'F');
+      doc.rect(0, 0, 210, 38, 'F');
       doc.setFillColor(...AZUL);
-      doc.rect(0, 44, 210, 6, 'F');
+      doc.rect(0, 32, 210, 6, 'F');
       doc.setFillColor(10, 28, 70);
-      doc.rect(0, 48.5, 210, 1.5, 'F');
+      doc.rect(0, 37, 210, 1.5, 'F');
 
 // ── Ondas decorativas + salmones acuarelados en el banner ─────────────
         // (() => {
@@ -2138,26 +2278,26 @@ export default function App() {
       // Logo con proporción correcta
       if (logo) {
         const props = doc.getImageProperties(logo);
-        const maxW = 52, maxH = 40;
+        const maxW = 40, maxH = 28;
         const scale = Math.min(maxW / props.width, maxH / props.height);
         const imgW = props.width * scale;
         const imgH = props.height * scale;
-        doc.addImage(logo, 'PNG', 5 + (maxW - imgW) / 2, 5 + (maxH - imgH) / 2, imgW, imgH);
+        doc.addImage(logo, 'PNG', 5 + (maxW - imgW) / 2, 3 + (maxH - imgH) / 2, imgW, imgH);
       }
       doc.setTextColor(...AZUL);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
-      doc.text('Res. Exenta N°1511/2021 — D.S. N°320', 62, 11);
+      doc.text('Res. Exenta N°1511/2021 — D.S. N°320', 50, 8);
       doc.setFont('helvetica', 'bold');
-      doc.text(`${codigo}_CERTIFICADO`, 204, 11, { align: 'right' });
+      doc.text(`${codigo}_CERTIFICADO`, 204, 8, { align: 'right' });
       doc.setFont('helvetica', 'normal');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13);
-      doc.text('CERTIFICADO DE SISTEMAS DE', 62, 23);
-      doc.text('MANEJO DE MORTALIDAD', 62, 32);
+      doc.setFontSize(12);
+      doc.text('CERTIFICADO DE SISTEMAS DE', 50, 17);
+      doc.text('MANEJO DE MORTALIDAD', 50, 25);
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8.5);
-      doc.text(`Centro: ${cert.identificacion['Código Centro']} — ${cert.identificacion['Nombre Centro']}`, 62, 40);
+      doc.setFontSize(8);
+      doc.text(`Centro: ${cert.identificacion['Código Centro']} — ${cert.identificacion['Nombre Centro']}`, 50, 31);
       doc.setTextColor(0, 0, 0);
 
       // ── Marca de agua: olas multicolor (paleta teal) ────────────────────────
@@ -2182,7 +2322,7 @@ export default function App() {
       };
       const drawWatermarkOnPage = (yStart: number) => {
         const yEnd = 282;
-        doc.setGState((doc as any).GState({ opacity: 0.45, 'fill-opacity': 0.45 }));
+        doc.setGState((doc as any).GState({ opacity: 0.35, 'fill-opacity': 0.35 }));
         let row = 0;
         for (let wy = yStart + 6; wy < yEnd; wy += 13) {
           const color = PALETTE[row % PALETTE.length];
@@ -2195,11 +2335,12 @@ export default function App() {
         doc.setLineWidth(0.2);
       };
 
-      // Página 1: olas desde y=56 (justo debajo del header)
-      drawWatermarkOnPage(56);
+      // Página 1: olas desde y=42 (justo debajo del header reducido)
+      drawWatermarkOnPage(42);
 
       autoTable(doc, {
-        startY: 56,
+        startY: 42,
+        margin: { top: 30 },
         head: [['IDENTIFICACIÓN DEL CENTRO', '']],
         body: Object.entries(cert.identificacion).map(([k, v]) => [k, v]),
         theme: 'striped',
@@ -2207,7 +2348,7 @@ export default function App() {
         alternateRowStyles: { fillColor: GRIS },
         columnStyles: { 0: { fontStyle: 'bold', cellWidth: 65 } },
         styles: { fontSize: 9, cellPadding: 3 },
-        didDrawPage: (data: any) => { if (data.pageNumber > 1) { drawWatermarkOnPage(14); } },
+        didDrawPage: (data: any) => { if (data.pageNumber > 1) { drawWatermarkOnPage(30); } },
       });
 
       const bodyCapacidades: string[][] = [];
@@ -2224,6 +2365,7 @@ export default function App() {
         theme: 'grid',
         headStyles: { fillColor: AZUL, textColor: [255,255,255], fontStyle: 'bold', fontSize: 9 },
         styles: { fontSize: 9, cellPadding: 3 },
+        margin: { top: 42 },
         didParseCell: (data: any) => {
           if (data.section === 'body' && data.column.index === 3) {
             const capIdx = capByRow[data.row.index];
@@ -2231,7 +2373,7 @@ export default function App() {
             data.cell.styles.fontStyle = 'bold';
           }
         },
-        didDrawPage: (data: any) => { if (data.pageNumber > 1) { drawWatermarkOnPage(14); } },
+        didDrawPage: (data: any) => { if (data.pageNumber > 1) { drawWatermarkOnPage(42); } },
       });
 
       const verdY = ((doc as any).lastAutoTable?.finalY ?? 180) + 8;
@@ -2304,37 +2446,54 @@ export default function App() {
       const doc = new jsPDF({ format: 'letter', compress: true });
       const PW = 215.9, PH = 279.4;
 
+      // Dibuja olas de marca de agua en la página actual — llamar ANTES del contenido
+      // para que las olas queden detrás del texto.
+      const drawBodyWaves = () => {
+        const gS25  = (doc as any).GState({ opacity: 0.25, 'fill-opacity': 0.25 });
+        const gS100 = (doc as any).GState({ opacity: 1,    'fill-opacity': 1 });
+        doc.setDrawColor(168, 200, 232);
+        doc.setLineWidth(0.35);
+        const bw = PW / 4;
+        const wv = (y0: number, amp: number) =>
+          doc.lines([[bw*0.38,-amp,bw*0.62,-amp,bw,0],[bw*0.38,amp,bw*0.62,amp,bw,0],
+                     [bw*0.38,-amp,bw*0.62,-amp,bw,0],[bw*0.38,amp,bw*0.62,amp,bw,0]],
+                    0, y0, [1, 1], 'S', false);
+        doc.setGState(gS25);
+        [26, 42, 60, 80, 102, 126, 152, 180, 210].forEach((y, idx) => wv(y, 1.0 + (idx % 3) * 0.35));
+        doc.setGState(gS100);
+      };
+
       // ── Portada ──
       // Banda azul superior (con espacio para logo a la derecha y título a la izquierda)
       doc.setFillColor(...AZUL_H);
-      doc.rect(0, 0, PW, 50, 'F');
+      doc.rect(0, 0, PW, 38, 'F');
       doc.setFillColor(31, 56, 100);
-      doc.rect(0, 48, PW, 2, 'F');
+      doc.rect(0, 36, PW, 2, 'F');
       // docCode top-left
       doc.setFontSize(8); doc.setTextColor(255,255,255); doc.setFont('helvetica','normal');
-      doc.text(docCode, 8, 9);
+      doc.text(docCode, 8, 8);
       // Logo top-right dentro del banner azul
-      if (logo) doc.addImage(logo, 'PNG', PW - 58, 4, 52, 38);
+      if (logo) doc.addImage(logo, 'PNG', PW - 46, 3, 40, 28);
       // Título a la izquierda del banner
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-      doc.text('Inspección de Certificación', 10, 22);
-      doc.setFontSize(14);
-      doc.text('Sistema de Mortalidad', 10, 33);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
-      doc.text('Res. Exenta N°1511/2021', 10, 42);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+      doc.text('Inspección de Certificación', 10, 16);
+      doc.setFontSize(12);
+      doc.text('Sistema de Mortalidad', 10, 25);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      doc.text('Res. Exenta N°1511/2021', 10, 33);
 
       // Banda de identificación del centro (azul oscuro)
       doc.setFillColor(31, 56, 100);
-      doc.rect(0, 50, PW, 18, 'F');
+      doc.rect(0, 38, PW, 16, 'F');
       doc.setTextColor(255,255,255);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-      doc.text(`CENTRO ${codigo}  —  ${cc.nombre_centro}`, PW / 2, 59, { align: 'center' });
+      doc.text(`CENTRO ${codigo}  —  ${cc.nombre_centro}`, PW / 2, 46, { align: 'center' });
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
-      doc.text(`${cc.titular}  |  ACS: ${cc.acs}`, PW / 2, 65, { align: 'center' });
+      doc.text(`${cc.titular}  |  ACS: ${cc.acs}`, PW / 2, 51, { align: 'center' });
 
       // Fotos de portada: 1 grande o 2–3 en fila
       const fotosPortada = correctedImgs.filter(img => img.seccion === 'Portada');
-      const FOTO_TOP = 72;
+      const FOTO_TOP = 58;
       if (fotosPortada.length === 1) {
         try { doc.addImage(fotosPortada[0].url, 'JPEG', (PW - 150) / 2, FOTO_TOP, 150, 110); } catch { /* skip */ }
       } else if (fotosPortada.length >= 2) {
@@ -2371,10 +2530,12 @@ export default function App() {
       // ── helpers de posicionamiento ──
       const CONTENT_BOTTOM = PH - 22;
       const lastY = () => ((doc as any).lastAutoTable?.finalY ?? 30);
+      const HEADER_CONTENT_Y = 25; // cabecera 22mm + 3mm margen
       const ensureSpace = (needed: number) => {
         if (lastY() + needed > CONTENT_BOTTOM) {
           doc.addPage();
-          (doc as any).lastAutoTable = { finalY: 20 };
+          drawBodyWaves();
+          (doc as any).lastAutoTable = { finalY: HEADER_CONTENT_Y };
         }
       };
       const sectionTitle = (text: string, size: number, y: number) => {
@@ -2386,10 +2547,12 @@ export default function App() {
 
       // ── Sección 1: Identificación del centro ──
       doc.addPage();
-      sectionTitle('1  Identificación del centro', 14, 35);
+      drawBodyWaves();
+      sectionTitle('1  Identificación del centro', 14, 30);
 
       autoTable(doc, {
-        startY: 40,
+        startY: 36,
+        margin: { top: 25 },
         pageBreak: 'avoid',
         body: [
           ['Empresa',              cc.titular],
@@ -2436,10 +2599,12 @@ export default function App() {
 
       // 1.2 Información plataforma y circuitos
       doc.addPage();
-      sectionTitle('1.2  Información plataforma y circuitos', 12, 35);
+      drawBodyWaves();
+      sectionTitle('1.2  Información plataforma y circuitos', 12, 30);
 
       autoTable(doc, {
-        startY: 40,
+        startY: 36,
+        margin: { top: 25 },
         pageBreak: 'avoid',
         body: [
           [{ content: 'Información Plataforma, Equipos y Circuitos', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold' } }],
@@ -2520,7 +2685,8 @@ export default function App() {
 
       // ── Sección 2: Metodología ──
       doc.addPage();
-      sectionTitle('2  Metodología de trabajo para la inspección del módulo', 14, 35);
+      drawBodyWaves();
+      sectionTitle('2  Metodología de trabajo para la inspección del módulo', 14, 30);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
       doc.setTextColor(0,0,0);
       const metText = [
@@ -2530,7 +2696,7 @@ export default function App() {
         '',
         'La metodología utilizada para la certificación de las capacidades de los sistemas o equipos de extracción, desnaturalización y almacenamiento de mortalidad en centros de cultivos de salmones, están en conformidad con el artículo 25 del D.S. Nº 15 de 2011, del Ministerio de Economía, Fomento y Turismo. La información se tabula empleando código de colores:',
       ];
-      let curY = 42;
+      let curY = 38;
       for (const line of metText) {
         const lines = doc.splitTextToSize(line, 182);
         doc.text(lines, 14, curY);
@@ -2576,6 +2742,7 @@ export default function App() {
           ensureSpace(IMG_ROW_H + 14);
           autoTable(doc, {
             startY: lastY() + 4,
+            margin: { top: 25 },
             rowPageBreak: 'avoid',
             head: [['DECLARADO / Estado', '#1', '#2', '#3']],
             body: [[
@@ -2648,6 +2815,7 @@ export default function App() {
           ensureSpace(AERIAL_H + 16);
           autoTable(doc, {
             startY: lastY() + 6,
+            margin: { top: 25, left: marginLeft },
             rowPageBreak: 'avoid',
             body: [[
               { content: '', styles: { cellWidth: AERIAL_W, minCellHeight: AERIAL_H, cellPadding: 0 } },
@@ -2656,7 +2824,6 @@ export default function App() {
             theme: 'plain',
             styles: { fontSize: 0, cellPadding: 3 },
             columnStyles: { 0: { cellWidth: AERIAL_W }, 1: { cellWidth: AERIAL_W } },
-            margin: { left: marginLeft },
             didDrawCell: (data: any) => {
               if (data.section !== 'body') return;
               const img = pair[data.column.index];
@@ -2679,32 +2846,36 @@ export default function App() {
       };
 
       doc.addPage();
-      sectionTitle('3  Inspección de terreno', 14, 35);
+      drawBodyWaves();
+      sectionTitle('3  Inspección de terreno', 14, 30);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
       doc.setTextColor(60,60,60);
-      doc.text('A continuación, se presentan los resultados de la inspección con desviaciones y observaciones de lo declarado vs lo inspeccionado en terreno.', 14, 42);
-      sectionTitle('3.1  Extracción', 12, 52);
-      autoTable(doc, { startY: 56, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
+      doc.text('A continuación, se presentan los resultados de la inspección con desviaciones y observaciones de lo declarado vs lo inspeccionado en terreno.', 14, 38);
+      sectionTitle('3.1  Extracción', 12, 46);
+      autoTable(doc, { startY: 51, margin: { top: 25 }, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
       addPhotoSection('Extracción');
 
       doc.addPage();
-      sectionTitle('3.2  Desnaturalización.', 12, 35);
-      autoTable(doc, { startY: 39, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
+      drawBodyWaves();
+      sectionTitle('3.2  Desnaturalización.', 12, 30);
+      autoTable(doc, { startY: 36, margin: { top: 25 }, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
       addPhotoSection('Desnaturalización');
 
       doc.addPage();
-      sectionTitle('3.3  Almacenamiento.', 12, 35);
-      autoTable(doc, { startY: 39, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
+      drawBodyWaves();
+      sectionTitle('3.3  Almacenamiento.', 12, 30);
+      autoTable(doc, { startY: 36, margin: { top: 25 }, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
       addPhotoSection('Almacenamiento');
 
       // ── Sección 4: Conclusiones ──
       doc.addPage();
-      sectionTitle('4  Conclusiones inspección de estructuras', 14, 35);
+      drawBodyWaves();
+      sectionTitle('4  Conclusiones inspección de estructuras', 14, 30);
 
-      // Ondas de marca de agua en la página de conclusiones (antes del texto)
+      // Helper para olas decorativas cerca de la firma
       const drawConcWave = (y0: number, amp: number) => {
         doc.setDrawColor(168, 200, 232);
-        doc.setLineWidth(0.3);
+        doc.setLineWidth(0.35);
         const ww = PW / 4;
         doc.lines(
           [[ww*0.38,-amp,ww*0.62,-amp,ww,0],[ww*0.38,amp,ww*0.62,amp,ww,0],
@@ -2712,19 +2883,16 @@ export default function App() {
           0, y0, [1, 1], 'S', false
         );
       };
-      [60, 80, 100, 120, 140, 160, 180, 200, 220].forEach((y, idx) =>
-        drawConcWave(y, 1.0 + (idx % 3) * 0.35)
-      );
 
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
       doc.setTextColor(0,0,0);
       const certifica = calculatedExtraction.cumple_norma && calculatedDenaturation.cumple_norma && calculatedStorage.cumple_norma;
       const concClusion = `Con base en las observaciones encontradas, se puede concluir que los sistemas o equipos de extracción, desnaturalización y almacenamiento de la mortalidad en el centro de cultivo ${cc.nombre_centro ? cc.nombre_centro + '  SIEP – ' + codigo : codigo}, dan cumplimiento a las capacidades mínimas establecidas en el artículo 4° A del D.S. N.º 320 de 2001, del Ministerio de Economía, Fomento y Turismo. Esto fue resuelto una vez realizada tanto la evaluación documental como la verificación en terreno el día ${formatDateES(g.fechas.inspeccion_terreno)}; por lo tanto, ${certifica ? 'ES CERTIFICABLE' : 'NO ES CERTIFICABLE'}.`;
       const cLines = doc.splitTextToSize(concClusion, 182);
-      doc.text(cLines, 14, 44);
+      doc.text(cLines, 14, 38);
 
       // Zona de firma — replicar layout del certificado
-      const firmY = 44 + cLines.length * 6 + 28;
+      const firmY = 38 + cLines.length * 6 + 28;
       // Ondas decorativas de fondo sobre la firma
       [firmY - 18, firmY - 12, firmY - 6].forEach((y, idx) =>
         drawConcWave(y, 1.0 + idx * 0.3)
@@ -2749,9 +2917,10 @@ export default function App() {
 
       // ── Sección 5: Registro de visita ──
       doc.addPage();
-      sectionTitle('5  Registro de visita.', 14, 35);
-      sectionTitle('5.1  Ubicación espacial del centro', 12, 46);
-      autoTable(doc, { startY: 50, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
+      drawBodyWaves();
+      sectionTitle('5  Registro de visita.', 14, 30);
+      sectionTitle('5.1  Ubicación espacial del centro', 12, 38);
+      autoTable(doc, { startY: 43, margin: { top: 25 }, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
       addAerialSection('Ubicación Espacial');
 
       ensureSpace(50);
@@ -2765,28 +2934,15 @@ export default function App() {
 
       const filename = `Informe_Tecnico_1511_${codigo}.pdf`;
 
+      // Adjuntar Registro de Visita como snapshots JPEG (ya comprimidos al subir)
       if (registroVisitaRef.current) {
-        // Merge: informe generado + Registro de Visita adjunto
-        try {
-          const { PDFDocument } = await import('pdf-lib');
-          const informeBytes  = doc.output('arraybuffer');
-          const mergedDoc     = await PDFDocument.load(informeBytes);
-          const visitaDoc     = await PDFDocument.load(registroVisitaRef.current);
-          const visitaPages   = await mergedDoc.copyPages(visitaDoc, visitaDoc.getPageIndices());
-          visitaPages.forEach(p => mergedDoc.addPage(p));
-          const mergedBytes   = await mergedDoc.save();
-          const blob = new Blob([mergedBytes], { type: 'application/pdf' });
-          const url  = URL.createObjectURL(blob);
-          const a    = document.createElement('a');
-          a.href = url; a.download = filename; a.click();
-          URL.revokeObjectURL(url);
-        } catch {
-          // Si falla el merge, guardar solo el informe
-          doc.save(filename);
+        for (const snapshot of registroVisitaRef.current) {
+          doc.addPage([PW, PH]);
+          doc.addImage(snapshot, 'JPEG', 0, 0, PW, PH, '', 'FAST');
         }
-      } else {
-        doc.save(filename);
       }
+
+      doc.save(filename);
     } finally { setGenerating(null); }
   };
 
@@ -3817,40 +3973,112 @@ export default function App() {
 
         {/* Adjuntar Registro de Visita PDF */}
         {isAdmin && (
-          <div className="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Registro de Visita</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                {registroVisitaName
-                  ? `📄 ${registroVisitaName}`
-                  : 'Adjunta el PDF — se insertará como última página del Informe Técnico'}
-              </p>
-            </div>
-            <input
-              ref={registroVisitaInputRef}
-              type="file"
-              accept="application/pdf"
-              className="hidden"
-              onChange={handleRegistroVisitaUpload}
-            />
-            {registroVisitaName && (
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 overflow-hidden">
+            <div className="flex items-center gap-4 p-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Registro de Visita</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  {registroVisitaProcessing
+                    ? `Procesando página… ${registroVisitaProgress}%`
+                    : registroVisitaName
+                      ? `📄 ${registroVisitaName} — ${registroVisitaRef.current?.length ?? 0} pág.`
+                      : 'Adjunta el PDF — se comprimirá e insertará al final del Informe Técnico'}
+                </p>
+              </div>
+              <input
+                ref={registroVisitaInputRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={handleRegistroVisitaUpload}
+              />
+              {registroVisitaName && !registroVisitaProcessing && (
+                <button
+                  onClick={() => { registroVisitaRef.current = null; setRegistroVisitaName(null); }}
+                  className="text-rose-500 hover:text-rose-600 transition-colors"
+                  title="Quitar PDF"
+                >
+                  <XCircle size={18} />
+                </button>
+              )}
               <button
-                onClick={() => { registroVisitaRef.current = null; setRegistroVisitaName(null); }}
-                className="text-rose-500 hover:text-rose-600 transition-colors"
-                title="Quitar PDF"
+                onClick={() => registroVisitaInputRef.current?.click()}
+                disabled={registroVisitaProcessing}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-wait text-white text-sm font-bold rounded-xl transition-all shrink-0"
               >
-                <XCircle size={18} />
+                {registroVisitaProcessing
+                  ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
+                  : <FileDown size={15} />}
+                {registroVisitaProcessing ? `${registroVisitaProgress}%` : registroVisitaName ? 'Cambiar' : 'Adjuntar PDF'}
               </button>
+            </div>
+            {/* Barra de progreso Registro de Visita */}
+            {registroVisitaProcessing && (
+              <div className="h-1.5 bg-slate-200 dark:bg-slate-700">
+                <motion.div
+                  className="h-full bg-indigo-500 rounded-r-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${registroVisitaProgress}%` }}
+                  transition={{ ease: 'easeOut', duration: 0.3 }}
+                />
+              </div>
             )}
-            <button
-              onClick={() => registroVisitaInputRef.current?.click()}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition-all shrink-0"
-            >
-              <FileDown size={15} />
-              {registroVisitaName ? 'Cambiar' : 'Adjuntar PDF'}
-            </button>
           </div>
         )}
+
+        {/* Barra de progreso carga de imágenes */}
+        <AnimatePresence>
+          {(imagesRestoring || imagesUploadProgress) && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="rounded-2xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 overflow-hidden"
+            >
+              <div className="flex items-center gap-3 px-4 py-3">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                  className="w-5 h-5 border-2 border-indigo-300 dark:border-indigo-500/50 border-t-indigo-600 dark:border-t-indigo-400 rounded-full shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+                    {imagesRestoring && !imagesUploadProgress
+                      ? 'Restaurando imágenes guardadas…'
+                      : imagesUploadProgress
+                        ? `Procesando imágenes… ${imagesUploadProgress.done} de ${imagesUploadProgress.total}`
+                        : ''}
+                  </p>
+                </div>
+                {imagesUploadProgress && (
+                  <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 tabular-nums shrink-0">
+                    {Math.round((imagesUploadProgress.done / imagesUploadProgress.total) * 100)}%
+                  </span>
+                )}
+              </div>
+              {imagesUploadProgress && (
+                <div className="h-1 bg-indigo-100 dark:bg-indigo-500/20">
+                  <motion.div
+                    className="h-full bg-indigo-500 rounded-r-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.round((imagesUploadProgress.done / imagesUploadProgress.total) * 100)}%` }}
+                    transition={{ ease: 'easeOut', duration: 0.3 }}
+                  />
+                </div>
+              )}
+              {imagesRestoring && !imagesUploadProgress && (
+                <div className="h-1 bg-indigo-100 dark:bg-indigo-500/20 overflow-hidden">
+                  <motion.div
+                    className="h-full bg-indigo-400 rounded-full"
+                    animate={{ x: ['-100%', '200%'] }}
+                    transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{ width: '40%' }}
+                  />
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div
           {...dropzoneRootProps()}
@@ -3935,6 +4163,27 @@ export default function App() {
                   </div>
 
                   <div className="p-5 space-y-4">
+                    {/* Badge IA */}
+                    {(aiClassifying.has(img.id) || aiMeta[img.id]) && (
+                      <div className="flex items-center gap-2">
+                        {aiClassifying.has(img.id) && (
+                          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 text-xs text-violet-600 dark:text-violet-400">
+                            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+                              className="w-3 h-3 border-2 border-violet-300 border-t-violet-600 rounded-full" />
+                            <span>Clasificando…</span>
+                          </div>
+                        )}
+                        {!aiClassifying.has(img.id) && aiMeta[img.id] && (
+                          <div
+                            title={aiMeta[img.id].justificacion}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-violet-100 dark:bg-violet-500/20 border border-violet-200 dark:border-violet-500/30 text-xs font-semibold text-violet-700 dark:text-violet-300 cursor-help"
+                          >
+                            <Star size={10} className="shrink-0" />
+                            IA · {Math.round(aiMeta[img.id].confianza * 100)}%
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Sección</label>
@@ -4298,6 +4547,7 @@ export default function App() {
             <button
               onClick={async () => {
                 try { const { signOut } = await import('firebase/auth'); const { auth } = await import('./firebase'); await signOut(auth); } catch {}
+                localStorage.removeItem('certimar-session');
                 setUserRole(null); setShowWelcome(true);
               }}
               title="Cerrar sesión"
