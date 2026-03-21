@@ -161,6 +161,7 @@ export interface AppState {
   denaturation: DenaturationData;
   storage: StorageData;
   images: ReportImage[];
+  registroId?: string;  // correlativo interno (REG-001…), nunca incluido en documentos
 }
 
 export interface HistoryEntry {

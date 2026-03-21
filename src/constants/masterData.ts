@@ -19,56 +19,85 @@ export const CATALOGO_EXTRACCION = {
 
 export const CATALOGO_DESNATURALIZACION = {
   trituradoras: [
-    { 
-      id: 'aquainox-1430', 
-      marca_modelo: 'AQUAINOX 1430 L-EQ', 
-      capacidad_nominal_kg_h: 2500, 
+    {
+      id: 'aquainox-1430',
+      marca_modelo: 'AQUAINOX 1430 L-EQ',
+      capacidad_nominal_kg_h: 2500,
       almacenamiento_l: 1430,
       material: 'Acero inoxidable AISI 304/316-L',
-      capacidad_prepicador_kg_h: 1000
+      capacidad_prepicador_kg_h: 1000,
+      configuraciones_batch: [
+        { label: '1.400 kg / 33,6 min  (20 + 13,6)',  kilos: 1400,   t_proceso: 20,   t_pausa: 13.6 },
+        { label: '1.400 kg / 34 min    (20 + 14)',     kilos: 1400,   t_proceso: 20,   t_pausa: 14   },
+        { label: '1.400 kg / 33,6 min  (23 + 10,6)',  kilos: 1400,   t_proceso: 23,   t_pausa: 10.6 },
+        { label: '1.400 kg / 25 min    (21 + 4) — optimizado', kilos: 1400, t_proceso: 21, t_pausa: 4 },
+        { label: '1.081,1 kg / 23 min  (21 + 2)',     kilos: 1081, t_proceso: 21,   t_pausa: 2    },
+      ],
     },
-    { 
-      id: 'optimo-mix-500', 
-      marca_modelo: 'OPTIMO MIX OM 500', 
-      capacidad_nominal_kg_h: 2100, 
+    {
+      id: 'optimo-mix-500',
+      marca_modelo: 'OPTIMO MIX OM 500',
+      capacidad_nominal_kg_h: 2100,
       almacenamiento_l: 500,
       material: 'Acero inoxidable AISI 304/316-L',
-      capacidad_prepicador_kg_h: 8000
+      capacidad_prepicador_kg_h: 8000,
+      configuraciones_batch: [
+        { label: '480 kg / 13,7 min  (10 + 3,7)',  kilos: 480, t_proceso: 10,  t_pausa: 3.7 },
+        { label: '378 kg / 10,8 min  (8,8 + 2)',   kilos: 378, t_proceso: 8.8, t_pausa: 2   },
+        { label: '350 kg / 8 min     (6 + 2)',      kilos: 350, t_proceso: 6,   t_pausa: 2   },
+        { label: '350 kg / 7,14 min  (5,14 + 2)',   kilos: 350, t_proceso: 5.14,t_pausa: 2   },
+      ],
     },
-    { 
-      id: 'ocea-sw700', 
-      marca_modelo: 'OCEA SW-700L-OCH 7.5 KW', 
-      capacidad_nominal_kg_h: 2450, 
+    {
+      id: 'ocea-sw700',
+      marca_modelo: 'OCEA SW-700L-OCH 7.5 KW',
+      capacidad_nominal_kg_h: 2450,
       almacenamiento_l: 700,
       material: 'Acero inoxidable AISI 304/316-L',
-      capacidad_prepicador_kg_h: 2000
+      capacidad_prepicador_kg_h: 2000,
+      configuraciones_batch: [
+        { label: '650 kg / 20 min  (10 + 10)',               kilos: 650,   t_proceso: 10, t_pausa: 10 },
+        { label: '600 kg / 15 min  (10 + 5)',                kilos: 600,   t_proceso: 10, t_pausa: 5  },
+        { label: '529,2 kg / 12 min  (10 + 2) — peces pequeños', kilos: 529.2, t_proceso: 10, t_pausa: 2  },
+      ],
     },
-    { 
-      id: 'acuimaster-ac715', 
-      marca_modelo: 'ACUIMASTER AC-715 LT', 
-      capacidad_nominal_kg_h: 1680, 
+    {
+      id: 'acuimaster-ac715',
+      marca_modelo: 'ACUIMASTER AC-715 LT',
+      capacidad_nominal_kg_h: 1680,
       almacenamiento_l: 715,
       material: 'Acero inoxidable AISI 304/316-L',
-      capacidad_prepicador_kg_h: 1200
-    }
+      capacidad_prepicador_kg_h: 1200,
+      configuraciones_batch: [
+        { label: '700 kg / 25 min  (15 + 10)',   kilos: 700,   t_proceso: 15, t_pausa: 10 },
+        { label: '529,2 kg / 16 min  (15 + 1)',  kilos: 529.2, t_proceso: 15, t_pausa: 1  },
+      ],
+    },
   ],
   incineradores: [
     {
       id: 'addfield-thunder-1000',
       marca_modelo: 'ADDFIELD / THUNDER 1000',
       capacidad_carga_kg_h: 150,
+      horas_funcionamiento: 8,
       camara_primaria: '1.450 m diámetro interior',
       num_quemadores_primaria: 1,
       temperatura_camara_primaria_c: 950,
-      camara_secundaria: '2 m',
+      camara_secundaria: '2 m Diámetro Interior',
       num_quemadores_secundaria: 1,
       temperatura_camara_secundaria_c: 850,
       requerimiento_energetico: '390 kWh',
+      sistema_carga: 'CARGA MANUAL TACHOS 60L',
+      sistema_descarga: 'MANUAL HACIA MAXISACOS',
+      disposicion_final: 'VERTEDERO MUNICIPAL PTA ARENAS',
+      almacenamiento_gas: '4000L X 2 = 8.000L GAS GLP',
+      observaciones: 'INCINERADOR ES EL SISTEMA SECUNDARIO DE DESNATURALIZACIÓN DEL CENTRO DE CULTIVO.',
     },
     {
       id: 'incinerador-300',
       marca_modelo: 'INCINERADOR 300',
       capacidad_carga_kg_h: 50,
+      horas_funcionamiento: 8,
       camara_primaria: '1.6 m diámetro interior',
       num_quemadores_primaria: 1,
       temperatura_camara_primaria_c: 950,
@@ -76,19 +105,26 @@ export const CATALOGO_DESNATURALIZACION = {
       num_quemadores_secundaria: 1,
       temperatura_camara_secundaria_c: 850,
       requerimiento_energetico: '8 KW/hora',
-    }
+      sistema_carga: 'CARGA MANUAL TACHOS 60L',
+      sistema_descarga: 'MANUAL HACIA MAXISACOS',
+      disposicion_final: 'VERTEDERO MUNICIPAL PTA ARENAS',
+      almacenamiento_gas: '4000L X 4 = 16.000L GAS GLP',
+      observaciones: 'INCINERADOR ES EL SISTEMA SECUNDARIO DE DESNATURALIZACIÓN DEL CENTRO DE CULTIVO.',
+    },
   ]
 };
 
 export const CATALOGO_GENERADORES = [
   { id: 'cummins-c110d5', marca: 'Cummins', modelo: 'C110D5', kva: 110 },
   { id: 'cummins-c250d5', marca: 'Cummins', modelo: 'C250 D5', kva: 250 },
+  { id: 'fg-p33-3', marca: 'FG Wilson', modelo: 'P33-3', kva: 33 },
   { id: 'fg-p65-6', marca: 'FG Wilson', modelo: 'P65-6', kva: 65 },
   { id: 'fg-p125-1', marca: 'FG Wilson', modelo: 'P125-1', kva: 125 },
   { id: 'fg-c150d5', marca: 'FG Wilson', modelo: 'C150D5', kva: 150 },
   { id: 'fg-p220-3', marca: 'FG Wilson', modelo: 'P220-3', kva: 220 },
   { id: 'werbank-160g', marca: 'Werbank', modelo: '160G', kva: 160 },
   { id: 'weichai-wpg33l1', marca: 'Weichai', modelo: 'WPG33L1', kva: 33 },
+  { id: 'mwm-sgd330-50', marca: 'MWM', modelo: 'SGD330.50', kva: 330 },
 ];
 
 export const CATALOGO_ALMACENAMIENTO = [20, 21, 30, 32, 40, 45, 50];
@@ -498,6 +534,13 @@ export const HISTORICO_CERTIFICACIONES = [
     hes: "OK"
   }
 ];
+
+export const OPCIONES_INFRAESTRUCTURA = {
+  pretil_material: ['Acero Inoxidable', 'Hormigón', 'Hormigón Armado'],
+  piping_material: ['HDPE PN10 PE100 armado por electrofusión', 'HDPE'],
+  piping_diametro: ['90mm / 4"', '90mm / 8"'],
+  piping_valvulas: ['Válvulas Tipo Mariposa', 'Válvulas Tipo Bola'],
+};
 
 export const OPCIONES_INCINERADOR = {
   sistema_carga: ['CARGA MANUAL TACHOS 60L', 'N/A'],

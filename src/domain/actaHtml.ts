@@ -6,7 +6,7 @@
 
 import actaTemplate from '../assets/acta-template.html?raw';
 import type { AppState } from '../types';
-import { calculateDenaturation, calculateStorage } from './calculations';
+import { calculateExtraction, calculateDenaturation, calculateStorage } from './calculations';
 
 const MESES_ES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -87,6 +87,7 @@ export function buildActaHtml(state: AppState): string {
   const cc   = g.centro_cultivo;
   const cert = g.certificador;
 
+  const calcExt = calculateExtraction(ext.parametros);
   const calcDen = calculateDenaturation(
     den.equipos, den.parametros_batch, den.parametros_incineracion, den.incinerador
   );
@@ -136,6 +137,13 @@ export function buildActaHtml(state: AppState): string {
   html = rep(html, '{fecha_inspeccion_terreno}', g.fechas.inspeccion_terreno);
 
   // ── E. Extracción ─────────────────────────────────────────────────────────
+  // Capacidad calculada ton/día — reemplaza el texto literal "TON/DIA" del template
+  html = rep(html, 'TON/DIA', calcExt.capacidad_diaria_ton.toFixed(2) + ' ton/día');
+  // N° motocompresores/jaula — hardcodeado como "1" en el template; contexto único
+  html = rep(html,
+    '<span class="c10">1</span></p></td></tr><tr class="c20"><td class="c66 c39"',
+    `<span class="c10">${ext.parametros.motocompresores_por_jaula}</span></p></td></tr><tr class="c20"><td class="c66 c39"`
+  );
   html = rep(html, '{jaulas_simult}',   ext.parametros.jaulas_simultaneas.toString());
   html = rep(html, '{cfm}',             ext.parametros.potencia_cfm.toString());
   html = rep(html, '{nro_jaulas}',      ext.parametros.numero_total_jaulas.toString());

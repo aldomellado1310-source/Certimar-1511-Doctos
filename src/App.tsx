@@ -27,6 +27,8 @@ import {
   Save,
   TestTube2,
   LogOut,
+  PlayCircle,
+  Bookmark,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useDropzone } from 'react-dropzone';
@@ -46,6 +48,7 @@ import {
   TAMANOS_JAULAS_CONOCIDOS,
   NOMBRES_AN_CONOCIDOS,
   OPCIONES_INCINERADOR,
+  OPCIONES_INFRAESTRUCTURA,
   EMPRESA_HINTS,
 } from './constants/masterData';
 import type { ImageSeccion } from './types';
@@ -507,6 +510,49 @@ const FormCard = ({ title, children, className }: { title?: string, children: Re
   </div>
 );
 
+// Convierte yyyy-mm-dd ↔ dd-mm-yyyy para display/storage
+const DateField = ({
+  label, value, onChange, inputRef, highlight
+}: {
+  label: string, value: string, onChange: (val: string) => void,
+  inputRef?: React.RefObject<HTMLInputElement | null>, highlight?: boolean
+}) => {
+  const toDisplay = (iso: string) => iso ? iso.split('-').reverse().join('-') : '';
+  const toISO     = (dmy: string) => {
+    const parts = dmy.split('-');
+    if (parts.length === 3 && parts[2].length === 4) return parts.reverse().join('-');
+    return dmy;
+  };
+  const [raw, setRaw] = React.useState(toDisplay(value));
+
+  React.useEffect(() => { setRaw(toDisplay(value)); }, [value]);
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
+      <input
+        ref={inputRef}
+        type="text"
+        value={raw}
+        placeholder="dd-mm-yyyy"
+        maxLength={10}
+        onChange={(e) => {
+          let v = e.target.value.replace(/[^\d-]/g, '');
+          setRaw(v);
+          if (/^\d{2}-\d{2}-\d{4}$/.test(v)) onChange(toISO(v));
+        }}
+        onBlur={() => {
+          if (!/^\d{2}-\d{2}-\d{4}$/.test(raw)) setRaw(toDisplay(value));
+        }}
+        className={cn(
+          "w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium",
+          highlight && "ring-2 ring-indigo-500 ring-offset-2 border-indigo-500 bg-white dark:bg-slate-900"
+        )}
+      />
+    </div>
+  );
+};
+
 const InputField = ({
   label, value, onChange, type = "text", placeholder, suffix, inputRef, highlight, min, max
 }: {
@@ -722,48 +768,42 @@ const WelcomeScreen = ({
   setUserRole: React.Dispatch<React.SetStateAction<'admin' | 'reader' | null>>;
   setShowWelcome: React.Dispatch<React.SetStateAction<boolean>>;
 }) => {
-  const [step, setStep]   = React.useState<'google' | 'pin'>('google');
+  const [step, setStep]         = React.useState<'google' | 'pin'>('google');
   const [googleEmail, setGoogleEmail] = React.useState('');
-  const [pin, setPin]     = React.useState('');
-  const [error, setError] = React.useState('');
-  const googleBtnRef = React.useRef<HTMLDivElement>(null);
+  const [pin, setPin]           = React.useState('');
+  const [error, setError]       = React.useState('');
+  const [loading, setLoading]   = React.useState(false);
 
-  const decodeJwt = (token: string) => {
+  const handleGoogleSignIn = React.useCallback(async () => {
+    setError('');
+    setLoading(true);
     try {
-      const payload = token.split('.')[1];
-      return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
-    } catch { return null; }
-  };
-
-  const handleGoogleCredential = React.useCallback((response: any) => {
-    const data = decodeJwt(response.credential);
-    if (!data?.email) { setError('No se pudo obtener el correo de Google.'); return; }
-    const email = data.email.toLowerCase();
-    if (!email.endsWith('@certimar.cl')) {
-      setError('Solo cuentas @certimar.cl tienen acceso.');
-      return;
-    }
-    if (email === 'operaciones@certimar.cl') {
-      setGoogleEmail(email);
-      setStep('pin');
-    } else {
-      setUserRole('reader');
-      setShowWelcome(false);
+      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+      const { auth } = await import('./firebase');
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ hd: 'certimar.cl' });
+      const result = await signInWithPopup(auth, provider);
+      const email = (result.user.email ?? '').toLowerCase();
+      if (!email.endsWith('@certimar.cl')) {
+        setError('Solo cuentas @certimar.cl tienen acceso.');
+        await result.user.delete().catch(() => {});
+        return;
+      }
+      if (email === 'operaciones@certimar.cl') {
+        setGoogleEmail(email);
+        setStep('pin');
+      } else {
+        setUserRole('reader');
+        setShowWelcome(false);
+      }
+    } catch (e: any) {
+      if (e?.code !== 'auth/popup-closed-by-user') {
+        setError('Error al iniciar sesión. Intenta nuevamente.');
+      }
+    } finally {
+      setLoading(false);
     }
   }, [setUserRole, setShowWelcome]);
-
-  React.useEffect(() => {
-    if (step !== 'google') return;
-    const g = (window as any).google;
-    if (!g || !GOOGLE_CLIENT_ID) return;
-    g.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleCredential });
-    if (googleBtnRef.current) {
-      g.accounts.id.renderButton(googleBtnRef.current, {
-        type: 'standard', theme: 'outline', size: 'large',
-        text: 'continue_with', shape: 'pill', width: 300,
-      });
-    }
-  }, [step, handleGoogleCredential]);
 
   const handlePin = () => {
     if (ADMIN_PIN && pin === ADMIN_PIN) {
@@ -897,26 +937,26 @@ const WelcomeScreen = ({
                 <p className="text-center text-sm font-medium mb-4" style={{ color:'rgba(255,255,255,0.7)' }}>
                   Inicia sesión con tu cuenta institucional
                 </p>
-                {GOOGLE_CLIENT_ID ? (
-                  <div ref={googleBtnRef} className="flex justify-center" />
-                ) : (
-                  <button
-                    onClick={() => {
-                      const email = prompt('Ingresa tu correo @certimar.cl para continuar:') ?? '';
-                      handleGoogleCredential({ credential: btoa(JSON.stringify({alg:'RS256'})) + '.' + btoa(JSON.stringify({email: email.toLowerCase(), name: email})) + '.sig' });
-                    }}
-                    className="w-full flex items-center justify-center gap-3 py-3 rounded-2xl transition-all text-sm font-semibold"
-                    style={{ background:'rgba(255,255,255,0.92)', color:'#3c4043', boxShadow:'0 2px 12px rgba(0,0,0,0.25)', border:'1px solid rgba(255,255,255,0.5)' }}
-                  >
+                <button
+                  onClick={handleGoogleSignIn}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-3 py-3 rounded-2xl transition-all text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
+                  style={{ background:'rgba(255,255,255,0.92)', color:'#3c4043', boxShadow:'0 2px 12px rgba(0,0,0,0.25)', border:'1px solid rgba(255,255,255,0.5)' }}
+                >
+                  {loading ? (
+                    <svg className="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4285F4" strokeWidth="2.5">
+                      <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
+                    </svg>
+                  ) : (
                     <svg width="18" height="18" viewBox="0 0 24 24">
                       <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                       <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
                       <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
                       <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                     </svg>
-                    Continuar con Google
-                  </button>
-                )}
+                  )}
+                  {loading ? 'Iniciando sesión...' : 'Continuar con Google'}
+                </button>
                 {error && <p className="text-center text-xs font-medium mt-2" style={{ color:'#fca5a5' }}>{error}</p>}
                 <p className="text-center text-[10px] mt-3" style={{ color:'rgba(255,255,255,0.35)' }}>Solo cuentas @certimar.cl</p>
               </motion.div>
@@ -965,6 +1005,57 @@ const WelcomeScreen = ({
   );
 };
 
+// ─── IndexedDB — almacenamiento de imágenes (sin límite de quota) ────────────
+const IDB_NAME = 'certimar-images-v1';
+const IDB_STORE = 'urls';
+
+function idbOpen(): Promise<IDBDatabase> {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => res(req.result);
+    req.onerror   = () => rej(req.error);
+  });
+}
+async function idbSave(id: string, url: string) {
+  const db = await idbOpen();
+  return new Promise<void>((res, rej) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(url, id);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbDelete(id: string) {
+  const db = await idbOpen();
+  return new Promise<void>((res) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).delete(id);
+    tx.oncomplete = () => res();
+  });
+}
+async function idbGetAll(): Promise<Record<string, string>> {
+  const db = await idbOpen();
+  return new Promise((res) => {
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const store = tx.objectStore(IDB_STORE);
+    const result: Record<string, string> = {};
+    const curReq = store.openCursor();
+    curReq.onsuccess = (e) => {
+      const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+      if (cursor) { result[cursor.key as string] = cursor.value; cursor.continue(); }
+      else res(result);
+    };
+  });
+}
+async function idbClear() {
+  const db = await idbOpen();
+  return new Promise<void>((res) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).clear();
+    tx.oncomplete = () => res();
+  });
+}
+
 // --- Main App ---
 
 export default function App() {
@@ -975,20 +1066,46 @@ export default function App() {
       const raw = localStorage.getItem('certimar-draft-state');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed.__version === SCHEMA_VERSION) return parsed;
-        // Old version or no version — discard
+        if (parsed.__version === SCHEMA_VERSION) {
+          // Limpiar URLs antiguas (blob: o base64 guardadas por error en localStorage)
+          parsed.images = (parsed.images ?? []).map((img: any) => ({ ...img, url: '' }));
+          return parsed;
+        }
         localStorage.removeItem('certimar-draft-state');
       }
     } catch {}
     return DEFAULT_STATE;
   });
 
-  // Auto-guardado en localStorage — indicador visual de estado
+  // Restaurar URLs de imágenes desde IndexedDB al montar
+  useEffect(() => {
+    idbGetAll().then(urlMap => {
+      if (!Object.keys(urlMap).length) return;
+      setState(prev => ({
+        ...prev,
+        images: prev.images.map(img => ({ ...img, url: urlMap[img.id] ?? img.url }))
+      }));
+    });
+  }, []); // solo al montar
+
+  // Auto-guardado en localStorage — SIN URLs (van en IndexedDB)
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [saveAnim, setSaveAnim] = useState(false);
+  const [guardadoSection, setGuardadoSection] = useState<string | null>(null);
+  const [guardandoSection, setGuardandoSection] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem('certimar-draft-state', JSON.stringify({ ...state, __version: 'v3' }));
+    const stateForStorage = {
+      ...state,
+      images: state.images.map(({ id, seccion, leyenda, estado, observacion }) =>
+        ({ id, seccion, leyenda, estado, observacion, url: '' })
+      ),
+      __version: 'v3',
+    };
+    try {
+      localStorage.setItem('certimar-draft-state', JSON.stringify(stateForStorage));
+    } catch { /* quota — no crítico, imágenes están en IndexedDB */ }
     setSavedAt(new Date());
     setSaveAnim(true);
     const t = setTimeout(() => setSaveAnim(false), 1800);
@@ -1005,18 +1122,110 @@ export default function App() {
 
   const resetState = () => {
     if (window.confirm("¿Está seguro de que desea borrar el borrador actual y comenzar de nuevo?")) {
-      state.images.forEach(img => { if (img.url?.startsWith('blob:')) URL.revokeObjectURL(img.url); });
+      idbClear();
       setState(DEFAULT_STATE);
       localStorage.removeItem('certimar-draft-state');
       setActiveTab('general');
     }
   };
 
+  // Nuevo registro — limpia datos del centro pero preserva el certificador
+  const newRecord = () => {
+    if (window.confirm('¿Iniciar un nuevo registro?\nSe limpiarán los datos del centro, extracción, desnaturalización, almacenamiento e imágenes.\nLos datos del certificador se conservan.')) {
+      idbClear();
+      setState(prev => ({
+        ...DEFAULT_STATE,
+        general: {
+          ...DEFAULT_STATE.general,
+          certificador: prev.general.certificador,
+          fechas: {
+            evaluacion_documental: new Date().toISOString().split('T')[0],
+            inspeccion_terreno:    new Date().toISOString().split('T')[0],
+            emision_certificado:   new Date().toISOString().split('T')[0],
+          },
+        },
+      }));
+      setActiveTab('general');
+    }
+  };
+
+  // Correlativo interno REG-001…
+  const getNextCorrelativo = (): { registroId: string; nextCounter: number } => {
+    const raw = localStorage.getItem('certimar-correlativo-counter');
+    const current = raw ? parseInt(raw, 10) : 0;
+    const next = current + 1;
+    return { registroId: `REG-${String(next).padStart(3, '0')}`, nextCounter: next };
+  };
+
+  const comenzarRegistro = () => {
+    if (window.confirm(
+      '¿Comenzar un nuevo registro?\nSe asignará un correlativo y se limpiarán los datos del centro, extracción, desnaturalización, almacenamiento e imágenes.\nLos datos del certificador se conservan.'
+    )) {
+      idbClear();
+      const { registroId, nextCounter } = getNextCorrelativo();
+      localStorage.setItem('certimar-correlativo-counter', String(nextCounter));
+      setState(prev => ({
+        ...DEFAULT_STATE,
+        registroId,
+        general: {
+          ...DEFAULT_STATE.general,
+          certificador: prev.general.certificador,
+          fechas: {
+            evaluacion_documental: new Date().toISOString().split('T')[0],
+            inspeccion_terreno:    new Date().toISOString().split('T')[0],
+            emision_certificado:   new Date().toISOString().split('T')[0],
+          },
+        },
+      }));
+      setActiveTab('general');
+    }
+  };
+
+  const handleGuardar = async (section: string) => {
+    if (guardandoSection) return; // evitar doble-click
+    setGuardandoSection(section);
+    setSaveError(null);
+    let firestoreOk = false;
+    try {
+      const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      const cc = state.general.centro_cultivo;
+      const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
+      // Excluir blob URLs de las imágenes — no son portátiles ni aceptadas por Firestore
+      const imagesMetadata = state.images.map(({ id, seccion, leyenda, estado, observacion }) =>
+        ({ id, seccion, leyenda, estado, observacion })
+      );
+      await setDoc(doc(db, 'registros', docId), {
+        ...state,
+        images: imagesMetadata,
+        __version: 'v3',
+        __savedAt: serverTimestamp(),
+        __savedBy: state.general.certificador.nombre || 'desconocido',
+        __section: section,
+      });
+      firestoreOk = true;
+    } catch (err: any) {
+      console.error('Error guardando en Firestore:', err);
+      setSaveError('No se pudo guardar en la nube. Verifica tu conexión.');
+      setTimeout(() => setSaveError(null), 4000);
+    }
+    if (firestoreOk) {
+      exportDraft();
+      setGuardadoSection(section);
+      setTimeout(() => setGuardadoSection(null), 2500);
+    }
+    setGuardandoSection(null);
+  };
+
   // Exportar borrador como archivo JSON descargable
   const exportDraft = () => {
     const cc = state.general.centro_cultivo;
-    const filename = `certimar-borrador${cc.codigo_centro ? '-' + cc.codigo_centro : ''}.json`;
-    const blob = new Blob([JSON.stringify({ ...state, __version: 'v3' }, null, 2)], { type: 'application/json' });
+    const rid = state.registroId ?? 'borrador';
+    const code = cc.codigo_centro ? `-${cc.codigo_centro}` : '';
+    const filename = `${rid}${code}.json`;
+    // URLs son base64 — se exportan completas para preservar imágenes entre sesiones
+    const exportState = { ...state, __version: 'v3' };
+    const blob = new Blob([JSON.stringify(exportState, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1027,25 +1236,49 @@ export default function App() {
 
   // Importar borrador desde archivo JSON
   const importDraftRef = useRef<HTMLInputElement>(null);
+
+  // Registro de Visita PDF — almacenado como ArrayBuffer en memoria (no en estado)
+  const registroVisitaRef = useRef<ArrayBuffer | null>(null);
+  const [registroVisitaName, setRegistroVisitaName] = useState<string | null>(null);
+  const registroVisitaInputRef = useRef<HTMLInputElement>(null);
+
+  const handleRegistroVisitaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || file.type !== 'application/pdf') return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      registroVisitaRef.current = ev.target?.result as ArrayBuffer;
+      setRegistroVisitaName(file.name);
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
   const importDraft = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const parsed = JSON.parse(ev.target?.result as string);
         if (parsed.__version !== 'v3') {
           alert('Versión de borrador incompatible. Solo se pueden cargar borradores exportados con la versión actual de la aplicación.');
           return;
         }
-        setState(parsed);
+        // Guardar URLs de imágenes en IndexedDB y limpiarlas del estado
+        await idbClear();
+        const images: ReportImage[] = (parsed.images ?? []).map((img: any) => {
+          if (img.url && img.url.startsWith('data:')) {
+            idbSave(img.id, img.url); // async, no bloqueante
+          }
+          return { ...img, url: img.url?.startsWith('data:') ? img.url : '' };
+        });
+        setState({ ...parsed, images });
         setActiveTab('general');
       } catch {
         alert('Archivo inválido. Selecciona un borrador exportado por esta aplicación.');
       }
     };
     reader.readAsText(file);
-    // Resetear el input para permitir cargar el mismo archivo otra vez
     e.target.value = '';
   };
 
@@ -1147,6 +1380,8 @@ export default function App() {
       },
       images: [],
     };
+    const hasData = state.general.centro_cultivo.codigo_centro || state.general.centro_cultivo.nombre_centro;
+    if (hasData && !window.confirm('¿Cargar datos de prueba?\nSe sobrescribirán los datos actuales.')) return;
     setState(TEST_STATE);
     setActiveTab('general');
   };
@@ -1403,8 +1638,8 @@ export default function App() {
           parametros_incineracion: {
             capacidad_carga_kg_h: inc.capacidad_carga_kg_h,
             temperatura_operacion: `${inc.temperatura_camara_primaria_c}°C / ${inc.temperatura_camara_secundaria_c}°C`,
-            camara_primaria: inc.camara_primaria,
-            camara_secundaria: inc.camara_secundaria
+            camara_primaria: `${inc.camara_primaria} — ${inc.num_quemadores_primaria} quemador(es)`,
+            camara_secundaria: `${inc.camara_secundaria} — ${inc.num_quemadores_secundaria} quemador(es)`,
           }
         }
       }));
@@ -1420,8 +1655,14 @@ export default function App() {
         incinerador: {
           ...prev.denaturation.incinerador,
           id_catalogo: id,
-          marca_modelo: inc?.marca_modelo ?? '',
+          marca_modelo:         inc?.marca_modelo         ?? '',
           capacidad_carga_kg_h: inc?.capacidad_carga_kg_h ?? 0,
+          horas_funcionamiento_dia: inc?.horas_funcionamiento ?? 8,
+          sistema_carga:        inc?.sistema_carga        ?? 'N/A',
+          sistema_descarga:     inc?.sistema_descarga      ?? 'N/A',
+          disposicion_final:    inc?.disposicion_final     ?? 'N/A',
+          almacenamiento_gas:   inc?.almacenamiento_gas   ?? 'N/A',
+          observaciones:        inc?.observaciones        ?? '',
         }
       }
     }));
@@ -1508,24 +1749,46 @@ export default function App() {
     }));
   };
 
+  const compressImage = (file: File): Promise<string> =>
+    new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 1400; // px lado largo máximo
+          const QUALITY = 0.78;
+          let { width, height } = img;
+          if (width > MAX || height > MAX) {
+            if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
+            else                 { width  = Math.round(width  * MAX / height); height = MAX; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', QUALITY));
+        };
+        img.src = ev.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+
   const addImage = (files: File[]) => {
-    const newImages: ReportImage[] = files.map(file => ({
-      id: Math.random().toString(36).substr(2, 9),
-      url: URL.createObjectURL(file),
-      seccion: 'General',
-      leyenda: '',
-      estado: 'Verde',
-      observacion: 'CUMPLE CON LO DECLARADO'
-    }));
-    setState(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
+    files.forEach(async (file) => {
+      const base64 = await compressImage(file);
+      const id = Math.random().toString(36).substr(2, 9);
+      await idbSave(id, base64);
+      const newImg: ReportImage = {
+        id, url: base64,
+        seccion: 'General', leyenda: '', estado: 'Verde',
+        observacion: 'CUMPLE CON LO DECLARADO',
+      };
+      setState(prev => ({ ...prev, images: [...prev.images, newImg] }));
+    });
   };
 
   const removeImage = (id: string) => {
-    setState(prev => {
-      const target = prev.images.find(img => img.id === id);
-      if (target?.url?.startsWith('blob:')) URL.revokeObjectURL(target.url);
-      return { ...prev, images: prev.images.filter(img => img.id !== id) };
-    });
+    idbDelete(id);
+    setState(prev => ({ ...prev, images: prev.images.filter(img => img.id !== id) }));
   };
 
   const updateImage = (id: string, updates: Partial<ReportImage>) => {
@@ -1536,6 +1799,27 @@ export default function App() {
   };
 
   // ─── Helpers PDF compartidos ───────────────────────────────────────────────
+
+  /** Corrige orientación EXIF dibujando la imagen en un canvas offscreen */
+  const fixImageOrientation = (url: string): Promise<string> =>
+    new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_PX = 1920;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > MAX_PX || h > MAX_PX) {
+          if (w >= h) { h = Math.round(h * MAX_PX / w); w = MAX_PX; }
+          else        { w = Math.round(w * MAX_PX / h); h = MAX_PX; }
+        }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d')!.drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', 0.72));
+      };
+      img.onerror = () => resolve(url);
+      img.src = url;
+    });
+
   const loadLogo = async (): Promise<string | null> => {
     try {
       const resp = await fetch('/certimar-logo.png');
@@ -1555,27 +1839,64 @@ export default function App() {
     for (let i = 2; i <= n; i++) {
       doc.setPage(i);
       const W = 215.9, H = 279.4;
-      // Header azul estrecho
-      doc.setFillColor(74, 118, 168);
-      doc.rect(0, 0, W, 20, 'F');
-      // Footer azul
-      doc.setFillColor(74, 118, 168);
-      doc.rect(0, H - 18, W, 18, 'F');
-      // Código doc top-left
-      doc.setFontSize(7);
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'normal');
-      doc.text(docCode, 6, 13);
-      // Logo top-right
-      if (logo) doc.addImage(logo, 'PNG', W - 42, 2, 38, 16);
-      // Footer contact
-      doc.setFontSize(7);
-      doc.setTextColor(255, 255, 255);
-      doc.text('Mario Toral 101, Puerto Aysén', 10, H - 8);
-      doc.text('+56 9 45052052', 85, H - 8, { align: 'center' });
-      doc.text('eflores@engelbert.cl', W - 10, H - 8, { align: 'right' });
-      // Número de página
-      doc.text(`${pageLabel}  |  Página ${i} de ${n}`, W / 2, H - 3, { align: 'center' });
+
+      // ── Helper onda decorativa #a8c8e8 ──
+      const drawWave = (y0: number, amp: number) => {
+        doc.setDrawColor(168, 200, 232);
+        doc.setLineWidth(0.3);
+        const w = W / 4;
+        doc.lines(
+          [[w*0.38,-amp,w*0.62,-amp,w,0],[w*0.38,amp,w*0.62,amp,w,0],
+           [w*0.38,-amp,w*0.62,-amp,w,0],[w*0.38,amp,w*0.62,amp,w,0]],
+          0, y0, [1, 1], 'S', false
+        );
+      };
+      // Ondas de marca de agua en el cuerpo (debajo del header)
+      [60, 80, 105, 130, 155, 180, 205, 230].forEach((y, idx) =>
+        drawWave(y, 1.0 + (idx % 3) * 0.35)
+      );
+
+      // ── Header: fondo blanco + ondas + logo izquierda + banda azul marino ──
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 0, W, 50, 'F');
+      // Ondas decorativas sobre fondo blanco del header
+      [8, 14, 20, 26, 32, 38, 44].forEach((y, idx) =>
+        drawWave(y, 1.0 + (idx % 3) * 0.35)
+      );
+      // Logo a la izquierda (igual que certificado)
+      if (logo) {
+        const props = doc.getImageProperties(logo);
+        const maxW = 52, maxH = 40;
+        const scale = Math.min(maxW / props.width, maxH / props.height);
+        const imgW = props.width * scale, imgH = props.height * scale;
+        doc.addImage(logo, 'PNG', 5 + (maxW - imgW) / 2, 5 + (maxH - imgH) / 2, imgW, imgH);
+      }
+      // Normativa y folio
+      doc.setTextColor(26, 58, 92);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+      doc.text('Res. Exenta N°1511/2021 — D.S. N°320', 62, 11);
+      doc.setFont('helvetica', 'bold');
+      doc.text(docCode, W - 6, 11, { align: 'right' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      doc.text(pageLabel, W - 6, 19, { align: 'right' });
+      // Banda azul marino #1a3a5c al pie del header
+      doc.setFillColor(26, 58, 92);
+      doc.rect(0, 44, W, 8, 'F');
+      doc.setFillColor(10, 28, 70);
+      doc.rect(0, 51, W, 1.5, 'F');
+
+      // ── Footer liviano (igual que certificado) ──
+      doc.setDrawColor(26, 58, 92);
+      doc.setLineWidth(0.18);
+      doc.line(10, H - 10, W - 10, H - 10);
+      doc.setFontSize(7); doc.setFont('helvetica', 'normal');
+      doc.setTextColor(26, 58, 92);
+      doc.text('CERTIMAR SPA — Res. Exenta N°1511/2021', 10, H - 6);
+      doc.setTextColor(120, 120, 120);
+      doc.text('Mario Toral 101, Puerto Aysén  ·  +56 9 45052052  ·  eflores@certimar.cl',
+               W / 2, H - 6, { align: 'center' });
+      doc.setTextColor(26, 58, 92);
+      doc.text(`Pág. ${i} de ${n}`, W - 10, H - 6, { align: 'right' });
     }
   };
 
@@ -1619,7 +1940,7 @@ export default function App() {
       const fmtC = (c: boolean) => c ? 'CUMPLE' : 'NO CUMPLE';
       const colC = (c: boolean): [number,number,number] => c ? VERDE : ROJO;
 
-      const doc = new jsPDF();
+      const doc = new jsPDF({ compress: true });
 
       // Header blanco con acento azul — decoración sutil solo en la cabecera
       doc.setFillColor(255, 255, 255);
@@ -1968,69 +2289,108 @@ export default function App() {
       const codigo = cc.codigo_centro;
       const docCode = makeDocCode(codigo, g.fechas.inspeccion_terreno);
 
+      // Corregir orientación EXIF de todas las imágenes antes de insertar en PDF
+      const correctedImgs = await Promise.all(
+        state.images.map(async img => ({ ...img, url: await fixImageOrientation(img.url) }))
+      );
+
       const AZUL_H: [number,number,number] = [74, 118, 168];
       const AZUL_T: [number,number,number] = [31, 73, 125];
-      const VERDE_H:[number,number,number] = [193, 225, 193];
-      const GRIS:  [number,number,number]  = [248, 250, 252];
-      const fmtC = (c: boolean) => c ? 'CUMPLE ✓' : 'NO CUMPLE ✗';
+      const VERDE_H:[number,number,number] = [193, 225, 193]; // legacy — reemplazado por AZUL_MARINO en tablas
+      const AZUL_MARINO: [number,number,number] = [26, 58, 92];
+      const GRIS_FILA:   [number,number,number] = [245, 247, 250];
+      const BORDE_TABLA: [number,number,number] = [221, 227, 234];
 
-      const doc = new jsPDF({ format: 'letter' }); // Letter = 215.9×279.4mm (igual que el original)
-      const PW = 215.9, PH = 279.4; // dimensiones de página
+      const doc = new jsPDF({ format: 'letter', compress: true });
+      const PW = 215.9, PH = 279.4;
 
       // ── Portada ──
-      // Banda azul superior
+      // Banda azul superior (con espacio para logo a la derecha y título a la izquierda)
       doc.setFillColor(...AZUL_H);
-      doc.rect(0, 0, PW, 55, 'F');
-      // Banda azul inferior
-      doc.setFillColor(...AZUL_H);
-      doc.rect(0, PH - 18, PW, 18, 'F');
-      // Código doc top-left
+      doc.rect(0, 0, PW, 50, 'F');
+      doc.setFillColor(31, 56, 100);
+      doc.rect(0, 48, PW, 2, 'F');
+      // docCode top-left
       doc.setFontSize(8); doc.setTextColor(255,255,255); doc.setFont('helvetica','normal');
-      doc.text(docCode, 8, 12);
-      // Logo top-right
-      if (logo) doc.addImage(logo, 'PNG', PW - 46, 5, 38, 28);
-      // Logo centrado grande
-      if (logo) doc.addImage(logo, 'PNG', (PW - 60) / 2, 62, 60, 48);
-      // Título
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(22);
-      doc.text('Inspección de Certificación de', PW / 2, 128, { align: 'center' });
-      doc.text('Sistema de Mortalidad', PW / 2, 140, { align: 'center' });
-      // Subtítulo centro
-      doc.setFontSize(12);
-      doc.setTextColor(...AZUL_H);
-      doc.text(`CENTRO ${codigo} SIEP  —${cc.nombre_centro}—  ${cc.acs}`, PW / 2, 155, { align: 'center' });
-      // Fotos de portada (hasta 3, en fila centrada)
-      const fotosPortada = state.images.filter(img => img.seccion === 'Portada');
-      if (fotosPortada.length > 0) {
-        const fotoW = 55, fotoH = 40;
-        const totalW = fotosPortada.length * fotoW + (fotosPortada.length - 1) * 5;
+      doc.text(docCode, 8, 9);
+      // Logo top-right dentro del banner azul
+      if (logo) doc.addImage(logo, 'PNG', PW - 58, 4, 52, 38);
+      // Título a la izquierda del banner
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+      doc.text('Inspección de Certificación', 10, 22);
+      doc.setFontSize(14);
+      doc.text('Sistema de Mortalidad', 10, 33);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+      doc.text('Res. Exenta N°1511/2021', 10, 42);
+
+      // Banda de identificación del centro (azul oscuro)
+      doc.setFillColor(31, 56, 100);
+      doc.rect(0, 50, PW, 18, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+      doc.text(`CENTRO ${codigo}  —  ${cc.nombre_centro}`, PW / 2, 59, { align: 'center' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+      doc.text(`${cc.titular}  |  ACS: ${cc.acs}`, PW / 2, 65, { align: 'center' });
+
+      // Fotos de portada: 1 grande o 2–3 en fila
+      const fotosPortada = correctedImgs.filter(img => img.seccion === 'Portada');
+      const FOTO_TOP = 72;
+      if (fotosPortada.length === 1) {
+        try { doc.addImage(fotosPortada[0].url, 'JPEG', (PW - 150) / 2, FOTO_TOP, 150, 110); } catch { /* skip */ }
+      } else if (fotosPortada.length >= 2) {
+        const count = Math.min(fotosPortada.length, 3);
+        const fotoW = 64, fotoH = 50, gap = 4;
+        const totalW = count * fotoW + (count - 1) * gap;
         let fx = (PW - totalW) / 2;
-        for (const foto of fotosPortada.slice(0, 3)) {
-          try { doc.addImage(foto.url, 'JPEG', fx, 170, fotoW, fotoH); } catch { /* skip */ }
-          fx += fotoW + 5;
+        for (const foto of fotosPortada.slice(0, count)) {
+          try { doc.addImage(foto.url, 'JPEG', fx, FOTO_TOP, fotoW, fotoH); } catch { /* skip */ }
+          fx += fotoW + gap;
         }
       }
-      // Fecha
-      doc.setFontSize(11);
+
+      // Fecha e info del certificador
+      const fotoBottom = fotosPortada.length === 1 ? FOTO_TOP + 118 : (fotosPortada.length >= 2 ? FOTO_TOP + 58 : FOTO_TOP + 6);
       doc.setTextColor(...AZUL_T);
-      doc.text(formatDateES(g.fechas.inspeccion_terreno), PW / 2, 225, { align: 'center' });
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+      doc.text(formatDateES(g.fechas.inspeccion_terreno), PW / 2, fotoBottom + 14, { align: 'center' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+      doc.setTextColor(60, 60, 60);
+      doc.text(
+        `Certificador: ${g.certificador.nombre}  |  N° Registro: ${g.certificador.numero_registro}`,
+        PW / 2, fotoBottom + 24, { align: 'center' }
+      );
+
       // Footer portada
-      doc.setFontSize(8); doc.setTextColor(255,255,255);
-      doc.text('Mario Toral 101, Puerto Aysén', 20, PH - 8);
+      doc.setFillColor(...AZUL_H);
+      doc.rect(0, PH - 18, PW, 18, 'F');
+      doc.setFontSize(7.5); doc.setTextColor(255,255,255); doc.setFont('helvetica','normal');
+      doc.text('Mario Toral 101, Puerto Aysén', 10, PH - 8);
       doc.text('+56 9 45052052', PW / 2, PH - 8, { align: 'center' });
       doc.text('eflores@engelbert.cl', PW - 10, PH - 8, { align: 'right' });
 
+      // ── helpers de posicionamiento ──
+      const CONTENT_BOTTOM = PH - 22;
+      const lastY = () => ((doc as any).lastAutoTable?.finalY ?? 30);
+      const ensureSpace = (needed: number) => {
+        if (lastY() + needed > CONTENT_BOTTOM) {
+          doc.addPage();
+          (doc as any).lastAutoTable = { finalY: 20 };
+        }
+      };
+      const sectionTitle = (text: string, size: number, y: number) => {
+        doc.setTextColor(...AZUL_T);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(size);
+        doc.text(text, 14, y);
+        doc.setTextColor(0, 0, 0);
+      };
+
       // ── Sección 1: Identificación del centro ──
       doc.addPage();
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-      doc.text('1  Identificación del centro', 14, 35);
-      doc.setTextColor(0,0,0);
+      sectionTitle('1  Identificación del centro', 14, 35);
 
       autoTable(doc, {
         startY: 40,
+        pageBreak: 'avoid',
         body: [
           ['Empresa',              cc.titular],
           ['Centro',               cc.nombre_centro],
@@ -2043,22 +2403,22 @@ export default function App() {
           ['Nombre A/N Ensilaje',  cc.nombre_an_ensilaje || '—'],
           ['Coordenadas Ensilaje', cc.coordenadas_ensilaje || '—'],
         ],
-        theme: 'grid',
-        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60, fillColor: VERDE_H } },
-        styles: { fontSize: 9, cellPadding: 3 },
+        theme: 'striped',
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60, textColor: AZUL_MARINO } },
+        alternateRowStyles: { fillColor: GRIS_FILA },
+        styles: { fontSize: 9, cellPadding: 3, lineColor: BORDE_TABLA, lineWidth: 0.1 },
       });
 
       // 1.1 Proceso extracción
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-      const y11 = ((doc as any).lastAutoTable?.finalY ?? 120) + 10;
-      doc.text('1.1  Proceso extracción', 14, y11);
-      doc.setTextColor(0,0,0);
+      ensureSpace(65);
+      const y11 = lastY() + 10;
+      sectionTitle('1.1  Proceso extracción', 12, y11);
 
       autoTable(doc, {
         startY: y11 + 5,
+        pageBreak: 'avoid',
         body: [
-          [{ content: 'Flujo de Proceso de Extracción', colSpan: 2, styles: { fillColor: VERDE_H, fontStyle: 'bold', fontSize: 9 } }],
+          [{ content: 'Flujo de Proceso de Extracción', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold', fontSize: 9 } }],
           ['Extracción de mortalidad.', `Mediante sistema ${ext.parametros.sistema_principal} con compresor de aire.`],
           ['Sistema SEM.', `Sistema ${ext.parametros.sistema_principal} se encuentra en módulo / jaulas en simultáneo: ${ext.parametros.jaulas_simultaneas}, módulo de ${ext.parametros.numero_total_jaulas} jaulas tipo metálica en total.`],
           ['Traslado Mortalidad a plataforma de Ensilaje.', `Hacia ${cc.nombre_an_ensilaje || 'A/N Pontón'} por medio de tachos rotulados.`],
@@ -2068,22 +2428,21 @@ export default function App() {
           ['Potencia Extracción (CFM).', `${ext.parametros.potencia_cfm} CFM`],
           ['Ubicación del compresor.', ext.parametros.ubicacion_compresor || '—'],
         ],
-        theme: 'grid',
-        columnStyles: { 0: { cellWidth: 80 } },
-        styles: { fontSize: 8.5, cellPadding: 2.5 },
+        theme: 'striped',
+        alternateRowStyles: { fillColor: GRIS_FILA },
+        columnStyles: { 0: { cellWidth: 80, fontStyle: 'bold', textColor: AZUL_MARINO } },
+        styles: { fontSize: 8.5, cellPadding: 2.5, lineColor: BORDE_TABLA, lineWidth: 0.1 },
       });
 
       // 1.2 Información plataforma y circuitos
       doc.addPage();
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-      doc.text('1.2  Información plataforma y circuitos', 14, 35);
-      doc.setTextColor(0,0,0);
+      sectionTitle('1.2  Información plataforma y circuitos', 12, 35);
 
       autoTable(doc, {
         startY: 40,
+        pageBreak: 'avoid',
         body: [
-          [{ content: 'Información Plataforma, Equipos y Circuitos', colSpan: 2, styles: { fillColor: VERDE_H, fontStyle: 'bold' } }],
+          [{ content: 'Información Plataforma, Equipos y Circuitos', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold' } }],
           [{ content: 'A/N Pontón.', colSpan: 2, styles: { fontStyle: 'bold' } }],
           ['Eslora',  sto.infraestructura.eslora_m  ? `${sto.infraestructura.eslora_m} m` : '—'],
           ['Manga',   sto.infraestructura.manga_m   ? `${sto.infraestructura.manga_m} m` : '—'],
@@ -2108,40 +2467,40 @@ export default function App() {
       });
 
       // 1.3 Generación eléctrica
-      const y13 = ((doc as any).lastAutoTable?.finalY ?? 200) + 10;
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-      doc.text('1.3  Capacidad Generación Eléctrica', 14, y13);
-      doc.setTextColor(0,0,0);
+      ensureSpace(40);
+      const y13 = lastY() + 10;
+      sectionTitle('1.3  Capacidad Generación Eléctrica', 12, y13);
 
       if (den.generacion_electrica.length > 0) {
         autoTable(doc, {
           startY: y13 + 5,
+          pageBreak: 'avoid',
           head: [['Tipo', 'Marca', 'Modelo', 'Capacidad (KVA)', 'Ubicación']],
-          body: den.generacion_electrica.map(g => [g.tipo, g.marca, g.modelo, String(g.capacidad_kva), g.ubicacion]),
+          body: den.generacion_electrica.map(ge => [ge.tipo, ge.marca, ge.modelo, String(ge.capacidad_kva), ge.ubicacion]),
           theme: 'grid',
-          headStyles: { fillColor: VERDE_H, textColor: [0,0,0], fontStyle: 'bold', fontSize: 9 },
-          styles: { fontSize: 8.5, cellPadding: 2.5 },
+          headStyles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold', fontSize: 9 },
+          alternateRowStyles: { fillColor: GRIS_FILA },
+          styles: { fontSize: 8.5, cellPadding: 2.5, lineColor: BORDE_TABLA, lineWidth: 0.1 },
         });
       } else {
         autoTable(doc, {
           startY: y13 + 5,
+          pageBreak: 'avoid',
           body: [['Sin generadores registrados', '—', '—', '—', '—']],
           theme: 'grid', styles: { fontSize: 8.5, cellPadding: 2.5 },
         });
       }
 
       // 1.4 Desnaturalización y almacenamiento
-      const y14 = ((doc as any).lastAutoTable?.finalY ?? 240) + 10;
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-      doc.text('1.4  Desnaturalización y almacenamiento.', 14, y14);
-      doc.setTextColor(0,0,0);
+      ensureSpace(75);
+      const y14 = lastY() + 10;
+      sectionTitle('1.4  Desnaturalización y almacenamiento.', 12, y14);
 
       autoTable(doc, {
         startY: y14 + 5,
+        pageBreak: 'avoid',
         body: [
-          [{ content: 'Equipo de Desnaturalización y capacidades', colSpan: 2, styles: { fillColor: VERDE_H, fontStyle: 'bold' } }],
+          [{ content: 'Equipo de Desnaturalización y capacidades', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold' } }],
           ['Número ollas trituradoras.', String(den.equipos.cantidad_sistemas)],
           ['Capacidad de procesamiento Nominal (kg/h).', `${den.equipos.velocidad_nominal_kg_hr} Kg/h`],
           ['Horas de funcionamiento al día.', `${den.equipos.horas_funcionamiento_dia} hrs.`],
@@ -2153,18 +2512,17 @@ export default function App() {
           [{ content: 'Almacenamiento.', colSpan: 2, styles: { fontStyle: 'bold' } }],
           ['Capacidad.', `Estanque con capacidad para ${sto.parametros.capacidad_almacenaje_m3} m³ con recirculación.`],
         ],
-        theme: 'grid',
-        columnStyles: { 0: { cellWidth: 95 } },
-        styles: { fontSize: 8.5, cellPadding: 2.5 },
+        theme: 'striped',
+        alternateRowStyles: { fillColor: GRIS_FILA },
+        columnStyles: { 0: { cellWidth: 95, fontStyle: 'bold', textColor: AZUL_MARINO } },
+        styles: { fontSize: 8.5, cellPadding: 2.5, lineColor: BORDE_TABLA, lineWidth: 0.1 },
       });
 
       // ── Sección 2: Metodología ──
       doc.addPage();
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-      doc.text('2  Metodología de trabajo para la inspección del módulo', 14, 35);
-      doc.setTextColor(0,0,0);
+      sectionTitle('2  Metodología de trabajo para la inspección del módulo', 14, 35);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+      doc.setTextColor(0,0,0);
       const metText = [
         'Se procede a la revisión documental y posterior visita de campo al objeto de certificar que los sistemas o equipos de extracción, desnaturalización y almacenamiento de la mortalidad tienen las capacidades indicadas por el mandante.',
         '',
@@ -2178,9 +2536,9 @@ export default function App() {
         doc.text(lines, 14, curY);
         curY += lines.length * 6 + (line === '' ? 0 : 2);
       }
-      // Tabla de colores
       autoTable(doc, {
         startY: curY + 4,
+        pageBreak: 'avoid',
         body: [
           [{ content: '', styles: { fillColor: [0, 176, 80] as [number,number,number], cellWidth: 12 } }, 'Verde', 'Sin Observaciones (Bueno)'],
           [{ content: '', styles: { fillColor: [255, 255, 0] as [number,number,number], cellWidth: 12 } }, 'Amarillo', 'Recomendación (Regular)'],
@@ -2194,54 +2552,126 @@ export default function App() {
       });
 
       // ── Sección 3: Inspección de terreno ──
-      // Helper: tabla de fotos por sección
+      // ─ constantes y helpers de fotos ────────────────────────────────────────
+      const CAPTION_H = 9;   // altura para leyenda bajo la foto (mm)
+      const IMG_ROW_H = 54;  // alto mínimo de la celda de imagen
+      const estadoColor = (e: string): [number,number,number] =>
+        e === 'Verde' ? [22,101,52] : e === 'Amarillo' ? [161,98,7] : [185,28,28];
+
+      /** Tabla con bordes — cabecera azul — foto + leyenda visible */
       const addPhotoSection = (seccion: ImageSeccion) => {
-        const imgs = state.images.filter(img => img.seccion === seccion);
+        const imgs = correctedImgs.filter(img => img.seccion === seccion);
         if (imgs.length === 0) {
+          ensureSpace(14);
           autoTable(doc, {
-            startY: ((doc as any).lastAutoTable?.finalY ?? 50) + 6,
+            startY: lastY() + 6,
             body: [['Sin imágenes registradas para esta sección.']],
             theme: 'plain', styles: { fontSize: 8.5, textColor: [130,130,130] },
           });
           return;
         }
-        // Agrupar en filas de 3
-        const rows = [];
         for (let i = 0; i < imgs.length; i += 3) {
-          rows.push(imgs.slice(i, i + 3));
-        }
-        const estadoColor = (e: string): [number,number,number] => e === 'Verde' ? [22,101,52] : e === 'Amarillo' ? [161,98,7] : [185,28,28];
-        for (const row of rows) {
-          const body: any[][] = [[
-            { content: `${row[0].observacion || 'CUMPLE CON LO DECLARADO'}\n${row[0].estado}`, styles: { valign: 'top', fontSize: 8 } },
-            { content: row[0].leyenda || '#1', rowSpan: 1, styles: { cellWidth: 50, minCellHeight: 45 } },
-            { content: row[1] ? (row[1].leyenda || '#2') : '', styles: { cellWidth: 50, minCellHeight: 45 } },
-            { content: row[2] ? (row[2].leyenda || '#3') : '', styles: { cellWidth: 50, minCellHeight: 45 } },
-          ]];
+          const row = imgs.slice(i, i + 3);
+          // Saltar de página si no cabe la cabecera + la fila completa
+          ensureSpace(IMG_ROW_H + 14);
           autoTable(doc, {
-            startY: ((doc as any).lastAutoTable?.finalY ?? 50) + 4,
+            startY: lastY() + 4,
+            rowPageBreak: 'avoid',
             head: [['DECLARADO / Estado', '#1', '#2', '#3']],
-            body,
+            body: [[
+              { content: `${row[0].observacion || 'CUMPLE CON LO DECLARADO'}\n${row[0].estado}`, styles: { valign: 'top', fontSize: 8 } },
+              { content: '', styles: { cellWidth: 50, minCellHeight: IMG_ROW_H } },
+              { content: '', styles: { cellWidth: 50, minCellHeight: IMG_ROW_H } },
+              { content: '', styles: { cellWidth: 50, minCellHeight: IMG_ROW_H } },
+            ]],
             theme: 'grid',
             headStyles: { fillColor: [31,73,125] as [number,number,number], textColor: [255,255,255], fontSize: 8.5, fontStyle: 'bold' },
             styles: { fontSize: 8, cellPadding: 2 },
             columnStyles: { 0: { cellWidth: 42 }, 1: { cellWidth: 50 }, 2: { cellWidth: 50 }, 3: { cellWidth: 50 } },
             didDrawCell: (data: any) => {
               if (data.section === 'body' && data.column.index >= 1) {
-                const imgIdx = data.column.index - 1 + (rows.indexOf(row) * 3);
-                const img = state.images.filter(i => i.seccion === seccion)[imgIdx];
+                const imgIdx = data.column.index - 1 + i;
+                const img = imgs[imgIdx];
                 if (img?.url) {
                   try {
-                    doc.addImage(img.url, 'JPEG', data.cell.x + 1, data.cell.y + 1, data.cell.width - 2, data.cell.height - 2);
-                  } catch { /* skip if image fails */ }
+                    const imgAreaH = data.cell.height - CAPTION_H;
+                    doc.addImage(img.url, 'JPEG', data.cell.x + 1, data.cell.y + 1, data.cell.width - 2, Math.max(imgAreaH - 1, 2));
+                    if (img.leyenda) {
+                      doc.setFontSize(6.5);
+                      doc.setTextColor(30, 30, 30);
+                      doc.setFont('helvetica', 'normal');
+                      const captionLines = doc.splitTextToSize(img.leyenda, data.cell.width - 4);
+                      doc.text(captionLines, data.cell.x + data.cell.width / 2, data.cell.y + imgAreaH + 4, { align: 'center' });
+                    }
+                  } catch { /* skip si la imagen falla */ }
                 }
               }
               if (data.section === 'body' && data.column.index === 0) {
-                const estado = row[0].estado;
-                const cx = data.cell.x + 5;
-                const cy = data.cell.y + data.cell.height - 10;
-                doc.setFillColor(...estadoColor(estado));
-                doc.circle(cx + 3, cy + 3, 3, 'F');
+                // Pastilla semáforo con texto (legible en escala de grises)
+                const badgeW = 26, badgeH = 5, badgeR = 1.1;
+                const bx = data.cell.x + (data.cell.width - badgeW) / 2;
+                const by = data.cell.y + data.cell.height - badgeH - 3;
+                const est = row[0].estado;
+                const [br, bg, bb]: [number,number,number] =
+                  est === 'Verde'    ? [26, 122, 60]  :
+                  est === 'Amarillo' ? [184, 134, 11] : [139, 26, 26];
+                const badgeLabel =
+                  est === 'Verde'    ? 'CONFORME'    :
+                  est === 'Amarillo' ? 'OBSERVACIÓN' : 'NO CONFORME';
+                doc.setFillColor(br, bg, bb);
+                doc.roundedRect(bx, by, badgeW, badgeH, badgeR, badgeR, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(5.5); doc.setFont('helvetica', 'bold');
+                doc.text(badgeLabel, bx + badgeW / 2, by + badgeH - 1.2, { align: 'center' });
+                doc.setTextColor(0, 0, 0);
+              }
+            },
+          });
+        }
+      };
+
+      /** Tabla sin bordes para imágenes aéreas — de a 2 por fila, centradas */
+      const addAerialSection = (seccion: ImageSeccion) => {
+        const imgs = correctedImgs.filter(img => img.seccion === seccion);
+        if (imgs.length === 0) {
+          autoTable(doc, {
+            startY: lastY() + 6,
+            body: [['Sin imágenes de ubicación espacial registradas.']],
+            theme: 'plain', styles: { fontSize: 8.5, textColor: [130,130,130] },
+          });
+          return;
+        }
+        const AERIAL_W = 90, AERIAL_H = 64;
+        const marginLeft = (PW - AERIAL_W * 2 - 6) / 2;
+        for (let i = 0; i < imgs.length; i += 2) {
+          const pair = imgs.slice(i, i + 2);
+          ensureSpace(AERIAL_H + 16);
+          autoTable(doc, {
+            startY: lastY() + 6,
+            rowPageBreak: 'avoid',
+            body: [[
+              { content: '', styles: { cellWidth: AERIAL_W, minCellHeight: AERIAL_H, cellPadding: 0 } },
+              { content: '', styles: { cellWidth: AERIAL_W, minCellHeight: AERIAL_H, cellPadding: 0 } },
+            ]],
+            theme: 'plain',
+            styles: { fontSize: 0, cellPadding: 3 },
+            columnStyles: { 0: { cellWidth: AERIAL_W }, 1: { cellWidth: AERIAL_W } },
+            margin: { left: marginLeft },
+            didDrawCell: (data: any) => {
+              if (data.section !== 'body') return;
+              const img = pair[data.column.index];
+              if (img?.url) {
+                try {
+                  const imgAreaH = data.cell.height - CAPTION_H;
+                  doc.addImage(img.url, 'JPEG', data.cell.x + 2, data.cell.y + 2, data.cell.width - 4, Math.max(imgAreaH - 2, 2));
+                  if (img.leyenda) {
+                    doc.setFontSize(7);
+                    doc.setTextColor(40, 40, 40);
+                    doc.setFont('helvetica', 'normal');
+                    const lines = doc.splitTextToSize(img.leyenda, data.cell.width - 4);
+                    doc.text(lines, data.cell.x + data.cell.width / 2, data.cell.y + imgAreaH + 5, { align: 'center' });
+                  }
+                } catch { /* skip */ }
               }
             },
           });
@@ -2249,80 +2679,114 @@ export default function App() {
       };
 
       doc.addPage();
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-      doc.text('3  Inspección de terreno', 14, 35);
+      sectionTitle('3  Inspección de terreno', 14, 35);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
       doc.setTextColor(60,60,60);
       doc.text('A continuación, se presentan los resultados de la inspección con desviaciones y observaciones de lo declarado vs lo inspeccionado en terreno.', 14, 42);
-
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-      doc.text('3.1  Extracción', 14, 52);
-      doc.setTextColor(0,0,0);
-      autoTable(doc, { startY: 56, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } }); // reset lastAutoTable
+      sectionTitle('3.1  Extracción', 12, 52);
+      autoTable(doc, { startY: 56, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
       addPhotoSection('Extracción');
 
       doc.addPage();
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-      doc.text('3.2  Desnaturalización.', 14, 35);
-      doc.setTextColor(0,0,0);
+      sectionTitle('3.2  Desnaturalización.', 12, 35);
       autoTable(doc, { startY: 39, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
       addPhotoSection('Desnaturalización');
 
       doc.addPage();
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-      doc.text('3.3  Almacenamiento.', 14, 35);
-      doc.setTextColor(0,0,0);
+      sectionTitle('3.3  Almacenamiento.', 12, 35);
       autoTable(doc, { startY: 39, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
       addPhotoSection('Almacenamiento');
 
       // ── Sección 4: Conclusiones ──
       doc.addPage();
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-      doc.text('4  Conclusiones inspección de estructuras', 14, 35);
+      sectionTitle('4  Conclusiones inspección de estructuras', 14, 35);
+
+      // Ondas de marca de agua en la página de conclusiones (antes del texto)
+      const drawConcWave = (y0: number, amp: number) => {
+        doc.setDrawColor(168, 200, 232);
+        doc.setLineWidth(0.3);
+        const ww = PW / 4;
+        doc.lines(
+          [[ww*0.38,-amp,ww*0.62,-amp,ww,0],[ww*0.38,amp,ww*0.62,amp,ww,0],
+           [ww*0.38,-amp,ww*0.62,-amp,ww,0],[ww*0.38,amp,ww*0.62,amp,ww,0]],
+          0, y0, [1, 1], 'S', false
+        );
+      };
+      [60, 80, 100, 120, 140, 160, 180, 200, 220].forEach((y, idx) =>
+        drawConcWave(y, 1.0 + (idx % 3) * 0.35)
+      );
+
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
       doc.setTextColor(0,0,0);
       const certifica = calculatedExtraction.cumple_norma && calculatedDenaturation.cumple_norma && calculatedStorage.cumple_norma;
       const concClusion = `Con base en las observaciones encontradas, se puede concluir que los sistemas o equipos de extracción, desnaturalización y almacenamiento de la mortalidad en el centro de cultivo ${cc.nombre_centro ? cc.nombre_centro + '  SIEP – ' + codigo : codigo}, dan cumplimiento a las capacidades mínimas establecidas en el artículo 4° A del D.S. N.º 320 de 2001, del Ministerio de Economía, Fomento y Turismo. Esto fue resuelto una vez realizada tanto la evaluación documental como la verificación en terreno el día ${formatDateES(g.fechas.inspeccion_terreno)}; por lo tanto, ${certifica ? 'ES CERTIFICABLE' : 'NO ES CERTIFICABLE'}.`;
       const cLines = doc.splitTextToSize(concClusion, 182);
       doc.text(cLines, 14, 44);
-      const sigY = 44 + cLines.length * 6 + 20;
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-      doc.text(g.certificador.nombre, 105, sigY, { align: 'center' });
-      doc.text(g.certificador.rut, 105, sigY + 8, { align: 'center' });
-      doc.text('CERTIFICADOR', 105, sigY + 16, { align: 'center' });
-      doc.text(`Sistema de mortalidad ${g.certificador.numero_registro}`, 105, sigY + 24, { align: 'center' });
+
+      // Zona de firma — replicar layout del certificado
+      const firmY = 44 + cLines.length * 6 + 28;
+      // Ondas decorativas de fondo sobre la firma
+      [firmY - 18, firmY - 12, firmY - 6].forEach((y, idx) =>
+        drawConcWave(y, 1.0 + idx * 0.3)
+      );
+      // Línea azul decorativa centrada
+      doc.setDrawColor(26, 58, 92); doc.setLineWidth(0.5);
+      doc.line(55, firmY, PW - 55, firmY);
+      // Nombre certificador
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
+      doc.text(g.certificador.nombre, PW / 2, firmY + 7, { align: 'center' });
+      // RUT | Registro
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      doc.text(
+        `RUT: ${g.certificador.rut}   |   Registro: ${g.certificador.numero_registro}`,
+        PW / 2, firmY + 13, { align: 'center' }
+      );
+      // Fecha de emisión
+      doc.text(
+        `Fecha de emisión: ${formatDateES(g.fechas.emision_certificado)}`,
+        PW / 2, firmY + 19, { align: 'center' }
+      );
 
       // ── Sección 5: Registro de visita ──
       doc.addPage();
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-      doc.text('5  Registro de visita.', 14, 35);
-
-      // 5.1 Ubicación Espacial
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-      doc.text('5.1  Ubicación espacial del centro', 14, 46);
-      doc.setTextColor(0,0,0);
+      sectionTitle('5  Registro de visita.', 14, 35);
+      sectionTitle('5.1  Ubicación espacial del centro', 12, 46);
       autoTable(doc, { startY: 50, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
-      addPhotoSection('Ubicación Espacial');
+      addAerialSection('Ubicación Espacial');
 
-      // 5.2 General
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-      const y52 = ((doc as any).lastAutoTable?.finalY ?? 100) + 12;
-      doc.text('5.2  Registro general', 14, y52);
-      doc.setTextColor(0,0,0);
+      ensureSpace(50);
+      const y52 = lastY() + 12;
+      sectionTitle('5.2  Registro general', 12, y52);
       autoTable(doc, { startY: y52 + 4, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
       addPhotoSection('General');
 
-      // Añadir frames (header/footer) a todas las páginas excepto portada
+      // Añadir frames (header/footer + ondas) a todas las páginas excepto portada
       addInformePageFrame(doc, docCode, logo, 'Informe Técnico');
 
-      doc.save(`Informe_Tecnico_1511_${codigo}.pdf`);
+      const filename = `Informe_Tecnico_1511_${codigo}.pdf`;
+
+      if (registroVisitaRef.current) {
+        // Merge: informe generado + Registro de Visita adjunto
+        try {
+          const { PDFDocument } = await import('pdf-lib');
+          const informeBytes  = doc.output('arraybuffer');
+          const mergedDoc     = await PDFDocument.load(informeBytes);
+          const visitaDoc     = await PDFDocument.load(registroVisitaRef.current);
+          const visitaPages   = await mergedDoc.copyPages(visitaDoc, visitaDoc.getPageIndices());
+          visitaPages.forEach(p => mergedDoc.addPage(p));
+          const mergedBytes   = await mergedDoc.save();
+          const blob = new Blob([mergedBytes], { type: 'application/pdf' });
+          const url  = URL.createObjectURL(blob);
+          const a    = document.createElement('a');
+          a.href = url; a.download = filename; a.click();
+          URL.revokeObjectURL(url);
+        } catch {
+          // Si falla el merge, guardar solo el informe
+          doc.save(filename);
+        }
+      } else {
+        doc.save(filename);
+      }
     } finally { setGenerating(null); }
   };
 
@@ -2336,12 +2800,48 @@ export default function App() {
 
   const GeneralView = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
-      <SectionHeader 
-        title="Datos Generales" 
-        icon={LayoutDashboard} 
+      <SectionHeader
+        title="Datos Generales"
+        icon={LayoutDashboard}
         description="Información base del centro de cultivo y del certificador a cargo."
       />
-      
+
+      {isAdmin && (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            {state.registroId ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 tracking-wider">
+                <Bookmark size={11} />
+                {state.registroId}
+              </span>
+            ) : (
+              <span className="text-xs text-slate-400 dark:text-slate-500 italic">Sin registro activo</span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={comenzarRegistro}
+              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-indigo-500/20"
+            >
+              <PlayCircle size={16} />
+              Comenzar Registro
+            </button>
+            <button
+              onClick={() => handleGuardar('general')}
+              disabled={!!guardandoSection}
+              className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 disabled:opacity-60 disabled:cursor-wait text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-emerald-500/30"
+            >
+              {guardandoSection === 'general'
+                ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}><Save size={16} /></motion.div> Guardando…</>
+                : guardadoSection === 'general'
+                  ? <><CheckCircle2 size={16} /> Guardado</>
+                  : <><Save size={16} /> Guardar</>
+              }
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <FormCard title="Identificación del Centro">
           <div className="space-y-4">
@@ -2444,11 +2944,20 @@ export default function App() {
 
         <FormCard title="Fechas y Certificador">
           <div className="space-y-4">
-            <InputField 
-              label="Fecha Inspección Terreno" 
-              type="date"
-              value={state.general.fechas.inspeccion_terreno} 
-              onChange={(v) => updateGeneral('fechas.inspeccion_terreno', v)} 
+            <DateField
+              label="Fecha Inspección Terreno"
+              value={state.general.fechas.inspeccion_terreno}
+              onChange={(v) => updateGeneral('fechas.inspeccion_terreno', v)}
+            />
+            <DateField
+              label="Fecha Evaluación Documental"
+              value={state.general.fechas.evaluacion_documental}
+              onChange={(v) => updateGeneral('fechas.evaluacion_documental', v)}
+            />
+            <DateField
+              label="Fecha Emisión Certificado"
+              value={state.general.fechas.emision_certificado}
+              onChange={(v) => updateGeneral('fechas.emision_certificado', v)}
             />
             <InputField 
               label="Certificador" 
@@ -2554,6 +3063,7 @@ export default function App() {
           </table>
         </div>
       </FormCard>
+
     </div>
   );
 
@@ -2722,6 +3232,23 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {isAdmin && (
+        <div className="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => handleGuardar('extraction')}
+            disabled={!!guardandoSection}
+            className="flex items-center gap-2 px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 disabled:opacity-60 disabled:cursor-wait text-white font-bold text-sm rounded-2xl transition-all shadow-lg shadow-emerald-500/30"
+          >
+            {guardandoSection === 'extraction'
+              ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}><Save size={18} /></motion.div> Guardando…</>
+              : guardadoSection === 'extraction'
+                ? <><CheckCircle2 size={18} /> Guardado</>
+                : <><Save size={18} /> Guardar sección</>
+            }
+          </button>
+        </div>
+      )}
     </div>
   );
 
@@ -2822,6 +3349,35 @@ export default function App() {
 
               <FormCard title="Cálculo de Ciclo (Batch)">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {(() => {
+                    const tri = CATALOGO_DESNATURALIZACION.trituradoras.find(
+                      t => t.id === state.denaturation.equipos.id_catalogo_trituradora
+                    );
+                    if (!tri?.configuraciones_batch?.length) return null;
+                    return (
+                      <div className="md:col-span-3 space-y-1.5">
+                        <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Configuración de Batch (Catálogo)</label>
+                        <select
+                          defaultValue=""
+                          key={tri.id}
+                          onChange={(e) => {
+                            const cfg = tri.configuraciones_batch!.find(c => c.label === e.target.value);
+                            if (cfg) {
+                              updateDenaturation('parametros_batch.kilos_por_batch', cfg.kilos);
+                              updateDenaturation('parametros_batch.tiempo_procesamiento_min', cfg.t_proceso);
+                              updateDenaturation('parametros_batch.tiempo_pausa_min', cfg.t_pausa);
+                            }
+                          }}
+                          className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                        >
+                          <option value="">Seleccionar configuración registrada...</option>
+                          {tri.configuraciones_batch.map(c => (
+                            <option key={c.label} value={c.label}>{c.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })()}
                   <InputField label="Kilos por Batch" type="number" value={state.denaturation.parametros_batch.kilos_por_batch} onChange={(v) => updateDenaturation('parametros_batch.kilos_por_batch', v)} suffix="Kg" min={1} max={5000} />
                   <InputField label="Tiempo Proceso" type="number" value={state.denaturation.parametros_batch.tiempo_procesamiento_min} onChange={(v) => updateDenaturation('parametros_batch.tiempo_procesamiento_min', v)} suffix="Min" min={1} max={240} />
                   <InputField label="Tiempo Pausa" type="number" value={state.denaturation.parametros_batch.tiempo_pausa_min} onChange={(v) => updateDenaturation('parametros_batch.tiempo_pausa_min', v)} suffix="Min" min={0} max={120} />
@@ -3008,6 +3564,23 @@ export default function App() {
           </FormCard>
         </div>
       </div>
+
+      {isAdmin && (
+        <div className="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => handleGuardar('denaturation')}
+            disabled={!!guardandoSection}
+            className="flex items-center gap-2 px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 disabled:opacity-60 disabled:cursor-wait text-white font-bold text-sm rounded-2xl transition-all shadow-lg shadow-emerald-500/30"
+          >
+            {guardandoSection === 'denaturation'
+              ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}><Save size={18} /></motion.div> Guardando…</>
+              : guardadoSection === 'denaturation'
+                ? <><CheckCircle2 size={18} /> Guardado</>
+                : <><Save size={18} /> Guardar sección</>
+            }
+          </button>
+        </div>
+      )}
     </div>
   );
 
@@ -3058,10 +3631,20 @@ export default function App() {
 
           <FormCard title="Infraestructura y Seguridad">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <InputField label="Material Pretil" value={state.storage.infraestructura.pretil_material} onChange={(v) => updateStorage('infraestructura.pretil_material', v)} />
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Material Pretil</label>
+                <select
+                  value={state.storage.infraestructura.pretil_material}
+                  onChange={(e) => updateStorage('infraestructura.pretil_material', e.target.value)}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                >
+                  <option value="">Seleccionar...</option>
+                  {OPCIONES_INFRAESTRUCTURA.pretil_material.map(o => <option key={o}>{o}</option>)}
+                </select>
+              </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Estado Pretil</label>
-                <select 
+                <select
                   value={state.storage.infraestructura.pretil_estado}
                   onChange={(e) => updateStorage('infraestructura.pretil_estado', e.target.value)}
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
@@ -3071,8 +3654,51 @@ export default function App() {
                   <option value="Malo">Malo</option>
                 </select>
               </div>
-              <InputField label="Material Piping" value={state.storage.infraestructura.piping_material} onChange={(v) => updateStorage('infraestructura.piping_material', v)} />
-              <InputField label="Diámetro Piping" value={state.storage.infraestructura.piping_diametro} onChange={(v) => updateStorage('infraestructura.piping_diametro', v)} />
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Material Piping</label>
+                <select
+                  value={state.storage.infraestructura.piping_material}
+                  onChange={(e) => updateStorage('infraestructura.piping_material', e.target.value)}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                >
+                  <option value="">Seleccionar...</option>
+                  {OPCIONES_INFRAESTRUCTURA.piping_material.map(o => <option key={o}>{o}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Diámetro Piping</label>
+                <select
+                  value={state.storage.infraestructura.piping_diametro}
+                  onChange={(e) => updateStorage('infraestructura.piping_diametro', e.target.value)}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                >
+                  <option value="">Seleccionar...</option>
+                  {OPCIONES_INFRAESTRUCTURA.piping_diametro.map(o => <option key={o}>{o}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Válvulas Piping</label>
+                <select
+                  value={state.storage.infraestructura.piping_valvulas}
+                  onChange={(e) => updateStorage('infraestructura.piping_valvulas', e.target.value)}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                >
+                  <option value="">Seleccionar...</option>
+                  {OPCIONES_INFRAESTRUCTURA.piping_valvulas.map(o => <option key={o}>{o}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Estado Piping</label>
+                <select
+                  value={state.storage.infraestructura.piping_estado}
+                  onChange={(e) => updateStorage('infraestructura.piping_estado', e.target.value)}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                >
+                  <option value="Bueno">Bueno</option>
+                  <option value="Regular">Regular</option>
+                  <option value="Malo">Malo</option>
+                </select>
+              </div>
             </div>
           </FormCard>
         </div>
@@ -3095,16 +3721,136 @@ export default function App() {
           </FormCard>
         </div>
       </div>
+
+      {isAdmin && (
+        <div className="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => handleGuardar('storage')}
+            disabled={!!guardandoSection}
+            className="flex items-center gap-2 px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 disabled:opacity-60 disabled:cursor-wait text-white font-bold text-sm rounded-2xl transition-all shadow-lg shadow-emerald-500/30"
+          >
+            {guardandoSection === 'storage'
+              ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}><Save size={18} /></motion.div> Guardando…</>
+              : guardadoSection === 'storage'
+                ? <><CheckCircle2 size={18} /> Guardado</>
+                : <><Save size={18} /> Guardar sección</>
+            }
+          </button>
+        </div>
+      )}
     </div>
   );
 
-  const ReportView = () => (
+  const ReportView = () => {
+    const SECCIONES_CONTEO: { label: string; key: string }[] = [
+      { label: 'General',          key: 'General' },
+      { label: 'Extracción',       key: 'Extracción' },
+      { label: 'Desnaturalización',key: 'Desnaturalización' },
+      { label: 'Almacenamiento',   key: 'Almacenamiento' },
+    ];
+    const clasificadas = new Set(SECCIONES_CONTEO.map(s => s.key));
+    const sinClasificar = state.images.filter(i => !clasificadas.has(i.seccion)).length;
+    const total = state.images.length;
+
+    return (
       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <SectionHeader
           title="Informe Técnico e Imágenes"
           icon={Camera}
           description="Grilla de registro fotográfico. Arrastra imágenes y asigna estados y leyendas."
         />
+
+        {/* Contador por sección — sticky */}
+        <div className="sticky top-0 z-30 -mx-8 md:-mx-12 px-8 md:px-12 py-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+            {total} {total === 1 ? 'imagen' : 'imágenes'}
+          </span>
+          <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
+          {SECCIONES_CONTEO.map(({ label, key }) => {
+            const count = state.images.filter(i => i.seccion === key).length;
+            return (
+              <span
+                key={key}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors",
+                  count > 0
+                    ? "bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700"
+                )}
+              >
+                {label}
+                <span className={cn(
+                  "inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold",
+                  count > 0 ? "bg-indigo-600 text-white" : "bg-slate-300 dark:bg-slate-600 text-slate-500 dark:text-slate-400"
+                )}>
+                  {count}
+                </span>
+              </span>
+            );
+          })}
+          {sinClasificar > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30">
+              Sin clasificar
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold bg-amber-500 text-white">
+                {sinClasificar}
+              </span>
+            </span>
+          )}
+          {isAdmin && total > 0 && (
+            <>
+              <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 ml-auto" />
+              <button
+                onClick={() => {
+                  if (window.confirm(`¿Borrar las ${total} fotos? Esta acción no se puede deshacer.`)) {
+                    idbClear();
+                    setState(prev => ({ ...prev, images: [] }));
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-rose-500 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+              >
+                <Trash2 size={11} />
+                Borrar fotos
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Adjuntar Registro de Visita PDF */}
+        {isAdmin && (
+          <div className="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Registro de Visita</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                {registroVisitaName
+                  ? `📄 ${registroVisitaName}`
+                  : 'Adjunta el PDF — se insertará como última página del Informe Técnico'}
+              </p>
+            </div>
+            <input
+              ref={registroVisitaInputRef}
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              onChange={handleRegistroVisitaUpload}
+            />
+            {registroVisitaName && (
+              <button
+                onClick={() => { registroVisitaRef.current = null; setRegistroVisitaName(null); }}
+                className="text-rose-500 hover:text-rose-600 transition-colors"
+                title="Quitar PDF"
+              >
+                <XCircle size={18} />
+              </button>
+            )}
+            <button
+              onClick={() => registroVisitaInputRef.current?.click()}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition-all shrink-0"
+            >
+              <FileDown size={15} />
+              {registroVisitaName ? 'Cambiar' : 'Adjuntar PDF'}
+            </button>
+          </div>
+        )}
 
         <div
           {...dropzoneRootProps()}
@@ -3236,8 +3982,26 @@ export default function App() {
             })}
           </AnimatePresence>
         </div>
+
+      {isAdmin && (
+        <div className="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => handleGuardar('report')}
+            disabled={!!guardandoSection}
+            className="flex items-center gap-2 px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 disabled:opacity-60 disabled:cursor-wait text-white font-bold text-sm rounded-2xl transition-all shadow-lg shadow-emerald-500/30"
+          >
+            {guardandoSection === 'report'
+              ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}><Save size={18} /></motion.div> Guardando…</>
+              : guardadoSection === 'report'
+                ? <><CheckCircle2 size={18} /> Guardado</>
+                : <><Save size={18} /> Guardar sección</>
+            }
+          </button>
+        </div>
+      )}
       </div>
-  );
+    );
+  };
 
   const IssueView = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
@@ -3532,7 +4296,10 @@ export default function App() {
 
             {/* Cerrar sesión */}
             <button
-              onClick={() => { setUserRole(null); setShowWelcome(true); }}
+              onClick={async () => {
+                try { const { signOut } = await import('firebase/auth'); const { auth } = await import('./firebase'); await signOut(auth); } catch {}
+                setUserRole(null); setShowWelcome(true);
+              }}
               title="Cerrar sesión"
               className={cn(
                 "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative",
@@ -3575,6 +4342,16 @@ export default function App() {
             {darkMode ? <Sun size={20} className="text-amber-400" /> : <Moon size={20} className="text-indigo-600" />}
             {!isSidebarCollapsed && <span className="font-bold text-sm tracking-tight">{darkMode ? 'Modo Claro' : 'Modo Oscuro'}</span>}
           </button>
+
+          {/* Badge correlativo interno */}
+          {!isSidebarCollapsed && (
+            <div className="flex items-center gap-2 py-1">
+              <Bookmark size={11} className={cn("shrink-0", state.registroId ? "text-indigo-400" : "text-slate-400 dark:text-slate-600")} />
+              <span className={cn("text-[11px] font-bold tracking-wider", state.registroId ? "text-indigo-400 dark:text-indigo-300" : "text-slate-400 dark:text-slate-600")}>
+                {state.registroId ?? 'Sin registro'}
+              </span>
+            </div>
+          )}
 
           {/* Indicador de auto-guardado */}
           {!isSidebarCollapsed && (
@@ -3624,6 +4401,20 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 p-8 md:p-12 overflow-y-auto relative z-10">
+          {/* Toast de error de guardado */}
+          <AnimatePresence>
+            {saveError && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="fixed top-4 right-4 z-[200] flex items-center gap-3 px-5 py-3 bg-rose-600 text-white rounded-2xl shadow-xl font-semibold text-sm"
+              >
+                <XCircle size={18} />
+                {saveError}
+              </motion.div>
+            )}
+          </AnimatePresence>
           {!isAdmin && userRole === 'reader' && (
             <div className="sticky top-0 z-40 bg-amber-500 text-amber-950 text-xs font-bold px-6 py-2 flex items-center gap-2">
               <ShieldCheck size={14} />
