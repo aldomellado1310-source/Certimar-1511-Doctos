@@ -8,6 +8,34 @@ import actaTemplate from '../assets/acta-template.html?raw';
 import type { AppState } from '../types';
 import { calculateExtraction, calculateDenaturation, calculateStorage } from './calculations';
 
+/**
+ * Convierte oklch(L C H) a hex #rrggbb.
+ * Necesario porque html2canvas no soporta oklch (Tailwind v4).
+ */
+function oklchToHex(l: number, c: number, h: number): string {
+  const hRad = (h * Math.PI) / 180;
+  const a = c * Math.cos(hRad);
+  const b = c * Math.sin(hRad);
+  const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+  const l3 = l_ ** 3, m3 = m_ ** 3, s3 = s_ ** 3;
+  let r =  4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+  let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+  let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+  const gamma = (x: number) => x >= 0.0031308 ? 1.055 * x ** (1 / 2.4) - 0.055 : 12.92 * x;
+  const toHex = (x: number) => Math.round(Math.max(0, Math.min(1, gamma(x))) * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(bl)}`;
+}
+
+/** Reemplaza todas las ocurrencias de oklch(...) en un string CSS con hex. */
+function patchOklch(css: string): string {
+  return css.replace(
+    /oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.%]+)?\s*\)/g,
+    (_, l, c, h) => oklchToHex(parseFloat(l), parseFloat(c), parseFloat(h))
+  );
+}
+
 const MESES_ES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
@@ -355,6 +383,16 @@ export async function generateActaPdf(
           allowTaint: true,
           backgroundColor: '#ffffff',
           logging: false,
+          onclone: (clonedDoc: Document) => {
+            // html2canvas no soporta oklch (Tailwind v4).
+            // Convertimos todos los valores oklch en los <style> del documento clonado
+            // a hex equivalente usando la fórmula oklch → oklab → sRGB.
+            clonedDoc.querySelectorAll('style').forEach(styleEl => {
+              if (styleEl.textContent?.includes('oklch')) {
+                styleEl.textContent = patchOklch(styleEl.textContent);
+              }
+            });
+          },
         },
         margin: [0, 0, 0, 0],
         autoPaging: 'text',

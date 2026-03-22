@@ -478,9 +478,9 @@ const MarineBackground = () => (
   </div>
 );
 
-const Logo = ({ collapsed, tema }: { collapsed?: boolean; tema?: 'certimar' | 'engelbert' }) => {
-  const src = tema === 'engelbert' ? '/engelbert-logo.png' : '/certimar-logo.png';
-  const alt = tema === 'engelbert' ? 'Engelbert' : 'Certimar';
+const Logo = ({ collapsed, tema }: { collapsed?: boolean; tema?: { logo: 'certimar' | 'engelbert'; palette: 'certimar' | 'engelbert' } }) => {
+  const src = tema?.logo === 'engelbert' ? '/engelbert-logo.png' : '/certimar-logo.png';
+  const alt = tema?.logo === 'engelbert' ? 'Engelbert' : 'Certimar';
   return (
     <div className="flex items-center justify-center">
       <img src={src} alt={alt} className={collapsed ? "w-12 h-12 object-contain" : "h-16 max-w-full object-contain"} />
@@ -1643,10 +1643,20 @@ export default function App() {
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, []);
-  const [tema, setTema] = useState<'certimar' | 'engelbert'>(() =>
-    (localStorage.getItem('certimar-tema') as 'certimar' | 'engelbert') ?? 'certimar'
-  );
-  useEffect(() => { localStorage.setItem('certimar-tema', tema); }, [tema]);
+  const [tema, setTema] = useState<{ logo: 'certimar' | 'engelbert'; palette: 'certimar' | 'engelbert' }>(() => {
+    try {
+      const raw = localStorage.getItem('certimar-tema');
+      if (raw) {
+        // Migrar formato anterior (string simple) al nuevo formato objeto
+        if (raw === '"certimar"' || raw === 'certimar') return { logo: 'certimar', palette: 'certimar' };
+        if (raw === '"engelbert"' || raw === 'engelbert') return { logo: 'engelbert', palette: 'engelbert' };
+        const parsed = JSON.parse(raw);
+        if (parsed?.logo && parsed?.palette) return parsed;
+      }
+    } catch {}
+    return { logo: 'certimar', palette: 'certimar' };
+  });
+  useEffect(() => { localStorage.setItem('certimar-tema', JSON.stringify(tema)); }, [tema]);
 
   const [datosPrueba, setDatosPrueba] = useState(false);
 
@@ -1684,6 +1694,7 @@ export default function App() {
   });
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
+  const [subjectCopied, setSubjectCopied] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('certimar-dark-mode', JSON.stringify(darkMode));
@@ -2171,7 +2182,7 @@ Se despide atentamente`;
     });
 
   const loadLogo = async (): Promise<string | null> => {
-    const logoPath = tema === 'engelbert' ? '/engelbert-logo.png' : '/certimar-logo.png';
+    const logoPath = tema.logo === 'engelbert' ? '/engelbert-logo.png' : '/certimar-logo.png';
     try {
       const resp = await fetch(logoPath);
       const blob = await resp.blob();
@@ -2255,7 +2266,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       const W = 215.9, H = 279.4;
 
       // ── Helper onda decorativa — con opacidad para no tapar el texto ──
-      const isEngelbertFrame = tema === 'engelbert';
+      const isEngelbertFrame = tema.palette === 'engelbert';
       const gState25 = (doc as any).GState({ opacity: 0.25, 'fill-opacity': 0.25 });
       const gState100 = (doc as any).GState({ opacity: 1, 'fill-opacity': 1 });
       const drawWave = (y0: number, amp: number) => {
@@ -2296,11 +2307,6 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       doc.text(docCode, W - 5, 6, { align: 'right' });
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
       doc.text(pageLabel, W - 5, 12, { align: 'right' });
-      // Banda de acento al pie del header
-      doc.setFillColor(...FRAME_PRI);
-      doc.rect(0, 17, W, 4, 'F');
-      doc.setFillColor(...FRAME_DRK);
-      doc.rect(0, 21, W, 0.8, 'F');
 
       // ── Footer liviano ──
       doc.setDrawColor(...FRAME_PRI);
@@ -2350,7 +2356,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       const cert   = buildCertificadoData(stateWithCalc);
       const codigo = state.general.centro_cultivo.codigo_centro;
 
-      const isEngelbert = tema === 'engelbert';
+      const isEngelbert = tema.palette === 'engelbert';
       const AZUL: [number, number, number]    = isEngelbert ? [210, 65, 10]  : [15, 40, 90];
       const AZUL_DARK: [number, number, number] = isEngelbert ? [160, 40,  0]  : [10, 28, 70];
       const VERDE: [number, number, number]   = [22, 101, 52];
@@ -2361,9 +2367,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
       const doc = new jsPDF({ compress: true });
 
-      // Header blanco con línea divisoria arcilla
-      doc.setFillColor(255, 255, 255);
-      doc.rect(0, 0, 210, 38, 'F');
+      // Header: solo banda arcilla
       doc.setFillColor(...AZUL);
       doc.rect(0, 37, 210, 1.5, 'F');
 
@@ -2566,25 +2570,18 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       doc.setFontSize(7.5);
       doc.text('Res. Exenta N°1511/2021 — D.S. N°320', 50, 8);
       doc.setFont('helvetica', 'bold');
-      doc.text(`${codigo}_CERTIFICADO`, 204, 8, { align: 'right' });
-      doc.setFont('helvetica', 'normal');
-      doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
       doc.text('CERTIFICADO DE SISTEMAS DE', 50, 17);
       doc.text('MANEJO DE MORTALIDAD', 50, 25);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.text(`Centro: ${cert.identificacion['Código Centro']} — ${cert.identificacion['Nombre Centro']}`, 50, 31);
       doc.setTextColor(0, 0, 0);
 
-      // ── Marca de agua: olas multicolor (paleta teal) ────────────────────────
-      // Definida ANTES del contenido para que quede detrás del texto.
+      // ── Marca de agua: olas multicolor (paleta según tema) ──────────────────
       const PALETTE: [number,number,number][] = isEngelbert ? [
-        [255, 225, 190],
-        [253, 186, 116],
-        [234, 138,  52],
-        [200,  90,  20],
-        [160,  50,   5],
+        [255, 235, 215],
+        [255, 215, 180],
+        [245, 190, 140],
+        [230, 165, 105],
+        [210, 140,  75],
       ] : [
         [197, 218, 218],
         [127, 181, 176],
@@ -2604,10 +2601,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         ], x0, y0, [1, 1], 'S', false);
       };
       const drawWatermarkOnPage = (yStart: number) => {
-        const yEnd = 282;
-        doc.setGState((doc as any).GState({ opacity: 0.35, 'fill-opacity': 0.35 }));
+        doc.setGState((doc as any).GState({ opacity: 0.30, 'fill-opacity': 0.30 }));
         let row = 0;
-        for (let wy = yStart + 6; wy < yEnd; wy += 13) {
+        for (let wy = yStart + 6; wy < 275; wy += 13) {
           const color = PALETTE[row % PALETTE.length];
           const amp = 1.4 + (row % 3) * 0.35;
           const lw  = 0.22 + (row % 5) * 0.06;
@@ -2618,7 +2614,6 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         doc.setLineWidth(0.2);
       };
 
-      // Página 1: olas desde y=42 (justo debajo del header reducido)
       drawWatermarkOnPage(42);
 
       autoTable(doc, {
@@ -2631,7 +2626,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         alternateRowStyles: { fillColor: GRIS },
         columnStyles: { 0: { fontStyle: 'bold', cellWidth: 65 } },
         styles: { fontSize: 9, cellPadding: 3 },
-        didDrawPage: (data: any) => { if (data.pageNumber > 1) { drawWatermarkOnPage(30); } },
+        didDrawPage: (data: any) => { if (data.pageNumber > 1) drawWatermarkOnPage(30); },
       });
 
       const bodyCapacidades: string[][] = [];
@@ -2656,7 +2651,6 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             data.cell.styles.fontStyle = 'bold';
           }
         },
-        didDrawPage: (data: any) => { if (data.pageNumber > 1) { drawWatermarkOnPage(42); } },
       });
 
       const verdY = ((doc as any).lastAutoTable?.finalY ?? 180) + 8;
@@ -2722,7 +2716,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       );
 
       // Paleta según tema
-      const isEngelbert = tema === 'engelbert';
+      const isEngelbert = tema.palette === 'engelbert';
       const AZUL_H: [number,number,number]    = isEngelbert ? [210, 65,  10]  : [74, 118, 168];
       const AZUL_T: [number,number,number]    = isEngelbert ? [180, 60,   0]  : [31,  73, 125];
       const AZUL_D: [number,number,number]    = isEngelbert ? [160, 40,   0]  : [31,  56, 100];
@@ -2839,9 +2833,14 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         doc.setTextColor(0, 0, 0);
       };
 
+      // ── Índice (TOC) — entradas registradas durante la generación ──
+      const tocEntries: { title: string; page: number; level: number }[] = [];
+      const getPage = () => (doc as any).internal.getNumberOfPages();
+
       // ── Sección 1: Identificación del centro ──
       doc.addPage();
       drawBodyWaves();
+      tocEntries.push({ title: '1   Identificación del centro', page: getPage(), level: 1 });
       sectionTitle('1  Identificación del centro', 14, 30);
 
       autoTable(doc, {
@@ -2869,6 +2868,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // 1.1 Proceso extracción
       ensureSpace(65);
       const y11 = lastY() + 10;
+      tocEntries.push({ title: '1.1  Proceso extracción', page: getPage(), level: 2 });
       sectionTitle('1.1  Proceso extracción', 12, y11);
 
       autoTable(doc, {
@@ -2894,6 +2894,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // 1.2 Información plataforma y circuitos
       doc.addPage();
       drawBodyWaves();
+      tocEntries.push({ title: '1.2  Información plataforma y circuitos', page: getPage(), level: 2 });
       sectionTitle('1.2  Información plataforma y circuitos', 12, 30);
 
       autoTable(doc, {
@@ -2928,6 +2929,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // 1.3 Generación eléctrica
       ensureSpace(40);
       const y13 = lastY() + 10;
+      tocEntries.push({ title: '1.3  Capacidad Generación Eléctrica', page: getPage(), level: 2 });
       sectionTitle('1.3  Capacidad Generación Eléctrica', 12, y13);
 
       if (den.generacion_electrica.length > 0) {
@@ -2953,6 +2955,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // 1.4 Desnaturalización y almacenamiento
       ensureSpace(75);
       const y14 = lastY() + 10;
+      tocEntries.push({ title: '1.4  Desnaturalización y almacenamiento', page: getPage(), level: 2 });
       sectionTitle('1.4  Desnaturalización y almacenamiento.', 12, y14);
 
       autoTable(doc, {
@@ -3018,6 +3021,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // ── Sección 2: Metodología ──
       doc.addPage();
       drawBodyWaves();
+      tocEntries.push({ title: '2   Metodología de trabajo', page: getPage(), level: 1 });
       sectionTitle('2  Metodología de trabajo para la inspección del módulo', 14, 30);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
       doc.setTextColor(0,0,0);
@@ -3283,6 +3287,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
       doc.addPage();
       drawBodyWaves();
+      tocEntries.push({ title: '3   Inspección de terreno', page: getPage(), level: 1 });
+      tocEntries.push({ title: '3.1  Extracción', page: getPage(), level: 2 });
       sectionTitle('3  Inspección de terreno', 14, 30);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
       doc.setTextColor(60,60,60);
@@ -3293,12 +3299,14 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
       doc.addPage();
       drawBodyWaves();
+      tocEntries.push({ title: '3.2  Desnaturalización', page: getPage(), level: 2 });
       sectionTitle('3.2  Desnaturalización.', 12, 30);
       autoTable(doc, { startY: 36, margin: { top: 25 }, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
       addPhotoSection('Desnaturalización');
 
       doc.addPage();
       drawBodyWaves();
+      tocEntries.push({ title: '3.3  Almacenamiento', page: getPage(), level: 2 });
       sectionTitle('3.3  Almacenamiento.', 12, 30);
       autoTable(doc, { startY: 36, margin: { top: 25 }, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
       addPhotoSection('Almacenamiento');
@@ -3306,6 +3314,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // ── Sección 4: Conclusiones ──
       doc.addPage();
       drawBodyWaves();
+      tocEntries.push({ title: '4   Conclusiones inspección de estructuras', page: getPage(), level: 1 });
       sectionTitle('4  Conclusiones inspección de estructuras', 14, 30);
 
       // Helper para olas decorativas cerca de la firma
@@ -3325,7 +3334,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       const certifica = calculatedExtraction.cumple_norma && calculatedDenaturation.cumple_norma && calculatedStorage.cumple_norma;
       const concClusion = `Con base en las observaciones encontradas, se puede concluir que los sistemas o equipos de extracción, desnaturalización y almacenamiento de la mortalidad en el centro de cultivo ${cc.nombre_centro ? cc.nombre_centro + '  SIEP – ' + codigo : codigo}, dan cumplimiento a las capacidades mínimas establecidas en el artículo 4° A del D.S. N.º 320 de 2001, del Ministerio de Economía, Fomento y Turismo. Esto fue resuelto una vez realizada tanto la evaluación documental como la verificación en terreno el día ${formatDateES(g.fechas.inspeccion_terreno)}; por lo tanto, ${certifica ? 'ES CERTIFICABLE' : 'NO ES CERTIFICABLE'}.`;
       const cLines = doc.splitTextToSize(concClusion, 182);
-      doc.text(cLines, 14, 38);
+      doc.text(cLines, 14, 38, { align: 'justify', maxWidth: 182 });
 
       // Zona de firma — replicar layout del certificado
       const firmY = 38 + cLines.length * 6 + 28;
@@ -3354,16 +3363,91 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // ── Sección 5: Registro de visita ──
       doc.addPage();
       drawBodyWaves();
+      tocEntries.push({ title: '5   Registro de visita', page: getPage(), level: 1 });
+      tocEntries.push({ title: '5.1  Ubicación espacial del centro', page: getPage(), level: 2 });
       sectionTitle('5  Registro de visita.', 14, 30);
       sectionTitle('5.1  Ubicación espacial del centro', 12, 38);
       autoTable(doc, { startY: 43, margin: { top: 25 }, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
       addAerialSection('Ubicación Espacial');
 
-      ensureSpace(50);
-      const y52 = lastY() + 12;
-      sectionTitle('5.2  Registro general', 12, y52);
-      autoTable(doc, { startY: y52 + 4, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
-      addPhotoSection('General');
+
+      // ── Insertar página de índice en posición 2 y dibujarla ──
+      doc.insertPage(2);
+      doc.setPage(2);
+      drawBodyWaves();
+
+      const TOC_LEFT  = 18;
+      const TOC_RIGHT = PW - 18;
+      const PAGE_COL  = TOC_RIGHT;
+
+      // Título
+      let tocY = 38;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.setTextColor(...AZUL_T);
+      doc.text('ÍNDICE DE CONTENIDO', PW / 2, tocY, { align: 'center' });
+
+      // Doble línea decorativa bajo el título
+      tocY += 5;
+      doc.setDrawColor(...AZUL_H);
+      doc.setLineWidth(0.7);
+      doc.line(TOC_LEFT, tocY, TOC_RIGHT, tocY);
+      doc.setLineWidth(0.15);
+      doc.setDrawColor(...AZUL_D);
+      doc.line(TOC_LEFT, tocY + 1.8, TOC_RIGHT, tocY + 1.8);
+      tocY += 12;
+
+      for (let i = 0; i < tocEntries.length; i++) {
+        const entry     = tocEntries[i];
+        const finalPage = entry.page + 1; // +1 porque la página de índice fue insertada
+        const isL1      = entry.level === 1;
+        const indent    = isL1 ? TOC_LEFT : TOC_LEFT + 9;
+        const fSize     = isL1 ? 10.5 : 9;
+
+        // Franja de fondo para entradas nivel 1
+        if (isL1) {
+          doc.setFillColor(...(isEngelbert
+            ? [255, 248, 242] as [number,number,number]
+            : [245, 248, 254] as [number,number,number]));
+          doc.rect(TOC_LEFT - 3, tocY - 5.8, TOC_RIGHT - TOC_LEFT + 6, 9, 'F');
+        }
+
+        // Medir anchos con el font correcto antes de dibujar
+        doc.setFont('helvetica', isL1 ? 'bold' : 'normal');
+        doc.setFontSize(fSize);
+        const titleW  = doc.getTextWidth(entry.title);
+        const pageStr = String(finalPage);
+        const pageW   = doc.getTextWidth(pageStr);
+
+        // Título
+        doc.setTextColor(...(isL1 ? AZUL_T : [55, 55, 55] as [number,number,number]));
+        doc.text(entry.title, indent, tocY);
+
+        // Número de página (alineado a la derecha)
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...(isL1 ? AZUL_T : [80, 80, 80] as [number,number,number]));
+        doc.text(pageStr, PAGE_COL, tocY, { align: 'right' });
+
+        // Guía de puntos entre título y número de página
+        const dotsStart = indent + titleW + 3;
+        const dotsEnd   = PAGE_COL - pageW - 3;
+        doc.setFontSize(8);
+        doc.setTextColor(isL1 ? 160 : 195, isL1 ? 160 : 195, isL1 ? 160 : 195);
+        const dotW = doc.getTextWidth('.');
+        for (let dx = dotsStart; dx < dotsEnd - dotW; dx += dotW + 0.7) {
+          doc.text('.', dx, tocY);
+        }
+
+        // Separador tenue al pasar de sub-sección a nueva sección principal
+        if (entry.level === 2 && i < tocEntries.length - 1 && tocEntries[i + 1].level === 1) {
+          tocY += 4;
+          doc.setDrawColor(210, 215, 225);
+          doc.setLineWidth(0.1);
+          doc.line(TOC_LEFT, tocY - 2, TOC_RIGHT, tocY - 2);
+        }
+
+        tocY += isL1 ? 12 : 8.5;
+      }
 
       // Añadir frames (header/footer + ondas) a todas las páginas excepto portada
       addInformePageFrame(doc, docCode, logo, 'Informe Técnico');
@@ -3624,14 +3708,14 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 px-1">Tema / Marca</p>
           <div className="grid grid-cols-2 gap-3">
             {([
-              { key: 'certimar', label: 'Certimar', logo: '/certimar-logo.png', accent: 'indigo', desc: 'Azul marino — paleta oficial Certimar' },
-              { key: 'engelbert', label: 'Engelbert', logo: '/engelbert-logo.png', accent: 'orange', desc: 'Naranja y negro — Engelbert Aquastructures' },
-            ] as const).map(({ key, label, logo, accent, desc }) => {
-              const isActive = tema === key;
+              { logoKey: 'certimar' as const, paletteKey: 'certimar' as const, label: 'Certimar', logo: '/certimar-logo.png', accent: 'indigo', desc: 'Azul marino — paleta oficial Certimar' },
+              { logoKey: 'engelbert' as const, paletteKey: 'engelbert' as const, label: 'Engelbert', logo: '/engelbert-logo.png', accent: 'orange', desc: 'Naranja y negro — Engelbert Aquastructures' },
+            ]).map(({ logoKey, paletteKey, label, logo, accent, desc }) => {
+              const isActive = tema.logo === logoKey && tema.palette === paletteKey;
               return (
                 <button
-                  key={key}
-                  onClick={() => setTema(key)}
+                  key={logoKey}
+                  onClick={() => setTema({ logo: logoKey, palette: paletteKey })}
                   className={cn(
                     "flex flex-col items-center gap-3 p-5 rounded-2xl border-2 transition-all",
                     isActive
@@ -3658,6 +3742,75 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               );
             })}
           </div>
+          {/* Opción personalizada: logo y paleta independientes */}
+          {(() => {
+            const isMixed = !(tema.logo === tema.palette);
+            return (
+              <div className={cn(
+                "rounded-2xl border-2 p-4 transition-all",
+                isMixed
+                  ? "border-violet-400 bg-violet-50 dark:bg-violet-500/15 shadow-lg shadow-violet-500/10"
+                  : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50"
+              )}>
+                <div className="flex items-center justify-between mb-3">
+                  <p className={cn("text-sm font-semibold", isMixed ? "text-violet-700 dark:text-violet-300" : "text-slate-600 dark:text-slate-400")}>
+                    Personalizado — logo y paleta independientes
+                  </p>
+                  {isMixed && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500 text-white">ACTIVO</span>}
+                </div>
+                <div className="flex flex-col gap-2">
+                  {/* Logo selector */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 w-12 shrink-0">Logo</span>
+                    <div className="flex gap-1.5">
+                      {([
+                        { key: 'certimar' as const, label: 'Certimar', logo: '/certimar-logo.png' },
+                        { key: 'engelbert' as const, label: 'Engelbert', logo: '/engelbert-logo.png' },
+                      ]).map(({ key, label, logo }) => (
+                        <button
+                          key={key}
+                          onClick={() => setTema(prev => ({ ...prev, logo: key }))}
+                          className={cn(
+                            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all",
+                            tema.logo === key
+                              ? "border-violet-400 bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300"
+                              : "border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-300"
+                          )}
+                        >
+                          <img src={logo} alt={label} className="h-4 w-auto object-contain" />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Palette selector */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 w-12 shrink-0">Paleta</span>
+                    <div className="flex gap-1.5">
+                      {([
+                        { key: 'certimar' as const, label: 'Azul', color: '#1a3a5c' },
+                        { key: 'engelbert' as const, label: 'Naranja', color: '#d2410a' },
+                      ]).map(({ key, label, color }) => (
+                        <button
+                          key={key}
+                          onClick={() => setTema(prev => ({ ...prev, palette: key }))}
+                          className={cn(
+                            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all",
+                            tema.palette === key
+                              ? "border-violet-400 bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300"
+                              : "border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-300"
+                          )}
+                        >
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </section>
 
@@ -3720,7 +3873,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             { label: 'Registro activo', value: state.registroId ?? 'Sin registro' },
             { label: 'Certificador', value: state.general.certificador.nombre },
             { label: 'N° Registro SERNAPESCA', value: state.general.certificador.numero_registro },
-            { label: 'Tema activo', value: tema === 'certimar' ? 'Certimar' : 'Engelbert Aquastructures' },
+            { label: 'Tema activo', value: `Logo: ${tema.logo === 'engelbert' ? 'Engelbert' : 'Certimar'} · Paleta: ${tema.palette === 'engelbert' ? 'Naranja' : 'Azul'}` },
             { label: 'Guardado', value: savedAt ? `Borrador guardado ${savedLabel()}` : 'Sin cambios' },
           ].map(({ label, value }) => (
             <div key={label} className="flex items-center justify-between px-5 py-3.5">
@@ -5148,87 +5301,74 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           )}
         </div>
       </div>
+
+      {/* ── Correo de notificación inline ── */}
+      {showEmailModal && (() => {
+        const subject = buildEmailSubject();
+        const text = buildEmailText();
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 font-bold text-sm">
+                <Mail size={16} />
+                Correo de notificación
+              </div>
+              <button
+                onClick={() => setShowEmailModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {/* Asunto */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Asunto</span>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(subject).then(() => { setSubjectCopied(true); setTimeout(() => setSubjectCopied(false), 2000); })}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    <Copy size={11} />
+                    {subjectCopied ? 'Copiado!' : 'Copiar'}
+                  </button>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-xl px-4 py-3 text-sm text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-mono">
+                  {subject}
+                </div>
+              </div>
+              {/* Mensaje */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Mensaje</span>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(text).then(() => { setEmailCopied(true); setTimeout(() => setEmailCopied(false), 2000); })}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    <Copy size={11} />
+                    {emailCopied ? 'Copiado!' : 'Copiar'}
+                  </button>
+                </div>
+                <pre className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap font-sans leading-relaxed border border-slate-200 dark:border-slate-700 max-h-72 overflow-y-auto">
+                  {text}
+                </pre>
+              </div>
+            </div>
+          </motion.div>
+        );
+      })()}
     </div>
   );
 
 
-  // ─── Email Modal ───────────────────────────────────────────────────────────
-  const EmailModal = () => {
-    if (!showEmailModal) return null;
-    const subject = buildEmailSubject();
-    const text = buildEmailText();
-    const [subjectCopied, setSubjectCopied] = React.useState(false);
-    const handleCopySubject = () => {
-      navigator.clipboard.writeText(subject).then(() => {
-        setSubjectCopied(true);
-        setTimeout(() => setSubjectCopied(false), 2000);
-      });
-    };
-    const handleCopy = () => {
-      navigator.clipboard.writeText(text).then(() => {
-        setEmailCopied(true);
-        setTimeout(() => setEmailCopied(false), 2000);
-      });
-    };
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col gap-4 p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 font-bold text-base">
-              <Mail size={18} />
-              Correo de notificación
-            </div>
-            <button onClick={() => setShowEmailModal(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
-              <X size={20} />
-            </button>
-          </div>
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Asunto</span>
-              <button
-                onClick={handleCopySubject}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              >
-                <Copy size={12} />
-                {subjectCopied ? 'Copiado!' : 'Copiar'}
-              </button>
-            </div>
-            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl px-4 py-3 text-sm text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-mono">
-              {subject}
-            </div>
-          </div>
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Mensaje</span>
-              <button
-                onClick={handleCopy}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              >
-                <Copy size={12} />
-                {emailCopied ? 'Copiado!' : 'Copiar'}
-              </button>
-            </div>
-            <pre className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap font-sans leading-relaxed border border-slate-200 dark:border-slate-700 max-h-64 overflow-y-auto">
-              {text}
-            </pre>
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button
-              onClick={() => setShowEmailModal(false)}
-              className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-            >
-              Cerrar
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex font-sans text-slate-900 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900 selection:text-indigo-900 dark:selection:text-indigo-100 transition-colors duration-500">
       <MarineBackground />
-      <EmailModal />
       <AnimatePresence>
         {showWelcome && <WelcomeScreen setUserRole={setUserRole} setShowWelcome={setShowWelcome} />}
       </AnimatePresence>
