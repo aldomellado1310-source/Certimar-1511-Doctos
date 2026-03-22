@@ -29,13 +29,23 @@ import {
   LogOut,
   PlayCircle,
   Bookmark,
+  Mail,
+  Copy,
+  X,
+  Settings2,
+  Palette,
+  SlidersHorizontal,
+  ToggleLeft,
+  ToggleRight,
+  Beaker,
+  Pencil,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useDropzone } from 'react-dropzone';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { cn } from './lib/utils';
-import { AppState, ReportImage } from './types';
+import { AppState, ReportImage, RegistroHistorico } from './types';
 import {
   CATALOGO_EXTRACCION,
   CATALOGO_DESNATURALIZACION,
@@ -468,23 +478,15 @@ const MarineBackground = () => (
   </div>
 );
 
-const Logo = ({ collapsed }: { collapsed?: boolean }) => (
-  <div className="flex items-center justify-center">
-    {collapsed ? (
-      <img
-        src="/certimar-logo.png"
-        alt="Certimar"
-        className="w-12 h-12 object-contain"
-      />
-    ) : (
-      <img
-        src="/certimar-logo.png"
-        alt="Certimar"
-        className="h-16 max-w-full object-contain"
-      />
-    )}
-  </div>
-);
+const Logo = ({ collapsed, tema }: { collapsed?: boolean; tema?: 'certimar' | 'engelbert' }) => {
+  const src = tema === 'engelbert' ? '/engelbert-logo.png' : '/certimar-logo.png';
+  const alt = tema === 'engelbert' ? 'Engelbert' : 'Certimar';
+  return (
+    <div className="flex items-center justify-center">
+      <img src={src} alt={alt} className={collapsed ? "w-12 h-12 object-contain" : "h-16 max-w-full object-contain"} />
+    </div>
+  );
+};
 
 const SectionHeader = ({ title, icon: Icon, description }: { title: string, icon: React.ElementType, description?: string }) => (
   <div className="mb-8">
@@ -626,6 +628,149 @@ const LeyendaCombo = ({
       <datalist id={listId}>
         {opciones.map((op, i) => <option key={i} value={op} />)}
       </datalist>
+    </div>
+  );
+};
+
+// ─── Anotador de imágenes ───────────────────────────────────────────────────
+
+const ANNOT_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7'];
+
+interface Annotation {
+  type: 'rect' | 'circle';
+  x: number; y: number; w: number; h: number;
+  color: string;
+}
+
+const ImageAnnotator: React.FC<{
+  img: ReportImage;
+  onSave: (annotatedUrl: string) => void;
+  onClose: () => void;
+}> = ({ img, onSave, onClose }) => {
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [tool, setTool] = useState<'rect' | 'circle'>('rect');
+  const [color, setColor] = useState(ANNOT_COLORS[0]);
+  const [current, setCurrent] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const startRef = useRef({ x: 0, y: 0 });
+
+  const toFrac = (e: React.MouseEvent<SVGSVGElement>) => {
+    const r = svgRef.current!.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
+      y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)),
+    };
+  };
+
+  const onMD = (e: React.MouseEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const { x, y } = toFrac(e);
+    startRef.current = { x, y };
+    setCurrent({ x, y, w: 0, h: 0 });
+  };
+
+  const onMM = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!current) return;
+    const { x, y } = toFrac(e);
+    const { x: sx, y: sy } = startRef.current;
+    setCurrent({ x: Math.min(sx, x), y: Math.min(sy, y), w: Math.abs(x - sx), h: Math.abs(y - sy) });
+  };
+
+  const onMU = () => {
+    if (current && current.w > 0.01 && current.h > 0.01) {
+      setAnnotations(prev => [...prev, { type: tool, ...current, color }]);
+    }
+    setCurrent(null);
+  };
+
+  const handleSave = async () => {
+    const image = new Image();
+    image.src = img.url;
+    await new Promise<void>(res => { image.onload = () => res(); });
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(image, 0, 0);
+    const lw = Math.max(canvas.width, canvas.height) * 0.004;
+    for (const ann of annotations) {
+      const px = ann.x * canvas.width, py = ann.y * canvas.height;
+      const pw = ann.w * canvas.width, ph = ann.h * canvas.height;
+      ctx.strokeStyle = ann.color;
+      ctx.lineWidth = lw;
+      ctx.fillStyle = ann.color + '44';
+      if (ann.type === 'rect') {
+        ctx.fillRect(px, py, pw, ph);
+        ctx.strokeRect(px, py, pw, ph);
+      } else {
+        ctx.beginPath();
+        ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+      }
+    }
+    onSave(canvas.toDataURL('image/jpeg', 0.88));
+  };
+
+  const renderSVGShape = (ann: { type: string; x: number; y: number; w: number; h: number; color: string }, key: number) =>
+    ann.type === 'rect' ? (
+      <rect key={key} x={ann.x} y={ann.y} width={ann.w} height={ann.h}
+        stroke={ann.color} strokeWidth="0.003" fill={ann.color + '44'} />
+    ) : (
+      <ellipse key={key}
+        cx={ann.x + ann.w / 2} cy={ann.y + ann.h / 2} rx={ann.w / 2} ry={ann.h / 2}
+        stroke={ann.color} strokeWidth="0.003" fill={ann.color + '44'} />
+    );
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/85 flex flex-col items-center justify-center p-4 gap-3">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 rounded-xl px-4 py-2.5 shadow-xl max-w-4xl w-full">
+        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Marcar:</span>
+        {(['rect', 'circle'] as const).map(t => (
+          <button key={t} onClick={() => setTool(t)}
+            className={cn('px-3 py-1 rounded-lg text-sm font-medium border transition-colors',
+              tool === t ? 'bg-blue-600 text-white border-blue-600' : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+            )}>
+            {t === 'rect' ? 'Cuadrado' : 'Círculo'}
+          </button>
+        ))}
+        <div className="flex items-center gap-1.5 ml-1">
+          {ANNOT_COLORS.map(c => (
+            <button key={c} onClick={() => setColor(c)}
+              style={{ backgroundColor: c }}
+              className={cn('w-5 h-5 rounded-full border-2 transition-all',
+                color === c ? 'border-slate-900 dark:border-white scale-125' : 'border-transparent'
+              )} />
+          ))}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={() => setAnnotations([])}
+            className="px-3 py-1 text-sm rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">
+            Limpiar
+          </button>
+          <button onClick={onClose}
+            className="px-3 py-1 text-sm rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">
+            Cancelar
+          </button>
+          <button onClick={handleSave} disabled={annotations.length === 0}
+            className="px-4 py-1 text-sm rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
+            Guardar
+          </button>
+        </div>
+      </div>
+      {/* Image + SVG overlay */}
+      <div className="relative select-none" style={{ lineHeight: 0 }}>
+        <img src={img.url} alt="" draggable={false}
+          style={{ maxHeight: '72vh', maxWidth: '90vw', display: 'block', pointerEvents: 'none', userSelect: 'none' }} />
+        <svg ref={svgRef} viewBox="0 0 1 1" preserveAspectRatio="none"
+          className="absolute inset-0 cursor-crosshair"
+          style={{ width: '100%', height: '100%' }}
+          onMouseDown={onMD} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU}>
+          {annotations.map((ann, i) => renderSVGShape(ann, i))}
+          {current && renderSVGShape({ type: tool, ...current, color }, -1)}
+        </svg>
+      </div>
+      <p className="text-xs text-slate-400">Clic y arrastra para dibujar · Limpiar elimina todas las marcas</p>
     </div>
   );
 };
@@ -1063,7 +1208,8 @@ async function idbClear() {
 // --- Main App ---
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'general' | 'extraction' | 'denaturation' | 'storage' | 'report' | 'issue' | 'history'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'extraction' | 'denaturation' | 'storage' | 'report' | 'issue' | 'history' | 'config'>('general');
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [state, setState] = useState<AppState>(() => {
     const SCHEMA_VERSION = 'v3';
     try {
@@ -1222,6 +1368,58 @@ export default function App() {
       setTimeout(() => setGuardadoSection(null), 2500);
     }
     setGuardandoSection(null);
+  };
+
+  // ─── Histórico: guardar snapshot tras generar un documento ────────────────
+  const saveToHistorico = async (tipo: 'certificado' | 'informe' | 'acta') => {
+    try {
+      const { doc, setDoc, serverTimestamp, arrayUnion } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      const cc = state.general.centro_cultivo;
+      const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
+      const snapshotImgs = state.images.map(({ id, seccion, leyenda, estado, observacion }) =>
+        ({ id, seccion, leyenda, estado, observacion })
+      );
+      await setDoc(doc(db, 'historico', docId), {
+        registroId: docId,
+        codigoCentro: cc.codigo_centro,
+        nombreCentro: cc.nombre_centro,
+        titular: cc.titular,
+        fechaInspeccion: state.general.fechas.inspeccion_terreno,
+        documentosGenerados: arrayUnion(tipo),
+        snapshot: { ...state, images: snapshotImgs },
+        __updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (err) {
+      console.error('Error guardando en histórico:', err);
+    }
+  };
+
+  const updateHistoricoStatus = async (docId: string, field: string, value: boolean) => {
+    try {
+      const { doc, updateDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      await updateDoc(doc(db, 'historico', docId), { [field]: value });
+      setHistoricoEntries(prev =>
+        prev.map(e => e.id === docId ? { ...e, [field]: value } : e)
+      );
+    } catch (err) {
+      console.error('Error actualizando estado histórico:', err);
+    }
+  };
+
+  const loadFromHistorico = (entry: RegistroHistorico) => {
+    if (!window.confirm(
+      `¿Cargar los datos de ${entry.nombreCentro} (${entry.codigoCentro}) en el formulario?\n` +
+      'Los cambios no guardados del formulario actual se perderán.\n' +
+      'Nota: las fotografías no se restauran automáticamente.'
+    )) return;
+    setState({
+      ...entry.snapshot,
+      images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: '' })),
+      registroId: entry.registroId,
+    });
+    setActiveTab('general');
   };
 
   // Exportar borrador como archivo JSON descargable
@@ -1445,6 +1643,31 @@ export default function App() {
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, []);
+  const [tema, setTema] = useState<'certimar' | 'engelbert'>(() =>
+    (localStorage.getItem('certimar-tema') as 'certimar' | 'engelbert') ?? 'certimar'
+  );
+  useEffect(() => { localStorage.setItem('certimar-tema', tema); }, [tema]);
+
+  const [datosPrueba, setDatosPrueba] = useState(false);
+
+  const DATOS_PRUEBA_STATE: Partial<AppState> = {
+    general: {
+      certificador: { nombre: 'ENGELBERT ALEXANDER FLORES CARRIO', rut: '13.968.696-9', numero_registro: 'DN-02727/2023' },
+      centro_cultivo: {
+        codigo_centro: '120160200326MOR', nombre_centro: 'STAINES 1', titular: 'AQUACHILE S.A.',
+        acs: '42', ubicacion: 'NORTE DE PENÍNSULA STAINES, SECTOR 1, Región de Magallanes',
+        formato_modulo: '2 MODULOS CUADRADOS 40X40 - 12 JAULAS POR MODULO',
+        tamano_jaulas: '40 x 40 metros', coordenadas_ensilaje: '51° 23\' 02" S 73° 50\' 24" O',
+        nombre_an_ensilaje: 'A/N AQUACHILE 308',
+      },
+      fechas: {
+        evaluacion_documental: new Date().toISOString().split('T')[0],
+        inspeccion_terreno: new Date().toISOString().split('T')[0],
+        emision_certificado: new Date().toISOString().split('T')[0],
+      },
+    },
+  };
+
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('certimar-dark-mode');
@@ -1459,6 +1682,8 @@ export default function App() {
     }
     return true;
   });
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailCopied, setEmailCopied] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('certimar-dark-mode', JSON.stringify(darkMode));
@@ -1478,6 +1703,18 @@ export default function App() {
       centerCodeRef.current.focus();
     }
   }, [showWelcome]);
+
+  // Carga el histórico cuando el usuario activa la pestaña
+  useEffect(() => {
+    if (activeTab !== 'history') return;
+    setHistoricoLoading(true);
+    import('firebase/firestore').then(async ({ collection, getDocs, orderBy, query }) => {
+      const { db } = await import('./firebase');
+      const q = query(collection(db, 'historico'), orderBy('__updatedAt', 'desc'));
+      const snap = await getDocs(q);
+      setHistoricoEntries(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<RegistroHistorico, 'id'>) })));
+    }).catch(console.error).finally(() => setHistoricoLoading(false));
+  }, [activeTab]);
 
   // Auto-genera la observación del sistema de extracción al cambiar nº jaulas o sistema
   useEffect(() => {
@@ -1610,6 +1847,39 @@ export default function App() {
     if (!fecha) return `${codigo}MOR`;
     const [year, month, day] = fecha.split('-');
     return `${codigo}${day}${month}${year.slice(2)}MOR`;
+  };
+
+  /** Convierte yyyy-mm-dd → dd-mm-yyyy para nombres de archivo */
+  const formatFileDate = (iso: string): string => {
+    if (!iso) return '00-00-0000';
+    const [year, month, day] = iso.split('-');
+    return `${day}-${month}-${year}`;
+  };
+
+  const buildEmailSubject = (): string => {
+    const cc = state.general.centro_cultivo;
+    const iso = state.general.fechas.emision_certificado;
+    let datePart = '';
+    if (iso) {
+      const [year, month, day] = iso.split('-');
+      datePart = `${day} ${month} ${year}`;
+    }
+    return `${cc.codigo_centro}-${datePart}-Documentos Asociados`;
+  };
+
+  const buildEmailText = (): string => {
+    const cc = state.general.centro_cultivo;
+    return `Estimados,
+
+Junto con saludar cordialmente, se informa que se ha realizado la entrega de las fichas técnicas y registros fotográficos correspondientes al Centro ${cc.nombre_centro} - ${cc.codigo_centro}, cuyo titular es ${cc.titular}.
+
+Debido al tamaño de los archivos comprimidos, estos no han podido ser adjuntados directamente al correo. Por lo tanto, se ha habilitado un acceso mediante carpeta compartida en Drive, disponible en el siguiente enlace:
+
+[enlace Drive]
+
+Agradeciendo desde ya su atención,
+
+Se despide atentamente`;
   };
 
   // --- Handlers ---
@@ -1820,6 +2090,11 @@ export default function App() {
   const [imagesUploadProgress, setImagesUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [aiClassifying, setAiClassifying] = useState<Set<string>>(new Set());
   const [aiMeta, setAiMeta] = useState<Record<string, { confianza: number; justificacion: string }>>({});
+  const [annotatingImageId, setAnnotatingImageId] = useState<string | null>(null);
+  const annotatingImg = annotatingImageId ? (state.images.find(i => i.id === annotatingImageId) ?? null) : null;
+
+  const [historicoEntries, setHistoricoEntries] = useState<RegistroHistorico[]>([]);
+  const [historicoLoading, setHistoricoLoading] = useState(false);
 
   const addImage = (files: File[]) => {
     if (!files.length) return;
@@ -1896,8 +2171,9 @@ export default function App() {
     });
 
   const loadLogo = async (): Promise<string | null> => {
+    const logoPath = tema === 'engelbert' ? '/engelbert-logo.png' : '/certimar-logo.png';
     try {
-      const resp = await fetch('/certimar-logo.png');
+      const resp = await fetch(logoPath);
       const blob = await resp.blob();
       return new Promise<string>((res, rej) => {
         const reader = new FileReader();
@@ -1978,11 +2254,12 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       doc.setPage(i);
       const W = 215.9, H = 279.4;
 
-      // ── Helper onda decorativa #a8c8e8 — con opacidad para no tapar el texto ──
+      // ── Helper onda decorativa — con opacidad para no tapar el texto ──
+      const isEngelbertFrame = tema === 'engelbert';
       const gState25 = (doc as any).GState({ opacity: 0.25, 'fill-opacity': 0.25 });
       const gState100 = (doc as any).GState({ opacity: 1, 'fill-opacity': 1 });
       const drawWave = (y0: number, amp: number) => {
-        doc.setDrawColor(168, 200, 232);
+        doc.setDrawColor(...(isEngelbertFrame ? [253, 186, 116] as [number,number,number] : [168, 200, 232] as [number,number,number]));
         doc.setLineWidth(0.35);
         const w = W / 4;
         doc.lines(
@@ -2009,31 +2286,33 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         const imgW = props.width * scale, imgH = props.height * scale;
         doc.addImage(logo, 'PNG', 3 + (maxW - imgW) / 2, 2 + (maxH - imgH) / 2, imgW, imgH);
       }
+      const FRAME_PRI: [number,number,number] = isEngelbertFrame ? [210, 65, 10] : [26, 58, 92];
+      const FRAME_DRK: [number,number,number] = isEngelbertFrame ? [160, 40,  0] : [10, 28, 70];
       // Normativa y folio
-      doc.setTextColor(26, 58, 92);
+      doc.setTextColor(...FRAME_PRI);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
       doc.text('Res. Exenta N°1511/2021 — D.S. N°320', 37, 6);
       doc.setFont('helvetica', 'bold');
       doc.text(docCode, W - 5, 6, { align: 'right' });
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
       doc.text(pageLabel, W - 5, 12, { align: 'right' });
-      // Banda azul marino al pie del header (subida)
-      doc.setFillColor(26, 58, 92);
+      // Banda de acento al pie del header
+      doc.setFillColor(...FRAME_PRI);
       doc.rect(0, 17, W, 4, 'F');
-      doc.setFillColor(10, 28, 70);
+      doc.setFillColor(...FRAME_DRK);
       doc.rect(0, 21, W, 0.8, 'F');
 
-      // ── Footer liviano (igual que certificado) ──
-      doc.setDrawColor(26, 58, 92);
+      // ── Footer liviano ──
+      doc.setDrawColor(...FRAME_PRI);
       doc.setLineWidth(0.18);
       doc.line(10, H - 10, W - 10, H - 10);
       doc.setFontSize(7); doc.setFont('helvetica', 'normal');
-      doc.setTextColor(26, 58, 92);
+      doc.setTextColor(...FRAME_PRI);
       doc.text('CERTIMAR SPA — Res. Exenta N°1511/2021', 10, H - 6);
       doc.setTextColor(120, 120, 120);
       doc.text('Mario Toral 101, Puerto Aysén  ·  +56 9 45052052  ·  eflores@certimar.cl',
                W / 2, H - 6, { align: 'center' });
-      doc.setTextColor(26, 58, 92);
+      doc.setTextColor(...FRAME_PRI);
       doc.text(`Pág. ${i} de ${n}`, W - 10, H - 6, { align: 'right' });
     }
   };
@@ -2071,21 +2350,21 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       const cert   = buildCertificadoData(stateWithCalc);
       const codigo = state.general.centro_cultivo.codigo_centro;
 
-      const AZUL: [number, number, number]    = [15, 40, 90];
+      const isEngelbert = tema === 'engelbert';
+      const AZUL: [number, number, number]    = isEngelbert ? [210, 65, 10]  : [15, 40, 90];
+      const AZUL_DARK: [number, number, number] = isEngelbert ? [160, 40,  0]  : [10, 28, 70];
       const VERDE: [number, number, number]   = [22, 101, 52];
       const ROJO: [number, number, number]    = [185, 28, 28];
-      const GRIS: [number, number, number]    = [248, 250, 252];
+      const GRIS: [number, number, number]    = isEngelbert ? [255, 248, 240] : [248, 250, 252];
       const fmtC = (c: boolean) => c ? 'CUMPLE' : 'NO CUMPLE';
       const colC = (c: boolean): [number,number,number] => c ? VERDE : ROJO;
 
       const doc = new jsPDF({ compress: true });
 
-      // Header blanco con acento azul — decoración sutil solo en la cabecera
+      // Header blanco con línea divisoria arcilla
       doc.setFillColor(255, 255, 255);
       doc.rect(0, 0, 210, 38, 'F');
       doc.setFillColor(...AZUL);
-      doc.rect(0, 32, 210, 6, 'F');
-      doc.setFillColor(10, 28, 70);
       doc.rect(0, 37, 210, 1.5, 'F');
 
 // ── Ondas decorativas + salmones acuarelados en el banner ─────────────
@@ -2300,7 +2579,13 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
       // ── Marca de agua: olas multicolor (paleta teal) ────────────────────────
       // Definida ANTES del contenido para que quede detrás del texto.
-      const PALETTE: [number,number,number][] = [
+      const PALETTE: [number,number,number][] = isEngelbert ? [
+        [255, 225, 190],
+        [253, 186, 116],
+        [234, 138,  52],
+        [200,  90,  20],
+        [160,  50,   5],
+      ] : [
         [197, 218, 218],
         [127, 181, 176],
         [ 90, 158, 152],
@@ -2408,7 +2693,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         doc.text(`Página ${i} de ${np}`, 196, 293, { align: 'right' });
       }
 
-      doc.save(`Certificado_1511_${codigo}.pdf`);
+      doc.save(`${codigo}-${formatFileDate(state.general.fechas.emision_certificado)}-CERTIFICADO.pdf`);
+      setShowEmailModal(true);
+      saveToHistorico('certificado');
     } finally { setGenerating(null); }
   };
 
@@ -2434,12 +2721,15 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         state.images.map(async img => ({ ...img, url: await fixImageOrientation(img.url) }))
       );
 
-      const AZUL_H: [number,number,number] = [74, 118, 168];
-      const AZUL_T: [number,number,number] = [31, 73, 125];
-      const VERDE_H:[number,number,number] = [193, 225, 193]; // legacy — reemplazado por AZUL_MARINO en tablas
-      const AZUL_MARINO: [number,number,number] = [26, 58, 92];
-      const GRIS_FILA:   [number,number,number] = [245, 247, 250];
-      const BORDE_TABLA: [number,number,number] = [221, 227, 234];
+      // Paleta según tema
+      const isEngelbert = tema === 'engelbert';
+      const AZUL_H: [number,number,number]    = isEngelbert ? [210, 65,  10]  : [74, 118, 168];
+      const AZUL_T: [number,number,number]    = isEngelbert ? [180, 60,   0]  : [31,  73, 125];
+      const AZUL_D: [number,number,number]    = isEngelbert ? [160, 40,   0]  : [31,  56, 100];
+      const VERDE_H:[number,number,number]    = [193, 225, 193]; // legacy
+      const AZUL_MARINO: [number,number,number] = isEngelbert ? [160, 48,   5]  : [26,  58,  92];
+      const GRIS_FILA:   [number,number,number] = isEngelbert ? [255, 248, 242] : [245, 247, 250];
+      const BORDE_TABLA: [number,number,number] = isEngelbert ? [240, 170,  90] : [221, 227, 234];
 
       const doc = new jsPDF({ format: 'letter', compress: true });
       const PW = 215.9, PH = 279.4;
@@ -2449,7 +2739,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       const drawBodyWaves = () => {
         const gS25  = (doc as any).GState({ opacity: 0.25, 'fill-opacity': 0.25 });
         const gS100 = (doc as any).GState({ opacity: 1,    'fill-opacity': 1 });
-        doc.setDrawColor(168, 200, 232);
+        doc.setDrawColor(...(isEngelbert ? [253, 186, 116] as [number,number,number] : [168, 200, 232] as [number,number,number]));
         doc.setLineWidth(0.35);
         const bw = PW / 4;
         const wv = (y0: number, amp: number) =>
@@ -2465,13 +2755,19 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // Banda azul superior (con espacio para logo a la derecha y título a la izquierda)
       doc.setFillColor(...AZUL_H);
       doc.rect(0, 0, PW, 38, 'F');
-      doc.setFillColor(31, 56, 100);
+      doc.setFillColor(...AZUL_D);
       doc.rect(0, 36, PW, 2, 'F');
       // docCode top-left
       doc.setFontSize(8); doc.setTextColor(255,255,255); doc.setFont('helvetica','normal');
       doc.text(docCode, 8, 8);
-      // Logo top-right dentro del banner azul
-      if (logo) doc.addImage(logo, 'PNG', PW - 46, 3, 40, 28);
+      // Logo top-right dentro del banner — badge blanco para contraste
+      if (logo) {
+        if (isEngelbert) {
+          doc.setFillColor(255, 255, 255);
+          doc.roundedRect(PW - 49, 1.5, 45, 31, 3, 3, 'F');
+        }
+        doc.addImage(logo, 'PNG', PW - 46, 3, 40, 28);
+      }
       // Título a la izquierda del banner
       doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
       doc.text('Inspección de Certificación', 10, 16);
@@ -2480,8 +2776,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
       doc.text('Res. Exenta N°1511/2021', 10, 33);
 
-      // Banda de identificación del centro (azul oscuro)
-      doc.setFillColor(31, 56, 100);
+      // Banda de identificación del centro
+      doc.setFillColor(...AZUL_D);
       doc.rect(0, 38, PW, 16, 'F');
       doc.setTextColor(255,255,255);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
@@ -2567,7 +2863,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         theme: 'striped',
         columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60, textColor: AZUL_MARINO } },
         alternateRowStyles: { fillColor: GRIS_FILA },
-        styles: { fontSize: 9, cellPadding: 3, lineColor: BORDE_TABLA, lineWidth: 0.1 },
+        styles: { fontSize: 9, cellPadding: 3, lineColor: BORDE_TABLA, lineWidth: 0.1, overflow: 'linebreak' },
       });
 
       // 1.1 Proceso extracción
@@ -2681,32 +2977,131 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         styles: { fontSize: 8.5, cellPadding: 2.5, lineColor: BORDE_TABLA, lineWidth: 0.1 },
       });
 
+      // ── Foto olla trituradora (tras tabla 1.4) si fue subida ──
+      {
+        const ollaImg = correctedImgs.find(img =>
+          img.seccion === 'Desnaturalización' && img.leyenda?.toLowerCase().includes('olla')
+        ) ?? correctedImgs.find(img => img.seccion === 'Desnaturalización');
+        if (ollaImg?.url) {
+          // Calcular alto real de la imagen para no achatar
+          const OW = 120;
+          let OH = 80;
+          try {
+            const tmp = new Image();
+            tmp.src = ollaImg.url;
+            if (tmp.naturalWidth > 0) OH = Math.round(OW * tmp.naturalHeight / tmp.naturalWidth);
+          } catch { /* usa OH por defecto */ }
+          OH = Math.min(Math.max(OH, 60), 120); // clamp 60–120 mm
+          ensureSpace(OH + 22);
+          autoTable(doc, {
+            startY: lastY() + 8,
+            margin: { top: 25, left: (PW - OW) / 2 },
+            rowPageBreak: 'avoid',
+            body: [[{ content: '', styles: { cellWidth: OW, minCellHeight: OH, cellPadding: 0 } }]],
+            theme: 'plain', styles: { fontSize: 0 }, tableWidth: OW,
+            didDrawCell: (data: any) => {
+              if (data.section !== 'body') return;
+              try {
+                const iH = data.cell.height - 9;
+                doc.addImage(ollaImg.url, 'JPEG', data.cell.x + 2, data.cell.y + 2, data.cell.width - 4, Math.max(iH - 2, 2));
+                if (ollaImg.leyenda) {
+                  doc.setFontSize(7.5); doc.setTextColor(40,40,40); doc.setFont('helvetica','normal');
+                  const cl = doc.splitTextToSize(ollaImg.leyenda, data.cell.width - 4);
+                  doc.text(cl, data.cell.x + data.cell.width / 2, data.cell.y + iH + 5, { align: 'center' });
+                }
+              } catch { /* skip */ }
+            },
+          });
+        }
+      }
+
       // ── Sección 2: Metodología ──
       doc.addPage();
       drawBodyWaves();
       sectionTitle('2  Metodología de trabajo para la inspección del módulo', 14, 30);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
       doc.setTextColor(0,0,0);
-      const metText = [
+
+      // Párrafos 1 y 2 — texto justificado
+      const metPre = [
         'Se procede a la revisión documental y posterior visita de campo al objeto de certificar que los sistemas o equipos de extracción, desnaturalización y almacenamiento de la mortalidad tienen las capacidades indicadas por el mandante.',
         '',
         'Según la Res 1511, los centros de cultivo deberán acreditar: a) una capacidad mínima de extracción diaria de 15 toneladas de mortalidad; b) una capacidad mínima de desnaturalización diaria de 15 toneladas de mortalidad; y c) disponen de un sistema de almacenamiento, con una capacidad mínima diaria de 20 toneladas de biomasa.',
-        '',
-        'La metodología utilizada para la certificación de las capacidades de los sistemas o equipos de extracción, desnaturalización y almacenamiento de mortalidad en centros de cultivos de salmones, están en conformidad con el artículo 25 del D.S. Nº 15 de 2011, del Ministerio de Economía, Fomento y Turismo. La información se tabula empleando código de colores:',
       ];
       let curY = 38;
-      for (const line of metText) {
+      for (const line of metPre) {
+        if (line === '') { curY += 4; continue; }
         const lines = doc.splitTextToSize(line, 182);
-        doc.text(lines, 14, curY);
-        curY += lines.length * 6 + (line === '' ? 0 : 2);
+        doc.text(lines, 14, curY, { align: 'justify', maxWidth: 182 });
+        curY += lines.length * 6 + 2;
       }
+      // Sincronizar lastY con la posición actual del texto manual
+      (doc as any).lastAutoTable = { finalY: curY };
+
+      // Imágenes de extracción (Imagen 2, 3, 4) — 1 fila, 3 columnas, centrado
+      {
+        const ext234 = (() => {
+          const byLabel = correctedImgs.filter(img =>
+            img.seccion === 'Extracción' &&
+            ['Imagen 2','Imagen 3','Imagen 4'].some(t => img.leyenda === t)
+          );
+          return byLabel.length >= 3 ? byLabel.slice(0,3)
+            : correctedImgs.filter(img => img.seccion === 'Extracción').slice(0,3);
+        })();
+        if (ext234.length > 0) {
+          const TOTAL_W = 180;
+          const EW = Math.floor(TOTAL_W / 3); // ~60mm cada columna
+          const EH = 55;
+          const eMargin = (PW - TOTAL_W) / 2;
+          ensureSpace(EH + 20);
+          autoTable(doc, {
+            startY: lastY() + 6,
+            margin: { top: 25, left: eMargin },
+            rowPageBreak: 'avoid',
+            body: [[
+              { content: '', styles: { cellWidth: EW, minCellHeight: EH, cellPadding: 0 } },
+              { content: '', styles: { cellWidth: EW, minCellHeight: EH, cellPadding: 0 } },
+              { content: '', styles: { cellWidth: EW, minCellHeight: EH, cellPadding: 0 } },
+            ]],
+            theme: 'plain', styles: { fontSize: 0 },
+            columnStyles: { 0: { cellWidth: EW }, 1: { cellWidth: EW }, 2: { cellWidth: EW } },
+            tableWidth: TOTAL_W,
+            didDrawCell: (data: any) => {
+              if (data.section !== 'body') return;
+              const img = ext234[data.column.index];
+              if (!img?.url) return;
+              try {
+                doc.addImage(img.url, 'JPEG', data.cell.x + 1, data.cell.y + 1, data.cell.width - 2, data.cell.height - 2);
+              } catch { /* skip */ }
+            },
+          });
+          // Caption grupal
+          ensureSpace(12);
+          doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(40,40,40);
+          const capText = 'Imagen 2 – 3 – 4. Sistemas de extracción de mortalidad presentes en el módulo de cultivo.';
+          doc.text(capText, PW / 2, lastY() + 7, { align: 'center' });
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+          curY = lastY() + 14;
+          (doc as any).lastAutoTable = { finalY: curY };
+        }
+      }
+
+      // Párrafo 3
+      ensureSpace(50); // espacio para el párrafo + tabla de colores
+      curY = lastY() + 6;
+      const metPost = 'La metodología utilizada para la certificación de las capacidades de los sistemas o equipos de extracción, desnaturalización y almacenamiento de mortalidad en centros de cultivos de salmones, está en conformidad con el artículo 25 del D.S. Nº 15 de 2011, del Ministerio de Economía, Fomento y Turismo. La información se almacena en plataforma interactiva y se tabula empleando código de colores, como se puede ver en la siguiente tabla:';
+      const metPostLines = doc.splitTextToSize(metPost, 182);
+      doc.setTextColor(0,0,0);
+      doc.text(metPostLines, 14, curY, { align: 'justify', maxWidth: 182 });
+      curY += metPostLines.length * 6 + 4;
+
       autoTable(doc, {
-        startY: curY + 4,
+        startY: curY + 2,
         pageBreak: 'avoid',
         body: [
-          [{ content: '', styles: { fillColor: [0, 176, 80] as [number,number,number], cellWidth: 12 } }, 'Verde', 'Sin Observaciones (Bueno)'],
-          [{ content: '', styles: { fillColor: [255, 255, 0] as [number,number,number], cellWidth: 12 } }, 'Amarillo', 'Recomendación (Regular)'],
-          [{ content: '', styles: { fillColor: [255, 0, 0] as [number,number,number], cellWidth: 12 } }, 'Rojo', 'Debe ser revisado y solucionado (Malo)'],
+          [{ content: '', styles: { fillColor: [0, 176, 80] as [number,number,number], cellWidth: 12 } }, 'Bueno', 'Sin Observaciones'],
+          [{ content: '', styles: { fillColor: [255, 255, 0] as [number,number,number], cellWidth: 12 } }, 'Regular', 'Recomendación'],
+          [{ content: '', styles: { fillColor: [255, 0, 0] as [number,number,number], cellWidth: 12 } }, 'Malo', 'Debe ser revisado y solucionado'],
         ],
         theme: 'grid',
         columnStyles: { 0: { cellWidth: 14 }, 1: { cellWidth: 30 } },
@@ -2714,6 +3109,16 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         tableWidth: 120,
         margin: { left: 40 },
       });
+
+      // Texto conclusivo tras la tabla de colores
+      {
+        const concText = '    Las observaciones evaluadas como "Regular" son recomendaciones de mejoras que permiten extender la vida útil de los elementos, y también sirven para la programación de mantenciones. Y para las observaciones evaluadas como "Malo" se recomienda su revisión y corrección.';
+        ensureSpace(20);
+        doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(0,0,0);
+        const concLines = doc.splitTextToSize(concText, 182);
+        doc.text(concLines, 14, lastY() + 10, { align: 'justify', maxWidth: 182 });
+        (doc as any).lastAutoTable = { finalY: lastY() + 10 + concLines.length * 6 };
+      }
 
       // ── Sección 3: Inspección de terreno ──
       // ─ constantes y helpers de fotos ────────────────────────────────────────
@@ -2795,7 +3200,12 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         }
       };
 
-      /** Tabla sin bordes para imágenes aéreas — de a 2 por fila, centradas */
+      /**
+       * Grilla aérea — layout 2×2:
+       *   Fila 0 (full-width): imagen con "estructura" / "módulo" en leyenda
+       *   Fila 1 col 0: imagen con "diagonal" / "arreglo"
+       *   Fila 1 col 1: imagen con "aérea" / "general" / "contexto"
+       */
       const addAerialSection = (seccion: ImageSeccion) => {
         const imgs = correctedImgs.filter(img => img.seccion === seccion);
         if (imgs.length === 0) {
@@ -2806,41 +3216,69 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           });
           return;
         }
-        const AERIAL_W = 90, AERIAL_H = 64;
-        const marginLeft = (PW - AERIAL_W * 2 - 6) / 2;
-        for (let i = 0; i < imgs.length; i += 2) {
-          const pair = imgs.slice(i, i + 2);
-          ensureSpace(AERIAL_H + 16);
+
+        const kw = (img: typeof imgs[0], ...words: string[]) =>
+          words.some(w => img.leyenda?.toLowerCase().includes(w.toLowerCase()));
+
+        const imgEstructura = imgs.find(i => kw(i,'estructura','módulo')) ?? imgs[0];
+        const imgDiagonal   = imgs.find(i => kw(i,'diagonal','arreglo'))  ?? imgs[1];
+        const imgAerea      = imgs.find(i => kw(i,'aérea','general','contexto')) ?? imgs[2];
+
+        const FULL_W = 182, FULL_H = 76;
+        const HALF_W = 89,  HALF_H = 62;
+        const mLeft = (PW - FULL_W) / 2;
+
+        const drawCaption = (img: typeof imgs[0], cx: number, cy: number, cw: number, cellH: number) => {
+          if (!img?.leyenda) return;
+          doc.setFontSize(7); doc.setTextColor(40,40,40); doc.setFont('helvetica','normal');
+          const cl = doc.splitTextToSize(img.leyenda, cw - 4);
+          doc.text(cl, cx + cw / 2, cy + cellH - CAPTION_H + 4, { align: 'center' });
+        };
+
+        // Fila 0: imagen estructure / módulo — ancho completo
+        if (imgEstructura?.url) {
+          ensureSpace(FULL_H + 16);
           autoTable(doc, {
             startY: lastY() + 6,
-            margin: { top: 25, left: marginLeft },
+            margin: { top: 25, left: mLeft },
             rowPageBreak: 'avoid',
-            body: [[
-              { content: '', styles: { cellWidth: AERIAL_W, minCellHeight: AERIAL_H, cellPadding: 0 } },
-              { content: '', styles: { cellWidth: AERIAL_W, minCellHeight: AERIAL_H, cellPadding: 0 } },
-            ]],
-            theme: 'plain',
-            styles: { fontSize: 0, cellPadding: 3 },
-            columnStyles: { 0: { cellWidth: AERIAL_W }, 1: { cellWidth: AERIAL_W } },
+            body: [[{ content: '', styles: { cellWidth: FULL_W, minCellHeight: FULL_H, cellPadding: 0 } }]],
+            theme: 'plain', styles: { fontSize: 0 }, tableWidth: FULL_W,
             didDrawCell: (data: any) => {
               if (data.section !== 'body') return;
-              const img = pair[data.column.index];
-              if (img?.url) {
-                try {
-                  const imgAreaH = data.cell.height - CAPTION_H;
-                  doc.addImage(img.url, 'JPEG', data.cell.x + 2, data.cell.y + 2, data.cell.width - 4, Math.max(imgAreaH - 2, 2));
-                  if (img.leyenda) {
-                    doc.setFontSize(7);
-                    doc.setTextColor(40, 40, 40);
-                    doc.setFont('helvetica', 'normal');
-                    const lines = doc.splitTextToSize(img.leyenda, data.cell.width - 4);
-                    doc.text(lines, data.cell.x + data.cell.width / 2, data.cell.y + imgAreaH + 5, { align: 'center' });
-                  }
-                } catch { /* skip */ }
-              }
+              try {
+                const iH = data.cell.height - CAPTION_H;
+                doc.addImage(imgEstructura.url, 'JPEG', data.cell.x + 2, data.cell.y + 2, data.cell.width - 4, Math.max(iH - 2, 2));
+                drawCaption(imgEstructura, data.cell.x, data.cell.y, data.cell.width, data.cell.height);
+              } catch { /* skip */ }
             },
           });
         }
+
+        // Fila 1: diagonal (izq) + aérea (der)
+        const pair: (typeof imgs[0] | undefined)[] = [imgDiagonal, imgAerea];
+        ensureSpace(HALF_H + 14);
+        autoTable(doc, {
+          startY: lastY() + 4,
+          margin: { top: 25, left: mLeft },
+          rowPageBreak: 'avoid',
+          body: [[
+            { content: '', styles: { cellWidth: HALF_W, minCellHeight: HALF_H, cellPadding: 0 } },
+            { content: '', styles: { cellWidth: HALF_W, minCellHeight: HALF_H, cellPadding: 0 } },
+          ]],
+          theme: 'plain', styles: { fontSize: 0 },
+          columnStyles: { 0: { cellWidth: HALF_W }, 1: { cellWidth: HALF_W } },
+          didDrawCell: (data: any) => {
+            if (data.section !== 'body') return;
+            const img = pair[data.column.index];
+            if (!img?.url) return;
+            try {
+              const iH = data.cell.height - CAPTION_H;
+              doc.addImage(img.url, 'JPEG', data.cell.x + 2, data.cell.y + 2, data.cell.width - 4, Math.max(iH - 2, 2));
+              drawCaption(img, data.cell.x, data.cell.y, data.cell.width, data.cell.height);
+            } catch { /* skip */ }
+          },
+        });
       };
 
       doc.addPage();
@@ -2896,7 +3334,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         drawConcWave(y, 1.0 + idx * 0.3)
       );
       // Línea azul decorativa centrada
-      doc.setDrawColor(26, 58, 92); doc.setLineWidth(0.5);
+      doc.setDrawColor(...(isEngelbert ? [210, 65, 10] as [number,number,number] : [26, 58, 92] as [number,number,number])); doc.setLineWidth(0.5);
       doc.line(55, firmY, PW - 55, firmY);
       // Nombre certificador
       doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
@@ -2907,9 +3345,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         `RUT: ${g.certificador.rut}   |   Registro: ${g.certificador.numero_registro}`,
         PW / 2, firmY + 13, { align: 'center' }
       );
-      // Fecha de emisión
+      // Fecha de emisión — igual a la fecha de inspección en terreno
       doc.text(
-        `Fecha de emisión: ${formatDateES(g.fechas.emision_certificado)}`,
+        `Fecha de emisión: ${formatDateES(g.fechas.inspeccion_terreno)}`,
         PW / 2, firmY + 19, { align: 'center' }
       );
 
@@ -2930,7 +3368,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // Añadir frames (header/footer + ondas) a todas las páginas excepto portada
       addInformePageFrame(doc, docCode, logo, 'Informe Técnico');
 
-      const filename = `Informe_Tecnico_1511_${codigo}.pdf`;
+      const filename = `${codigo}-${formatFileDate(g.fechas.emision_certificado)}-INFORME.pdf`;
 
       // Adjuntar Registro de Visita como snapshots JPEG (ya comprimidos al subir)
       if (registroVisitaRef.current) {
@@ -2941,6 +3379,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       }
 
       doc.save(filename);
+      setShowEmailModal(true);
+      saveToHistorico('informe');
     } finally { setGenerating(null); }
   };
 
@@ -3134,92 +3574,361 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
     </div>
   );
 
-  const HistoryView = () => (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
-      <SectionHeader 
-        title="Histórico de Certificaciones" 
-        icon={History} 
-        description="Consulta el registro histórico de certificaciones emitidas bajo la norma 1511."
-      />
+  // ─── Toggle helper para ConfigView ───
+  const Toggle = ({ value, onChange, label, description, icon: Icon }: {
+    value: boolean; onChange: (v: boolean) => void;
+    label: string; description?: string; icon?: React.ElementType;
+  }) => (
+    <button
+      onClick={() => onChange(!value)}
+      className={cn(
+        "w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition-all text-left",
+        value
+          ? "border-indigo-300 dark:border-indigo-500/50 bg-indigo-50 dark:bg-indigo-500/10"
+          : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:border-slate-300 dark:hover:border-slate-600"
+      )}
+    >
+      {Icon && <Icon size={20} className={value ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"} />}
+      <div className="flex-1 min-w-0">
+        <p className={cn("font-bold text-sm", value ? "text-indigo-700 dark:text-indigo-300" : "text-slate-700 dark:text-slate-200")}>{label}</p>
+        {description && <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{description}</p>}
+      </div>
+      <div className={cn("w-10 h-6 rounded-full transition-all relative shrink-0", value ? "bg-indigo-500" : "bg-slate-200 dark:bg-slate-700")}>
+        <div className={cn("absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all", value ? "left-4" : "left-0.5")} />
+      </div>
+    </button>
+  );
 
-      <FormCard className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Estado</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Fecha Ingreso</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Fecha Emisión</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Centro</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Empresa</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">ACS</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Sistema</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Cap. Extr.</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Cap. Desn.</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Alm.</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">N° Registro</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Certificador</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Obs.</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {HISTORICO_CERTIFICACIONES.length === 0 && (
-                <tr>
-                  <td colSpan={13} className="px-6 py-16 text-center text-slate-400 dark:text-slate-500">
-                    <History size={32} className="mx-auto mb-3 opacity-30" />
-                    <p className="text-sm font-medium">Sin registros históricos disponibles</p>
-                  </td>
-                </tr>
-              )}
-              {HISTORICO_CERTIFICACIONES.map((entry, idx) => (
-                <tr key={idx} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors group border-b border-slate-100 dark:border-slate-800">
-                  <td className="px-6 py-4">
-                    <span className={cn(
-                      "px-2 py-1 text-[10px] font-bold rounded-md uppercase",
-                      entry.estado === 'VIGENTE'
-                        ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
-                        : entry.estado === 'VENCIDO' || entry.estado === 'RECHAZADO'
-                          ? "bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400"
-                          : "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400"
-                    )}>
-                      {entry.estado}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-500 font-medium tabular-nums">{entry.fechaIngreso || '—'}</td>
-                  <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 font-medium tabular-nums">{entry.fechaEmision}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-slate-900 dark:text-white">{entry.nombreCentro}</span>
-                      <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{entry.codigoCentro}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{entry.empresa}</td>
-                  <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 font-mono">{entry.acs}</td>
-                  <td className="px-6 py-4">
-                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-semibold rounded-md whitespace-nowrap">
-                      {entry.tipoSistema || '—'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold tabular-nums">{entry.capExtraccion}</td>
-                  <td className="px-6 py-4 text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold tabular-nums">{entry.capDesnaturalizacion}</td>
-                  <td className="px-6 py-4 text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold tabular-nums">{entry.capAlmacenamiento}</td>
-                  <td className="px-6 py-4 text-[11px] font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">{entry.numRegistro || '—'}</td>
-                  <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">{entry.nombreCertificador || '—'}</td>
-                  <td className="px-6 py-4">
-                    {entry.observaciones && entry.observaciones !== 'NO'
-                      ? <span className="px-2 py-1 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold rounded-md uppercase">{entry.observaciones}</span>
-                      : <span className="text-slate-400 dark:text-slate-600 text-xs">—</span>
-                    }
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+  const ConfigView = () => (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-2xl mx-auto">
+      <SectionHeader title="Configuración" icon={Settings2} description="Personaliza el comportamiento y apariencia de la aplicación." />
+
+      {/* ── Apariencia ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <Palette size={16} className="text-indigo-500" />
+          <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Apariencia</h2>
         </div>
-      </FormCard>
 
+        {/* Modo oscuro */}
+        <Toggle
+          value={darkMode}
+          onChange={setDarkMode}
+          label={darkMode ? "Modo Oscuro activo" : "Modo Claro activo"}
+          description="Cambia el esquema de colores de la interfaz"
+          icon={darkMode ? Moon : Sun}
+        />
+
+        {/* Tema / Marca */}
+        <div className="space-y-3">
+          <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 px-1">Tema / Marca</p>
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { key: 'certimar', label: 'Certimar', logo: '/certimar-logo.png', accent: 'indigo', desc: 'Azul marino — paleta oficial Certimar' },
+              { key: 'engelbert', label: 'Engelbert', logo: '/engelbert-logo.png', accent: 'orange', desc: 'Naranja y negro — Engelbert Aquastructures' },
+            ] as const).map(({ key, label, logo, accent, desc }) => {
+              const isActive = tema === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setTema(key)}
+                  className={cn(
+                    "flex flex-col items-center gap-3 p-5 rounded-2xl border-2 transition-all",
+                    isActive
+                      ? accent === 'indigo'
+                        ? "border-indigo-400 bg-indigo-50 dark:bg-indigo-500/15 shadow-lg shadow-indigo-500/10"
+                        : "border-orange-400 bg-orange-50 dark:bg-orange-500/15 shadow-lg shadow-orange-500/10"
+                      : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:border-slate-300 dark:hover:border-slate-600"
+                  )}
+                >
+                  <img src={logo} alt={label} className="h-14 w-auto object-contain" />
+                  <div className="text-center">
+                    <p className={cn("font-bold text-sm", isActive
+                      ? accent === 'indigo' ? "text-indigo-700 dark:text-indigo-300" : "text-orange-700 dark:text-orange-300"
+                      : "text-slate-600 dark:text-slate-300"
+                    )}>{label}</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">{desc}</p>
+                  </div>
+                  {isActive && (
+                    <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full",
+                      accent === 'indigo' ? "bg-indigo-500 text-white" : "bg-orange-500 text-white"
+                    )}>ACTIVO</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Desarrollo / Pruebas ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <Beaker size={16} className="text-violet-500" />
+          <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Desarrollo</h2>
+        </div>
+
+        <Toggle
+          value={datosPrueba}
+          onChange={(v) => {
+            setDatosPrueba(v);
+            if (v) {
+              setState(prev => ({ ...prev, ...(DATOS_PRUEBA_STATE as Partial<AppState>) }));
+            } else {
+              setState(prev => ({
+                ...prev,
+                general: { ...DEFAULT_STATE.general, certificador: prev.general.certificador },
+              }));
+            }
+          }}
+          label="Datos de prueba"
+          description="Rellena el formulario con datos de ejemplo para probar la generación de documentos"
+          icon={TestTube2}
+        />
+
+        <Toggle
+          value={showHints}
+          onChange={setShowHints}
+          label="Sugerencias por empresa"
+          description="Muestra autocompletado con datos históricos al escribir en campos del formulario"
+          icon={Info}
+        />
+
+        {/* Borrar borrador — zona peligrosa */}
+        {isAdmin && (
+          <button
+            onClick={resetState}
+            className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-all text-left"
+          >
+            <Trash2 size={20} className="shrink-0" />
+            <div>
+              <p className="font-bold text-sm">Borrar Borrador</p>
+              <p className="text-xs text-rose-400 dark:text-rose-500 mt-0.5">Elimina todos los datos del formulario actual</p>
+            </div>
+          </button>
+        )}
+      </section>
+
+      {/* ── Sistema ── */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2 mb-1">
+          <SlidersHorizontal size={16} className="text-slate-400" />
+          <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Sistema</h2>
+        </div>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 divide-y divide-slate-100 dark:divide-slate-700">
+          {[
+            { label: 'Registro activo', value: state.registroId ?? 'Sin registro' },
+            { label: 'Certificador', value: state.general.certificador.nombre },
+            { label: 'N° Registro SERNAPESCA', value: state.general.certificador.numero_registro },
+            { label: 'Tema activo', value: tema === 'certimar' ? 'Certimar' : 'Engelbert Aquastructures' },
+            { label: 'Guardado', value: savedAt ? `Borrador guardado ${savedLabel()}` : 'Sin cambios' },
+          ].map(({ label, value }) => (
+            <div key={label} className="flex items-center justify-between px-5 py-3.5">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-200 text-right max-w-[55%] truncate">{value}</span>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
+
+  const HistoryView = () => {
+    const StatusChip = ({
+      active, onToggle, labelOn, labelOff, colorOn,
+    }: { active: boolean; onToggle: () => void; labelOn: string; labelOff: string; colorOn: string; }) => (
+      <button
+        onClick={onToggle}
+        title={active ? `Marcar como: ${labelOff}` : `Marcar como: ${labelOn}`}
+        className={cn(
+          'px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide border transition-colors whitespace-nowrap',
+          active
+            ? colorOn
+            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700 hover:border-slate-400'
+        )}
+      >
+        {active ? labelOn : labelOff}
+      </button>
+    );
+
+    const DocBadge = ({ tipo }: { tipo: string }) => {
+      const map: Record<string, string> = {
+        certificado: 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300',
+        informe: 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+        acta: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300',
+      };
+      return (
+        <span className={cn('px-2 py-0.5 rounded-md text-[10px] font-bold uppercase', map[tipo] ?? 'bg-slate-100 text-slate-500')}>
+          {tipo}
+        </span>
+      );
+    };
+
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
+        <SectionHeader
+          title="Histórico de Certificaciones"
+          icon={History}
+          description="Registros generados automáticamente al emitir documentos. Haz clic en los estados para actualizarlos."
+        />
+
+        {/* ── Registros desde Firestore ── */}
+        <FormCard className="p-0 overflow-hidden">
+          {historicoLoading && (
+            <div className="flex items-center gap-3 px-6 py-5 text-sm text-slate-500 dark:text-slate-400">
+              <span className="animate-spin w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full" />
+              Cargando histórico…
+            </div>
+          )}
+          {!historicoLoading && historicoEntries.length === 0 && (
+            <div className="px-6 py-16 text-center text-slate-400 dark:text-slate-500">
+              <History size={32} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-medium">Aún no hay registros generados.</p>
+              <p className="text-xs mt-1 text-slate-400">Aparecerán aquí cuando generes el primer documento.</p>
+            </div>
+          )}
+          {!historicoLoading && historicoEntries.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Centro</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Titular</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Inspección</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Certificador</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Documentos</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Estado gestión</th>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {historicoEntries.map((entry) => (
+                    <tr key={entry.id} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-slate-900 dark:text-white">{entry.nombreCentro || '—'}</span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{entry.codigoCentro}</span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{entry.registroId}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 max-w-[140px]">{entry.titular || '—'}</td>
+                      <td className="px-4 py-3 text-xs font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">{entry.fechaInspeccion || '—'}</td>
+                      <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {entry.snapshot?.general?.certificador?.nombre || '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {(entry.documentosGenerados ?? []).map(d => <DocBadge key={d} tipo={d} />)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          <StatusChip
+                            active={entry.aprobado ?? false}
+                            onToggle={() => updateHistoricoStatus(entry.id!, 'aprobado', !(entry.aprobado ?? false))}
+                            labelOn="Aprobado" labelOff="No aprobado"
+                            colorOn="bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/40"
+                          />
+                          <StatusChip
+                            active={entry.firmado ?? false}
+                            onToggle={() => updateHistoricoStatus(entry.id!, 'firmado', !(entry.firmado ?? false))}
+                            labelOn="Firmado" labelOff="Sin firma"
+                            colorOn="bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-500/40"
+                          />
+                          <StatusChip
+                            active={entry.enviado_sernapesca ?? false}
+                            onToggle={() => updateHistoricoStatus(entry.id!, 'enviado_sernapesca', !(entry.enviado_sernapesca ?? false))}
+                            labelOn="Enviado SERNAPESCA" labelOff="Sin enviar"
+                            colorOn="bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400 border-violet-300 dark:border-violet-500/40"
+                          />
+                          <StatusChip
+                            active={entry.cliente_notificado ?? false}
+                            onToggle={() => updateHistoricoStatus(entry.id!, 'cliente_notificado', !(entry.cliente_notificado ?? false))}
+                            labelOn="Cliente notificado" labelOff="Sin notificar"
+                            colorOn="bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/40"
+                          />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => loadFromHistorico(entry)}
+                          title="Cargar datos en el formulario para editar y regenerar documentos"
+                          className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors border border-indigo-200 dark:border-indigo-500/30"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </FormCard>
+
+        {/* ── Histórico previo (datos estáticos) ── */}
+        {HISTORICO_CERTIFICACIONES.length > 0 && (
+          <>
+            <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest px-1">Histórico previo (importado)</h3>
+            <FormCard className="p-0 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Estado</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Fecha Emisión</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Centro</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Empresa</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Sistema</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Cap. Extr.</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Cap. Desn.</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Alm.</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Certificador</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {HISTORICO_CERTIFICACIONES.map((entry, idx) => (
+                      <tr key={idx} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors">
+                        <td className="px-6 py-4">
+                          <span className={cn(
+                            "px-2 py-1 text-[10px] font-bold rounded-md uppercase",
+                            entry.estado === 'VIGENTE'
+                              ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+                              : entry.estado === 'VENCIDO' || entry.estado === 'RECHAZADO'
+                                ? "bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400"
+                                : "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400"
+                          )}>
+                            {entry.estado}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 font-medium tabular-nums">{entry.fechaEmision}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-slate-900 dark:text-white">{entry.nombreCentro}</span>
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{entry.codigoCentro}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{entry.empresa}</td>
+                        <td className="px-6 py-4">
+                          <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-semibold rounded-md whitespace-nowrap">
+                            {entry.tipoSistema || '—'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold tabular-nums">{entry.capExtraccion}</td>
+                        <td className="px-6 py-4 text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold tabular-nums">{entry.capDesnaturalizacion}</td>
+                        <td className="px-6 py-4 text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold tabular-nums">{entry.capAlmacenamiento}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">{entry.nombreCertificador || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </FormCard>
+          </>
+        )}
+      </div>
+    );
+  };
 
   const CompanyHint = ({ section }: { section: 'extraccion' | 'desnaturalizacion' | 'almacenamiento' }) => {
     if (!showHints) return null;
@@ -3896,6 +4605,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
   );
 
   const ReportView = () => {
+
     const SECCIONES_CONTEO: { label: string; key: string }[] = [
       { label: 'General',          key: 'General' },
       { label: 'Extracción',       key: 'Extracción' },
@@ -3905,6 +4615,15 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
     const clasificadas = new Set(SECCIONES_CONTEO.map(s => s.key));
     const sinClasificar = state.images.filter(i => !clasificadas.has(i.seccion)).length;
     const total = state.images.length;
+
+    const toggleFilter = (key: string) =>
+      setActiveFilter(prev => (prev === key ? null : key));
+
+    const filteredImages = activeFilter === null
+      ? state.images
+      : activeFilter === '__sin_clasificar'
+        ? state.images.filter(i => !clasificadas.has(i.seccion))
+        : state.images.filter(i => i.seccion === activeFilter);
 
     return (
       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -3922,33 +4641,52 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
           {SECCIONES_CONTEO.map(({ label, key }) => {
             const count = state.images.filter(i => i.seccion === key).length;
+            const isActive = activeFilter === key;
             return (
-              <span
+              <button
                 key={key}
+                onClick={() => toggleFilter(key)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors",
-                  count > 0
-                    ? "bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30"
-                    : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700"
+                  "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all",
+                  isActive
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/30"
+                    : count > 0
+                      ? "bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 cursor-pointer"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700 cursor-default"
                 )}
               >
                 {label}
                 <span className={cn(
                   "inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold",
-                  count > 0 ? "bg-indigo-600 text-white" : "bg-slate-300 dark:bg-slate-600 text-slate-500 dark:text-slate-400"
+                  isActive
+                    ? "bg-white/20 text-white"
+                    : count > 0
+                      ? "bg-indigo-600 text-white"
+                      : "bg-slate-300 dark:bg-slate-600 text-slate-500 dark:text-slate-400"
                 )}>
                   {count}
                 </span>
-              </span>
+              </button>
             );
           })}
           {sinClasificar > 0 && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30">
+            <button
+              onClick={() => toggleFilter('__sin_clasificar')}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all",
+                activeFilter === '__sin_clasificar'
+                  ? "bg-amber-500 text-white border-amber-500 shadow-sm shadow-amber-500/30"
+                  : "bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/30 hover:bg-amber-100 dark:hover:bg-amber-500/25 cursor-pointer"
+              )}
+            >
               Sin clasificar
-              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold bg-amber-500 text-white">
+              <span className={cn(
+                "inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold",
+                activeFilter === '__sin_clasificar' ? "bg-white/20 text-white" : "bg-amber-500 text-white"
+              )}>
                 {sinClasificar}
               </span>
-            </span>
+            </button>
           )}
           {isAdmin && total > 0 && (
             <>
@@ -4099,9 +4837,18 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           </div>
         </div>
 
+        {activeFilter && (
+          <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 -mt-4">
+            <span>Mostrando {filteredImages.length} de {total} {total === 1 ? 'imagen' : 'imágenes'}</span>
+            <button onClick={() => setActiveFilter(null)} className="text-indigo-500 hover:text-indigo-700 font-medium underline">
+              Ver todas
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           <AnimatePresence mode="popLayout">
-            {state.images.map((img) => {
+            {filteredImages.map((img) => {
               // Leyendas ya usadas en la misma sección (excluyendo esta imagen)
               const usedLeyendas = state.images
                 .filter(i => i.seccion === img.seccion && i.id !== img.id && i.leyenda !== '')
@@ -4144,14 +4891,19 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     </div>
                   )}
 
-                  <div className="relative aspect-video bg-slate-100 dark:bg-slate-800">
+                  <div className="relative aspect-video bg-slate-100 dark:bg-slate-800 cursor-pointer"
+                    onClick={() => setAnnotatingImageId(img.id)}
+                  >
                     <img src={img.url} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     <button
-                      onClick={() => removeImage(img.id)}
+                      onClick={(e) => { e.stopPropagation(); removeImage(img.id); }}
                       className="absolute top-3 right-3 p-2 bg-rose-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
                     >
                       <Trash2 size={16} />
                     </button>
+                    <div className="absolute top-3 left-3 p-2 bg-blue-600/90 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg pointer-events-none">
+                      <Pencil size={14} />
+                    </div>
                     <div className={cn(
                       "absolute bottom-3 left-3 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white shadow-lg",
                       img.estado === 'Verde' ? "bg-emerald-500" : img.estado === 'Amarillo' ? "bg-amber-500" : "bg-rose-500"
@@ -4366,6 +5118,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               setGenerating('acta');
               try {
                 await generateActaPdf(state);
+                setShowEmailModal(true);
+                saveToHistorico('acta');
               } finally {
                 setGenerating(null);
               }
@@ -4398,9 +5152,83 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
   );
 
 
+  // ─── Email Modal ───────────────────────────────────────────────────────────
+  const EmailModal = () => {
+    if (!showEmailModal) return null;
+    const subject = buildEmailSubject();
+    const text = buildEmailText();
+    const [subjectCopied, setSubjectCopied] = React.useState(false);
+    const handleCopySubject = () => {
+      navigator.clipboard.writeText(subject).then(() => {
+        setSubjectCopied(true);
+        setTimeout(() => setSubjectCopied(false), 2000);
+      });
+    };
+    const handleCopy = () => {
+      navigator.clipboard.writeText(text).then(() => {
+        setEmailCopied(true);
+        setTimeout(() => setEmailCopied(false), 2000);
+      });
+    };
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col gap-4 p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 font-bold text-base">
+              <Mail size={18} />
+              Correo de notificación
+            </div>
+            <button onClick={() => setShowEmailModal(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
+              <X size={20} />
+            </button>
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Asunto</span>
+              <button
+                onClick={handleCopySubject}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                <Copy size={12} />
+                {subjectCopied ? 'Copiado!' : 'Copiar'}
+              </button>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl px-4 py-3 text-sm text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-mono">
+              {subject}
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Mensaje</span>
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                <Copy size={12} />
+                {emailCopied ? 'Copiado!' : 'Copiar'}
+              </button>
+            </div>
+            <pre className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap font-sans leading-relaxed border border-slate-200 dark:border-slate-700 max-h-64 overflow-y-auto">
+              {text}
+            </pre>
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={() => setShowEmailModal(false)}
+              className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex font-sans text-slate-900 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900 selection:text-indigo-900 dark:selection:text-indigo-100 transition-colors duration-500">
       <MarineBackground />
+      <EmailModal />
       <AnimatePresence>
         {showWelcome && <WelcomeScreen setUserRole={setUserRole} setShowWelcome={setShowWelcome} />}
       </AnimatePresence>
@@ -4411,7 +5239,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         isSidebarCollapsed ? "w-24" : "w-80"
       )}>
         <div className={cn("p-6 border-b border-slate-100 dark:border-slate-800 relative", isSidebarCollapsed ? "px-4 py-8" : "p-10")}>
-          <Logo collapsed={isSidebarCollapsed} />
+          <Logo collapsed={isSidebarCollapsed} tema={tema} />
           <button 
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
             className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-md z-10"
@@ -4420,169 +5248,75 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           </button>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto scrollbar-hide">
-          <NavItem 
-            active={activeTab === 'general'} 
-            onClick={() => setActiveTab('general')} 
-            icon={LayoutDashboard} 
-            label="General" 
-            collapsed={isSidebarCollapsed} 
-          />
-          <NavItem 
-            active={activeTab === 'extraction'} 
-            onClick={() => setActiveTab('extraction')} 
-            icon={Waves} 
-            label="Extracción" 
-            collapsed={isSidebarCollapsed} 
-          />
-          <NavItem 
-            active={activeTab === 'denaturation'} 
-            onClick={() => setActiveTab('denaturation')} 
-            icon={FlaskConical} 
-            label="Desnaturalización" 
-            collapsed={isSidebarCollapsed} 
-          />
-          <NavItem 
-            active={activeTab === 'storage'} 
-            onClick={() => setActiveTab('storage')} 
-            icon={Database} 
-            label="Almacenamiento" 
-            collapsed={isSidebarCollapsed} 
-          />
-          <NavItem 
-            active={activeTab === 'report'} 
-            onClick={() => setActiveTab('report')} 
-            icon={Camera} 
-            label="Informe" 
-            collapsed={isSidebarCollapsed} 
-          />
-          <NavItem 
-            active={activeTab === 'history'} 
-            onClick={() => setActiveTab('history')} 
-            icon={History} 
-            label="Históricos" 
-            collapsed={isSidebarCollapsed} 
-          />
+        <nav className="flex-1 p-4 overflow-y-auto scrollbar-hide flex flex-col gap-6">
 
-          <div className="pt-6 mt-6 border-t border-slate-100 dark:border-slate-800 space-y-2">
-            <NavItem 
-              active={activeTab === 'issue'} 
-              onClick={() => setActiveTab('issue')} 
-              icon={ShieldCheck} 
-              label="Certificado" 
-              collapsed={isSidebarCollapsed} 
-              variant="emerald"
-            />
-            {/* Guardar borrador como archivo */}
+          {/* ── Grupo 1: Flujo de trabajo ── */}
+          <div className="space-y-1">
+            {!isSidebarCollapsed && (
+              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 pb-1">Inspección</p>
+            )}
+            <NavItem active={activeTab === 'general'}      onClick={() => setActiveTab('general')}      icon={LayoutDashboard} label="General"           collapsed={isSidebarCollapsed} />
+            <NavItem active={activeTab === 'extraction'}   onClick={() => setActiveTab('extraction')}   icon={Waves}           label="Extracción"        collapsed={isSidebarCollapsed} />
+            <NavItem active={activeTab === 'denaturation'} onClick={() => setActiveTab('denaturation')} icon={FlaskConical}    label="Desnaturalización" collapsed={isSidebarCollapsed} />
+            <NavItem active={activeTab === 'storage'}      onClick={() => setActiveTab('storage')}      icon={Database}        label="Almacenamiento"    collapsed={isSidebarCollapsed} />
+            <NavItem active={activeTab === 'report'}       onClick={() => setActiveTab('report')}       icon={Camera}          label="Informe"           collapsed={isSidebarCollapsed} />
+          </div>
+
+          {/* ── Grupo 2: Documentos ── */}
+          <div className="space-y-1">
+            {!isSidebarCollapsed && (
+              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 pb-1">Documentos</p>
+            )}
+            <NavItem active={activeTab === 'issue'}   onClick={() => setActiveTab('issue')}   icon={ShieldCheck} label="Certificado" collapsed={isSidebarCollapsed} variant="emerald" />
+            <NavItem active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={History}     label="Históricos"  collapsed={isSidebarCollapsed} />
+          </div>
+
+          {/* ── Grupo 3: Gestión de datos ── */}
+          <div className="space-y-1">
+            {!isSidebarCollapsed && (
+              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 pb-1">Datos</p>
+            )}
             <button
               onClick={exportDraft}
               title="Guardar borrador como archivo JSON"
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative",
-                "text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-700",
-                isSidebarCollapsed ? "justify-center px-0" : ""
-              )}
+              className={cn("w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200", isSidebarCollapsed && "justify-center px-0")}
             >
-              <Save size={20} />
-              {!isSidebarCollapsed && <span className="font-bold text-sm tracking-tight">Guardar Borrador</span>}
+              <Save size={18} />
+              {!isSidebarCollapsed && <span className="text-sm font-medium">Guardar Borrador</span>}
             </button>
-
-            {/* Cargar borrador desde archivo — solo admin */}
             <label
-              title={isAdmin ? "Cargar borrador desde archivo JSON" : "Solo administradores pueden cargar borradores"}
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all",
-                isAdmin
-                  ? "text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-700 cursor-pointer"
-                  : "text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-50",
-                isSidebarCollapsed ? "justify-center px-0" : ""
-              )}
+              title={isAdmin ? "Cargar borrador desde archivo JSON" : "Solo administradores"}
+              className={cn("w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all", isAdmin ? "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer" : "text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-40", isSidebarCollapsed && "justify-center px-0")}
             >
-              <input
-                ref={importDraftRef}
-                type="file"
-                accept=".json"
-                className="hidden"
-                disabled={!isAdmin}
-                onChange={importDraft}
-              />
-              <ArrowRight size={20} className="rotate-180" />
-              {!isSidebarCollapsed && <span className="font-bold text-sm tracking-tight">Cargar Borrador</span>}
+              <input ref={importDraftRef} type="file" accept=".json" className="hidden" disabled={!isAdmin} onChange={importDraft} />
+              <ArrowRight size={18} className="rotate-180" />
+              {!isSidebarCollapsed && <span className="text-sm font-medium">Cargar Borrador</span>}
             </label>
+          </div>
 
-            <button
-              onClick={loadTestData}
-              disabled={!isAdmin}
-              title={isAdmin ? "Cargar datos de prueba — Centro 110814 PAMELA" : "Solo administradores"}
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative",
-                isAdmin
-                  ? "text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-amber-700"
-                  : "text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-50",
-                isSidebarCollapsed ? "justify-center px-0" : ""
-              )}
-            >
-              <TestTube2 size={20} />
-              {!isSidebarCollapsed && <span className="font-bold text-sm tracking-tight">Datos de Prueba</span>}
-            </button>
-            <button
-              onClick={resetState}
-              disabled={!isAdmin}
-              title={isAdmin ? "Borrar borrador actual" : "Solo administradores"}
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative",
-                isAdmin
-                  ? "text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-600"
-                  : "text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-50",
-                isSidebarCollapsed ? "justify-center px-0" : ""
-              )}
-            >
-              <Trash2 size={20} />
-              {!isSidebarCollapsed && <span className="font-bold text-sm tracking-tight">Borrar Borrador</span>}
-            </button>
-
-            {/* Cerrar sesión */}
+          {/* ── Grupo 4: Sistema ── (al fondo, empuja hacia abajo) */}
+          <div className="mt-auto space-y-1 border-t border-slate-100 dark:border-slate-800 pt-4">
+            <NavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={Settings2} label="Configuración" collapsed={isSidebarCollapsed} />
             <button
               onClick={async () => {
                 try { const { signOut } = await import('firebase/auth'); const { auth } = await import('./firebase'); await signOut(auth); } catch {}
                 localStorage.removeItem('certimar-session');
                 setUserRole(null); setShowWelcome(true);
               }}
-              title="Cerrar sesión"
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative",
-                "text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400",
-                isSidebarCollapsed ? "justify-center px-0" : ""
-              )}
+              className={cn("w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400", isSidebarCollapsed && "justify-center px-0")}
             >
-              <LogOut size={20} />
-              {!isSidebarCollapsed && <span className="font-bold text-sm tracking-tight">Cerrar Sesión</span>}
+              <LogOut size={18} />
+              {!isSidebarCollapsed && <span className="text-sm font-medium">Cerrar Sesión</span>}
             </button>
           </div>
         </nav>
 
         <div className={cn("p-4 border-t border-slate-100 dark:border-slate-800 space-y-4", isSidebarCollapsed ? "text-center" : "px-6")}>
-          {/* Hints Toggle */}
-          <button
-            onClick={() => setShowHints(!showHints)}
-            title={showHints ? 'Ocultar sugerencias por empresa' : 'Mostrar sugerencias por empresa'}
-            className={cn(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative",
-              showHints
-                ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10"
-                : "text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300",
-              isSidebarCollapsed ? "justify-center px-0" : ""
-            )}
-          >
-            <Info size={20} />
-            {!isSidebarCollapsed && <span className="font-bold text-sm tracking-tight">Sugerencias</span>}
-          </button>
-
-          {/* Theme Toggle */}
+          {/* Acceso rápido modo oscuro */}
           <button
             onClick={() => setDarkMode(!darkMode)}
             className={cn(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative",
+              "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all",
               "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white",
               isSidebarCollapsed ? "justify-center px-0" : ""
             )}
@@ -4678,9 +5412,23 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             {activeTab === 'report' && ReportView()}
             {activeTab === 'issue' && IssueView()}
             {activeTab === 'history' && HistoryView()}
+            {activeTab === 'config' && ConfigView()}
           </AnimatePresence>
         </div>
       </main>
+
+      {/* Anotador de imagen */}
+      {annotatingImg && (
+        <ImageAnnotator
+          img={annotatingImg}
+          onSave={async (annotatedUrl) => {
+            await idbSave(annotatingImg.id, annotatedUrl);
+            updateImage(annotatingImg.id, { url: annotatedUrl });
+            setAnnotatingImageId(null);
+          }}
+          onClose={() => setAnnotatingImageId(null)}
+        />
+      )}
     </div>
   );
 }

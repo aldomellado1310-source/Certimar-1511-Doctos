@@ -234,8 +234,7 @@ export function downloadActaHtml(state: AppState): void {
   const cc   = state.general.centro_cultivo;
   const [anio = '', mesStr = '', diaStr = ''] =
     state.general.fechas.emision_certificado.split('-');
-  const aa = anio.slice(2);
-  const filename = `${cc.codigo_centro}_${diaStr}_${mesStr}_${aa}-ACTA`;
+  const filename = `${cc.codigo_centro}-${diaStr}-${mesStr}-${anio}-ACTA`;
 
   const win = window.open('', '_blank', 'width=900,height=1100');
   if (!win) {
@@ -275,40 +274,93 @@ export function downloadActaHtml(state: AppState): void {
 }
 
 // ---------------------------------------------------------------------------
-// Generación de PDF vía impresión nativa del navegador
+// Descarga directa como PDF usando jsPDF html() + html2canvas
 // ---------------------------------------------------------------------------
 
 /**
- * Abre el acta en una ventana emergente y dispara automáticamente el diálogo
- * de impresión. El usuario solo debe elegir "Guardar como PDF" y confirmar.
- * El motor de impresión del navegador admite oklch y todos los CSS modernos.
+ * Convierte el acta HTML a PDF directamente y lo descarga sin abrir
+ * el diálogo de impresión del navegador.
  */
-export function generateActaPdf(
+export async function generateActaPdf(
   state: AppState,
   onProgress?: (msg: string) => void
-): void {
-  const html = buildActaHtml(state);
-  const cc   = state.general.centro_cultivo;
+): Promise<void> {
+  const { jsPDF } = await import('jspdf');
+
+  const htmlFull = buildActaHtml(state);
+  const cc = state.general.centro_cultivo;
   const [anio = '', mesStr = '', diaStr = ''] =
     state.general.fechas.emision_certificado.split('-');
-  const aa = anio.slice(2);
-  const filename = `${cc.codigo_centro}_${diaStr}_${mesStr}_${aa}-ACTA`;
+  const filename = `${cc.codigo_centro}_${diaStr}_${mesStr}_${anio}-ACTA.pdf`;
 
-  onProgress?.('Abriendo ventana de impresión…');
+  onProgress?.('Preparando documento…');
 
-  const win = window.open('', '_blank', 'width=900,height=1100');
-  if (!win) {
-    alert('Activa las ventanas emergentes para este sitio y vuelve a intentarlo.');
-    return;
+  // Parsear el HTML para extraer estilos y body
+  const parser = new DOMParser();
+  const parsedDoc = parser.parseFromString(htmlFull, 'text/html');
+
+  // Contenedor off-screen al ancho exacto de oficio (215.9mm @ 96dpi ≈ 816px)
+  const PW_PX = 816;
+  const container = document.createElement('div');
+  container.style.cssText = [
+    'position:fixed',
+    'top:-99999px',
+    'left:-99999px',
+    `width:${PW_PX}px`,
+    'background:#ffffff',
+    'overflow:hidden',
+  ].join(';');
+
+  // Inyectar todos los <style> del documento
+  parsedDoc.querySelectorAll('style').forEach(s => {
+    const style = document.createElement('style');
+    style.textContent = s.textContent;
+    container.appendChild(style);
+  });
+
+  // Inyectar contenido del body
+  const bodyDiv = document.createElement('div');
+  bodyDiv.innerHTML = parsedDoc.body.innerHTML;
+  container.appendChild(bodyDiv);
+  document.body.appendChild(container);
+
+  // Esperar que fuentes y estilos se apliquen
+  await new Promise(r => setTimeout(r, 800));
+  onProgress?.('Generando PDF…');
+
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: [215.9, 355.6],
+    compress: true,
+  });
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      (doc as any).html(container, {
+        callback: (pdf: any) => {
+          try {
+            onProgress?.('Descargando…');
+            pdf.save(filename);
+            resolve();
+          } catch (e) { reject(e); }
+        },
+        x: 0,
+        y: 0,
+        width: 215.9,
+        windowWidth: PW_PX,
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+        },
+        margin: [0, 0, 0, 0],
+        autoPaging: 'text',
+      });
+    });
+  } finally {
+    document.body.removeChild(container);
   }
-
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-
-  win.onload = () => {
-    win.document.title = filename;
-    // Pequeño retraso para que fuentes y estilos terminen de aplicarse
-    setTimeout(() => win.print(), 400);
-  };
 }

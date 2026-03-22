@@ -191,3 +191,23 @@ export interface HistoryEntry {
   oc: string;
   hes: string;
 }
+
+export interface RegistroHistorico {
+  id?: string;               // Firestore doc ID (= registroId)
+  registroId: string;
+  codigoCentro: string;
+  nombreCentro: string;
+  titular: string;
+  fechaInspeccion: string;
+  documentosGenerados: string[];  // 'certificado' | 'informe' | 'acta'
+  // Estado de gestión
+  aprobado?: boolean;
+  firmado?: boolean;
+  enviado_sernapesca?: boolean;
+  cliente_notificado?: boolean;
+  // Snapshot del estado (sin URLs de imágenes)
+  snapshot: Omit<AppState, 'images'> & {
+    images: Array<Omit<ReportImage, 'url'>>;
+  };
+  __updatedAt?: any;
+}
