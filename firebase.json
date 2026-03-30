@@ -8,5 +8,11 @@
   },
   "firestore": {
     "rules": "firestore.rules"
-  }
+  },
+  "storage": [
+    {
+      "bucket": "certimar-1511-doctos-storage",
+      "rules": "storage.rules"
+    }
+  ]
 }

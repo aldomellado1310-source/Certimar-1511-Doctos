@@ -49,16 +49,20 @@ export const CATALOGO_DESNATURALIZACION = {
       ],
     },
     {
+      // Capacidades nominales documentadas: 1.200 / 1.950 / 2.500 kg/h según configuración de centro.
+      // Olla 700 L | Motor 7.5 kW | Sistema de recirculación de ácido incluido.
+      // Con prepicador integrado: ciclo de 15 min proceso + 1 min pausa → 1.350 kg/batch (alta carga).
       id: 'ocea-sw700',
       marca_modelo: 'OCEA SW-700L-OCH 7.5 KW',
-      capacidad_nominal_kg_h: 2450,
+      capacidad_nominal_kg_h: 2500,
       almacenamiento_l: 700,
       material: 'Acero inoxidable AISI 304/316-L',
       capacidad_prepicador_kg_h: 2000,
       configuraciones_batch: [
-        { label: '650 kg / 20 min  (10 + 10)',               kilos: 650,   t_proceso: 10, t_pausa: 10 },
-        { label: '600 kg / 15 min  (10 + 5)',                kilos: 600,   t_proceso: 10, t_pausa: 5  },
-        { label: '529,2 kg / 12 min  (10 + 2) — peces pequeños', kilos: 529.2, t_proceso: 10, t_pausa: 2  },
+        { label: '650 kg / 20 min  (10 + 10) — Estándar',              kilos: 650,   t_proceso: 10, t_pausa: 10 },
+        { label: '600 kg / 15 min  (10 + 5)',                           kilos: 600,   t_proceso: 10, t_pausa: 5  },
+        { label: '529,2 kg / 12 min  (10 + 2) — Peces pequeños',       kilos: 529.2, t_proceso: 10, t_pausa: 2  },
+        { label: '1.350 kg / 16 min  (15 + 1) — Con Prepicador',       kilos: 1350,  t_proceso: 15, t_pausa: 1  },
       ],
     },
     {
@@ -71,6 +75,26 @@ export const CATALOGO_DESNATURALIZACION = {
       configuraciones_batch: [
         { label: '700 kg / 25 min  (15 + 10)',   kilos: 700,   t_proceso: 15, t_pausa: 10 },
         { label: '529,2 kg / 16 min  (15 + 1)',  kilos: 529.2, t_proceso: 15, t_pausa: 1  },
+      ],
+    },
+    {
+      // Metalúrgica Chinquihue (Puerto Montt) — Sistema Integral de Ensilaje
+      // Diseñado para operar en pontones (mar y agua dulce). Piezas cortadas con tecnología Waterjet.
+      // Componentes: estanque 1.200 L + bomba Chopper + bomba dosificadora ácido + tablero eléctrico.
+      // Restricción fabricante: molienda MÍNIMA 15 min por batch (no negociable para validación).
+      // Primera molienda del día: agregar agua hasta cubrir la voluta para generar sello hidráulico.
+      // Prepicador opcional PR 60/7: 2.000 kg/h, 7 cuchillas AISI 304/316-L, motor SEW 3kW / 60 RPM / 6,7 A.
+      // Dimensiones equipo: 250 cm alto × 130 cm ancho × 130 cm largo | Peso: 300 kg | Temp. máx: 80°C.
+      // Capacidad nominal (ciclo estándar 30 min): 1.100 × 2 batches/h = 2.200 kg/h.
+      id: 'mch-tk1200',
+      marca_modelo: 'MCH - TK1200',
+      capacidad_nominal_kg_h: 2200,
+      almacenamiento_l: 1200,
+      material: 'Acero inoxidable AISI 304 (corte Waterjet)',
+      capacidad_prepicador_kg_h: 2000,
+      configuraciones_batch: [
+        { label: '1.100 kg / 30 min  (15 + 15) — Estándar MCH',            kilos: 1100, t_proceso: 15, t_pausa: 15 },
+        { label: '1.100 kg / 21 min  (15 + 6)  — Con Prepicador PR 60/7',  kilos: 1100, t_proceso: 15, t_pausa: 6  },
       ],
     },
   ],
@@ -91,7 +115,7 @@ export const CATALOGO_DESNATURALIZACION = {
       sistema_descarga: 'MANUAL HACIA MAXISACOS',
       disposicion_final: 'VERTEDERO MUNICIPAL PTA ARENAS',
       almacenamiento_gas: '4000L X 2 = 8.000L GAS GLP',
-      observaciones: 'INCINERADOR ES EL SISTEMA SECUNDARIO DE DESNATURALIZACIÓN DEL CENTRO DE CULTIVO.',
+      observaciones: 'INCINERADOR ES EL SISTEMA SECUNDARIO DE DESNATURALIZACIÓN DEL CENTRO DE CULTIVO. Capacidad Diaria Incineración: 150 kg/h x 8 h = 1.200 TON/DIA',
     },
     {
       id: 'incinerador-300',
@@ -129,42 +153,68 @@ export const CATALOGO_GENERADORES = [
 
 export const CATALOGO_ALMACENAMIENTO = [20, 21, 30, 32, 40, 45, 50];
 
-export const CATALOGO_CENTROS = [
-  { 
-    codigo: '102345', 
-    nombre: 'Punta Larga', 
-    titular: 'AquaChile S.A.', 
-    acs: 'ACS 10A', 
-    ubicacion: 'Estero Reloncaví, Los Lagos' 
+export interface CatalogoCentro {
+  codigo: string;
+  nombre: string;
+  titular: string;
+  acs: string;
+  ubicacion: string;
+  operacion_minima?: true;
+  sistema_extraccion_tipico?: string;
+  capacidad_tipica_ton_dia?: number;
+  nota?: string;
+}
+
+export const CATALOGO_CENTROS: CatalogoCentro[] = [
+  {
+    codigo: '102345',
+    nombre: 'Punta Larga',
+    titular: 'AquaChile S.A.',
+    acs: 'ACS 10A',
+    ubicacion: 'Estero Reloncaví, Los Lagos'
   },
-  { 
-    codigo: '104567', 
-    nombre: 'Isla Guar', 
-    titular: 'Cermaq Chile S.A.', 
-    acs: 'ACS 10B', 
-    ubicacion: 'Seno de Reloncaví, Los Lagos' 
+  {
+    codigo: '104567',
+    nombre: 'Isla Guar',
+    titular: 'Cermaq Chile S.A.',
+    acs: 'ACS 10B',
+    ubicacion: 'Seno de Reloncaví, Los Lagos'
   },
-  { 
-    codigo: '110890', 
-    nombre: 'Canal Fitz Roy', 
-    titular: 'Mowi Chile S.A.', 
-    acs: 'ACS 12', 
-    ubicacion: 'Canal Fitz Roy, Magallanes' 
+  {
+    codigo: '110890',
+    nombre: 'Canal Fitz Roy',
+    titular: 'Mowi Chile S.A.',
+    acs: 'ACS 12',
+    ubicacion: 'Canal Fitz Roy, Magallanes'
   },
-  { 
-    codigo: '120334', 
-    nombre: 'Bahía Low', 
-    titular: 'Australis Mar S.A.', 
-    acs: 'ACS 17', 
-    ubicacion: 'Melinka, Aysén' 
+  {
+    codigo: '120334',
+    nombre: 'Bahía Low',
+    titular: 'Australis Mar S.A.',
+    acs: 'ACS 17',
+    ubicacion: 'Melinka, Aysén'
   },
-  { 
-    codigo: '101223', 
-    nombre: 'Ensenada Baja', 
-    titular: 'Blumar S.A.', 
-    acs: 'ACS 21A', 
-    ubicacion: 'Puerto Chacabuco, Aysén' 
-  }
+  {
+    codigo: '101223',
+    nombre: 'Ensenada Baja',
+    titular: 'Blumar S.A.',
+    acs: 'ACS 21A',
+    ubicacion: 'Puerto Chacabuco, Aysén'
+  },
+  // --- Centros de Operación Mínima ---
+  // Centros que operan con sistema ROV y declaran capacidad al umbral legal mínimo (15 TN/día).
+  // Al seleccionarlos, el sistema muestra un aviso al certificador.
+  {
+    codigo: '110893',
+    nombre: 'Punta Sánchez',
+    titular: 'EXPORTADORA LOS FIORDOS LTDA.',
+    acs: 'ACS 26B',
+    ubicacion: 'Los Lagos',
+    operacion_minima: true,
+    sistema_extraccion_tipico: 'ROV',
+    capacidad_tipica_ton_dia: 15,
+    nota: 'Opera exclusivamente con ROV submarino como sistema de extracción de mortalidad. Capacidad declarada al umbral mínimo legal (15 TN/día). Verificar valores reales en terreno.',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -300,7 +350,7 @@ export const NOMBRES_AN_CONOCIDOS = [
   'A/N Plataforma de Servicio',
 ];
 
-export const CATALOGO_FOTOS: Record<'Extracción' | 'Desnaturalización' | 'Almacenamiento' | 'General' | 'Portada' | 'Ubicación Espacial', string[]> = {
+export const CATALOGO_FOTOS: Record<'Extracción' | 'Desnaturalización' | 'Almacenamiento' | 'General' | 'Portada' | 'Paisaje' | 'Ubicación Espacial', string[]> = {
   'Extracción': [
     // Compresores
     'Electrocompresor Kaeser Mobilair M50E.',
@@ -385,6 +435,13 @@ export const CATALOGO_FOTOS: Record<'Extracción' | 'Desnaturalización' | 'Alma
     'Vista panorámica del centro de cultivo.',
     'Vista frontal del módulo de cultivo.',
     'Vista general de instalaciones del centro.',
+  ],
+  'Paisaje': [
+    'Vista del entorno del centro de cultivo.',
+    'Paisaje del canal.',
+    'Vista panorámica del entorno.',
+    'Vista del fiordo.',
+    'Entorno natural del centro.',
   ],
   'Ubicación Espacial': [
     'Vista aérea general del centro — contexto geográfico.',
@@ -533,6 +590,32 @@ export const HISTORICO_CERTIFICACIONES = [
     oc: "OK",
     hes: "OK"
   }
+];
+
+// ---------------------------------------------------------------------------
+// CATÁLOGO DE PLATAFORMAS / A/N ENSILAJE — Dimensiones conocidas
+// Fuente: registros de inspección en terreno + especificaciones de fábrica.
+// Usado para autocompletar Eslora / Manga / Puntal en sección Almacenamiento.
+// ---------------------------------------------------------------------------
+export interface PlataformaEntry {
+  nombre: string;
+  eslora: string;
+  manga: string;
+  puntal: string;
+}
+
+export const CATALOGO_PLATAFORMAS: PlataformaEntry[] = [
+  // Modelos de fábrica
+  { nombre: 'Ocea 3S - SB21 (fábrica)',    eslora: '6.0',   manga: '5.5',  puntal: '2.10' },
+  // Plataformas documentadas en terreno
+  { nombre: 'A/N Tricahue',                eslora: '24.62', manga: '11.0', puntal: '3.50' },
+  { nombre: 'A/N Río Maullín',             eslora: '13.0',  manga: '9.0',  puntal: '1.5'  },
+  // Rangos típicos (promedio de inspecciones)
+  { nombre: 'Pontón pequeño  (~6 × 5 m)',  eslora: '6.0',   manga: '5.0',  puntal: '1.5'  },
+  { nombre: 'Pontón mediano  (~9 × 6 m)',  eslora: '9.0',   manga: '6.0',  puntal: '1.5'  },
+  { nombre: 'Pontón mediano  (~10 × 7 m)', eslora: '10.2',  manga: '7.0',  puntal: '2.0'  },
+  { nombre: 'Pontón grande   (~13 × 9 m)', eslora: '13.0',  manga: '9.0',  puntal: '2.0'  },
+  { nombre: 'Barcaza grande  (~25 × 11 m)',eslora: '24.62', manga: '11.0', puntal: '3.50' },
 ];
 
 export const OPCIONES_INFRAESTRUCTURA = {

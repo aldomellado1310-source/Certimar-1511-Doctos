@@ -119,13 +119,13 @@ export function buildCertificadoData(state: AppState): CertificadoData {
     storage.resultados.cumple_norma;
 
   return {
-    titulo: 'CERTIFICADO DE SISTEMAS DE MORTALIDAD',
+    titulo: 'CERTIFICADO DE CAPACIDADES DE SISTEMAS DE MORTALIDAD',
     normativa: 'Resolución Exenta N°1511/2021',
     identificacion: {
       'Titular': g.titular,
       'Código Centro': g.codigo_centro,
       'Nombre Centro': g.nombre_centro,
-      'A.C.S / R.N.A': g.acs,
+      'A.C.S': g.acs,
       'Ubicación': g.ubicacion,
       'Fecha Inspección Terreno': general.fechas.inspeccion_terreno,
       'Fecha Evaluación Documental': general.fechas.evaluacion_documental,
@@ -145,7 +145,7 @@ export function buildCertificadoData(state: AppState): CertificadoData {
         cumple: denaturation.resultados.cumple_norma,
       },
       {
-        descripcion: 'Almacenamiento de Ácido Fórmico',
+        descripcion: 'Almacenamiento',
         valor: `${storage.resultados.capacidad_almacenaje_ton.toFixed(2)} TN`,
         umbral: `min. ${MIN_STORAGE_TON} TN`,
         cumple: storage.resultados.cumple_norma,

@@ -213,19 +213,22 @@ export function buildActaHtml(state: AppState): string {
   html = repSplit(html, 'sistema_carga_incinerador',
     incActivo ? (inc!.sistema_carga || na) : na);
   html = repSplit(html, 'tem_2da_camara_incinerador',
-    incActivo ? (den.parametros_incineracion.temperatura_operacion || na) : na);
+    incActivo ? (inc!.temperatura_camara_secundaria_c ? `${inc!.temperatura_camara_secundaria_c}°C` : na) : na);
   // dim_1ra es directo (no fragmentado)
   html = rep(html,     '{dim_1ra_camara_incinerador}',
     incActivo ? (den.parametros_incineracion.camara_primaria || na) : na);
-  html = repSplit(html, 'quemadores_2da_camara_incinerador', na);
-  html = repSplit(html, 'quemadores_1ra_camara_incinerador', na);
+  html = repSplit(html, 'quemadores_2da_camara_incinerador',
+    incActivo ? (inc!.num_quemadores_secundaria?.toString() || na) : na);
+  html = repSplit(html, 'quemadores_1ra_camara_incinerador',
+    incActivo ? (inc!.num_quemadores_primaria?.toString() || na) : na);
   html = repSplit(html, 'temp_funcionamiento_incinerador',
-    incActivo ? (den.parametros_incineracion.temperatura_operacion || na) : na);
+    incActivo ? (inc!.temperatura_camara_primaria_c ? `${inc!.temperatura_camara_primaria_c}°C` : na) : na);
   html = repSplit(html, 'capacidada_incinerador',
     incActivo ? (inc!.capacidad_carga_kg_h?.toString() || na) : na);
   html = repSplit(html, 'horas_funcionamiento_incinerador',
     incActivo ? (inc!.horas_funcionamiento_dia?.toString() || na) : na);
-  html = repSplit(html, 'requerimienoa_incinerador',       na);
+  html = repSplit(html, 'requerimienoa_incinerador',
+    incActivo ? (inc!.requerimiento_energetico || na) : na);
   html = repSplit(html, 'sistema_descarga_incinerador',
     incActivo ? (inc!.sistema_descarga || na) : na);
   html = repSplit(html, 'disposicion_final',
@@ -302,103 +305,57 @@ export function downloadActaHtml(state: AppState): void {
 }
 
 // ---------------------------------------------------------------------------
-// Descarga directa como PDF usando jsPDF html() + html2canvas
+// Genera el PDF usando print() sobre un iframe oculto
 // ---------------------------------------------------------------------------
 
 /**
- * Convierte el acta HTML a PDF directamente y lo descarga sin abrir
- * el diálogo de impresión del navegador.
+ * Abre el diálogo nativo "Guardar como PDF" sobre un iframe oculto.
+ * El navegador renderiza el CSS completo (incluyendo oklch, tablas complejas, etc.)
+ * sin el popup HTML intermedio que tenía downloadActaHtml.
  */
-export async function generateActaPdf(
+export function generateActaPdf(
   state: AppState,
   onProgress?: (msg: string) => void
-): Promise<void> {
-  const { jsPDF } = await import('jspdf');
-
+): void {
   const htmlFull = buildActaHtml(state);
   const cc = state.general.centro_cultivo;
   const [anio = '', mesStr = '', diaStr = ''] =
     state.general.fechas.emision_certificado.split('-');
-  const filename = `${cc.codigo_centro}_${diaStr}_${mesStr}_${anio}-ACTA.pdf`;
+  const filename = `${cc.codigo_centro}_${diaStr}_${mesStr}_${anio}-ACTA`;
 
   onProgress?.('Preparando documento…');
 
-  // Parsear el HTML para extraer estilos y body
-  const parser = new DOMParser();
-  const parsedDoc = parser.parseFromString(htmlFull, 'text/html');
-
-  // Contenedor off-screen al ancho exacto de oficio (215.9mm @ 96dpi ≈ 816px)
-  const PW_PX = 816;
-  const container = document.createElement('div');
-  container.style.cssText = [
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = [
     'position:fixed',
-    'top:-99999px',
-    'left:-99999px',
-    `width:${PW_PX}px`,
-    'background:#ffffff',
-    'overflow:hidden',
+    'top:0', 'left:0',
+    'width:0', 'height:0',
+    'border:none',
+    'opacity:0',
+    'pointer-events:none',
   ].join(';');
+  document.body.appendChild(iframe);
 
-  // Inyectar todos los <style> del documento
-  parsedDoc.querySelectorAll('style').forEach(s => {
-    const style = document.createElement('style');
-    style.textContent = s.textContent;
-    container.appendChild(style);
-  });
+  const iframeDoc = iframe.contentDocument!;
+  iframeDoc.open();
+  iframeDoc.write(htmlFull);
+  iframeDoc.close();
 
-  // Inyectar contenido del body
-  const bodyDiv = document.createElement('div');
-  bodyDiv.innerHTML = parsedDoc.body.innerHTML;
-  container.appendChild(bodyDiv);
-  document.body.appendChild(container);
+  const print = () => {
+    iframeDoc.title = filename;
+    onProgress?.('Abriendo diálogo PDF…');
+    iframe.contentWindow!.focus();
+    iframe.contentWindow!.print();
+    // Limpiar después de que el diálogo cierre (no hay evento, usamos timeout)
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+      onProgress?.('Listo');
+    }, 3000);
+  };
 
-  // Esperar que fuentes y estilos se apliquen
-  await new Promise(r => setTimeout(r, 800));
-  onProgress?.('Generando PDF…');
-
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: [215.9, 355.6],
-    compress: true,
-  });
-
-  try {
-    await new Promise<void>((resolve, reject) => {
-      (doc as any).html(container, {
-        callback: (pdf: any) => {
-          try {
-            onProgress?.('Descargando…');
-            pdf.save(filename);
-            resolve();
-          } catch (e) { reject(e); }
-        },
-        x: 0,
-        y: 0,
-        width: 215.9,
-        windowWidth: PW_PX,
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          onclone: (clonedDoc: Document) => {
-            // html2canvas no soporta oklch (Tailwind v4).
-            // Convertimos todos los valores oklch en los <style> del documento clonado
-            // a hex equivalente usando la fórmula oklch → oklab → sRGB.
-            clonedDoc.querySelectorAll('style').forEach(styleEl => {
-              if (styleEl.textContent?.includes('oklch')) {
-                styleEl.textContent = patchOklch(styleEl.textContent);
-              }
-            });
-          },
-        },
-        margin: [0, 0, 0, 0],
-        autoPaging: 'text',
-      });
-    });
-  } finally {
-    document.body.removeChild(container);
+  if (iframeDoc.readyState === 'complete') {
+    setTimeout(print, 500);
+  } else {
+    iframe.addEventListener('load', () => setTimeout(print, 500), { once: true });
   }
 }

@@ -39,13 +39,23 @@ import {
   ToggleRight,
   Beaker,
   Pencil,
+  BarChart2,
+  TrendingUp,
+  Users,
+  Activity,
+  Clock,
+  Award,
+  AlertTriangle,
+  Download,
+  Building2,
+  Upload,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useDropzone } from 'react-dropzone';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { cn } from './lib/utils';
-import { AppState, ReportImage, RegistroHistorico } from './types';
+import { AppState, ReportImage, RegistroHistorico, EventoUso, CatalogoCustomEntry } from './types';
 import {
   CATALOGO_EXTRACCION,
   CATALOGO_DESNATURALIZACION,
@@ -60,6 +70,8 @@ import {
   OPCIONES_INCINERADOR,
   OPCIONES_INFRAESTRUCTURA,
   EMPRESA_HINTS,
+  CATALOGO_CENTROS,
+  CATALOGO_PLATAFORMAS,
 } from './constants/masterData';
 import type { ImageSeccion } from './types';
 import { CONCESIONES_DB, type ConcesionCentro } from './data/concesiones';
@@ -150,6 +162,11 @@ const DEFAULT_STATE: AppState = {
       activo: false,
       id_catalogo: '',
       marca_modelo: '',
+      num_quemadores_primaria: 0,
+      num_quemadores_secundaria: 0,
+      temperatura_camara_primaria_c: 0,
+      temperatura_camara_secundaria_c: 0,
+      requerimiento_energetico: '',
       capacidad_carga_kg_h: 0,
       horas_funcionamiento_dia: 8,
       sistema_carga: 'N/A',
@@ -557,9 +574,9 @@ const DateField = ({
 };
 
 const InputField = ({
-  label, value, onChange, type = "text", placeholder, suffix, inputRef, highlight, min, max
+  label, value, onChange, onBlur, type = "text", placeholder, suffix, inputRef, highlight, min, max
 }: {
-  label: string, value: any, onChange: (val: any) => void, type?: string,
+  label: string, value: any, onChange: (val: any) => void, onBlur?: () => void, type?: string,
   placeholder?: string, suffix?: string, inputRef?: React.RefObject<HTMLInputElement | null>,
   highlight?: boolean, min?: number, max?: number
 }) => (
@@ -584,6 +601,7 @@ const InputField = ({
           }
         }}
         placeholder={placeholder}
+        onBlur={onBlur}
         className={cn(
           "w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium",
           highlight && "ring-2 ring-indigo-500 ring-offset-2 border-indigo-500 bg-white dark:bg-slate-900"
@@ -602,7 +620,7 @@ const InputField = ({
 // Filtra el catálogo según la sección, resuelve placeholders dinámicos ({m3}, {kva})
 // y excluye descripciones ya asignadas a otras fotos de la misma sección.
 const LeyendaCombo = ({
-  seccion, value, onChange, m3, kva, usedLeyendas = []
+  seccion, value, onChange, m3, kva, usedLeyendas = [], savedOpciones = [], onNewLeyenda
 }: {
   seccion: ImageSeccion;
   value: string;
@@ -610,11 +628,25 @@ const LeyendaCombo = ({
   m3: number;
   kva: number;
   usedLeyendas?: string[];
+  /** Sugerencias guardadas en Firestore para esta sección */
+  savedOpciones?: string[];
+  /** Callback que se dispara al perder el foco si la leyenda es nueva */
+  onNewLeyenda?: (v: string, seccion: ImageSeccion) => void;
 }) => {
   const listId = `leyenda-list-${seccion.replace(/[\s\/]/g, '-').replace(/[áéíóúñ]/g, c => ({ á:'a',é:'e',í:'i',ó:'o',ú:'u',ñ:'n' } as Record<string,string>)[c] ?? c)}`;
-  const opciones = (CATALOGO_FOTOS[seccion] ?? [])
-    .map(s => s.replace(/\{m3\}/g, String(m3)).replace(/\{kva\}/g, String(kva)))
+
+  const staticOpciones = (CATALOGO_FOTOS[seccion] ?? [])
+    .map(s => s.replace(/\{m3\}/g, String(m3)).replace(/\{kva\}/g, String(kva)));
+
+  // Unión de sugerencias estáticas + guardadas, sin duplicados ni ya usadas por otras fotos
+  const allOpciones = [...new Set([...staticOpciones, ...savedOpciones])]
     .filter(op => op === value || !usedLeyendas.includes(op));
+
+  const handleBlur = () => {
+    const trimmed = value.trim();
+    if (trimmed && onNewLeyenda) onNewLeyenda(trimmed, seccion);
+  };
+
   return (
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Descripción</label>
@@ -622,11 +654,12 @@ const LeyendaCombo = ({
         list={listId}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={handleBlur}
         placeholder="Seleccione o escriba una descripción..."
         className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
       />
       <datalist id={listId}>
-        {opciones.map((op, i) => <option key={i} value={op} />)}
+        {allOpciones.map((op, i) => <option key={i} value={op} />)}
       </datalist>
     </div>
   );
@@ -651,6 +684,8 @@ const ImageAnnotator: React.FC<{
   const [tool, setTool] = useState<'rect' | 'circle'>('rect');
   const [color, setColor] = useState(ANNOT_COLORS[0]);
   const [current, setCurrent] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const startRef = useRef({ x: 0, y: 0 });
 
@@ -684,31 +719,58 @@ const ImageAnnotator: React.FC<{
   };
 
   const handleSave = async () => {
-    const image = new Image();
-    image.src = img.url;
-    await new Promise<void>(res => { image.onload = () => res(); });
-    const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const ctx = canvas.getContext('2d')!;
-    ctx.drawImage(image, 0, 0);
-    const lw = Math.max(canvas.width, canvas.height) * 0.004;
-    for (const ann of annotations) {
-      const px = ann.x * canvas.width, py = ann.y * canvas.height;
-      const pw = ann.w * canvas.width, ph = ann.h * canvas.height;
-      ctx.strokeStyle = ann.color;
-      ctx.lineWidth = lw;
-      ctx.fillStyle = ann.color + '44';
-      if (ann.type === 'rect') {
-        ctx.fillRect(px, py, pw, ph);
-        ctx.strokeRect(px, py, pw, ph);
-      } else {
-        ctx.beginPath();
-        ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2);
-        ctx.fill(); ctx.stroke();
+    setSaving(true);
+    setSaveError(null);
+    let blobUrl: string | null = null;
+    try {
+      // Para URLs remotas (Firebase Storage), hacer fetch como blob primero.
+      // Usar directamente una URL http en canvas.drawImage() puede "contaminar" (taint)
+      // el canvas por CORS, haciendo que toDataURL() lance SecurityError silencioso.
+      // Un blob: URL es mismo-origen y no produce taint.
+      let imageUrl = img.url;
+      if (img.url.startsWith('http')) {
+        const resp = await fetch(img.url);
+        if (!resp.ok) throw new Error(`No se pudo cargar la imagen (HTTP ${resp.status})`);
+        const blob = await resp.blob();
+        blobUrl = URL.createObjectURL(blob);
+        imageUrl = blobUrl;
       }
+
+      const image = new Image();
+      image.src = imageUrl;
+      await new Promise<void>((res, rej) => {
+        image.onload = () => res();
+        image.onerror = () => rej(new Error('Error al decodificar la imagen'));
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(image, 0, 0);
+      const lw = Math.max(canvas.width, canvas.height) * 0.004;
+      for (const ann of annotations) {
+        const px = ann.x * canvas.width, py = ann.y * canvas.height;
+        const pw = ann.w * canvas.width, ph = ann.h * canvas.height;
+        ctx.strokeStyle = ann.color;
+        ctx.lineWidth = lw;
+        ctx.fillStyle = ann.color + '44';
+        if (ann.type === 'rect') {
+          ctx.fillRect(px, py, pw, ph);
+          ctx.strokeRect(px, py, pw, ph);
+        } else {
+          ctx.beginPath();
+          ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2);
+          ctx.fill(); ctx.stroke();
+        }
+      }
+      onSave(canvas.toDataURL('image/jpeg', 0.88));
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Error al guardar la anotación');
+    } finally {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      setSaving(false);
     }
-    onSave(canvas.toDataURL('image/jpeg', 0.88));
   };
 
   const renderSVGShape = (ann: { type: string; x: number; y: number; w: number; h: number; color: string }, key: number) =>
@@ -752,9 +814,9 @@ const ImageAnnotator: React.FC<{
             className="px-3 py-1 text-sm rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">
             Cancelar
           </button>
-          <button onClick={handleSave} disabled={annotations.length === 0}
-            className="px-4 py-1 text-sm rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
-            Guardar
+          <button onClick={handleSave} disabled={annotations.length === 0 || saving}
+            className="px-4 py-1 text-sm rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed min-w-[80px]">
+            {saving ? 'Guardando…' : 'Guardar'}
           </button>
         </div>
       </div>
@@ -770,6 +832,12 @@ const ImageAnnotator: React.FC<{
           {current && renderSVGShape({ type: tool, ...current, color }, -1)}
         </svg>
       </div>
+      {saveError && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-500/40 rounded-lg text-xs text-red-700 dark:text-red-300 max-w-4xl w-full">
+          <AlertCircle size={13} className="shrink-0" />
+          {saveError}
+        </div>
+      )}
       <p className="text-xs text-slate-400">Clic y arrastra para dibujar · Limpiar elimina todas las marcas</p>
     </div>
   );
@@ -1205,10 +1273,59 @@ async function idbClear() {
   });
 }
 
+// ─── Registro de Visita en IDB ────────────────────────────────────────────────
+const RV_NAME_KEY  = '__rv_name__';
+const RV_PAGE_PFX  = '__rv_page_';
+
+async function idbSaveRegistroVisita(name: string, pages: string[]) {
+  const db = await idbOpen();
+  return new Promise<void>((res, rej) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    // Eliminar páginas antiguas antes de guardar (el PDF nuevo puede tener menos páginas)
+    const curReq = store.openCursor();
+    curReq.onsuccess = (e) => {
+      const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+      if (cursor) {
+        if ((cursor.key as string).startsWith(RV_PAGE_PFX)) cursor.delete();
+        cursor.continue();
+      }
+    };
+    tx.oncomplete = () => {
+      // Guardar nombre y páginas en una nueva transacción
+      const tx2 = db.transaction(IDB_STORE, 'readwrite');
+      const s2 = tx2.objectStore(IDB_STORE);
+      s2.put(name, RV_NAME_KEY);
+      pages.forEach((page, i) => s2.put(page, `${RV_PAGE_PFX}${i}`));
+      tx2.oncomplete = () => res();
+      tx2.onerror   = () => rej(tx2.error);
+    };
+    tx.onerror = () => rej(tx.error);
+  });
+}
+
+async function idbDeleteRegistroVisita() {
+  const db = await idbOpen();
+  return new Promise<void>((res) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    store.delete(RV_NAME_KEY);
+    const curReq = store.openCursor();
+    curReq.onsuccess = (e) => {
+      const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+      if (cursor) {
+        if ((cursor.key as string).startsWith(RV_PAGE_PFX)) cursor.delete();
+        cursor.continue();
+      }
+    };
+    tx.oncomplete = () => res();
+  });
+}
+
 // --- Main App ---
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'general' | 'extraction' | 'denaturation' | 'storage' | 'report' | 'issue' | 'history' | 'config'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'extraction' | 'denaturation' | 'storage' | 'report' | 'issue' | 'history' | 'config' | 'stats'>('general');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [state, setState] = useState<AppState>(() => {
     const SCHEMA_VERSION = 'v3';
@@ -1217,8 +1334,8 @@ export default function App() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed.__version === SCHEMA_VERSION) {
-          // Limpiar URLs antiguas (blob: o base64 guardadas por error en localStorage)
-          parsed.images = (parsed.images ?? []).map((img: any) => ({ ...img, url: '' }));
+          // Preservar URLs de Firebase (http); limpiar blob:/base64 (el guardado ya solo escribe http o '')
+          parsed.images = (parsed.images ?? []).map((img: any) => ({ ...img, url: img.url?.startsWith('http') ? img.url : '' }));
           return parsed;
         }
         localStorage.removeItem('certimar-draft-state');
@@ -1227,16 +1344,40 @@ export default function App() {
     return DEFAULT_STATE;
   });
 
-  // Restaurar URLs de imágenes desde IndexedDB al montar
+  // Catálogo de equipos personalizados (persiste en Firestore, visible para admin)
+  const [catalogoCustom, setCatalogoCustom] = useState<CatalogoCustomEntry[]>([]);
+  const [pendingCustomEquipo, setPendingCustomEquipo] = useState<{ marca_modelo: string; tipo: 'trituradora' | 'incinerador' } | null>(null);
+
+  // Restaurar imágenes y Registro de Visita desde IndexedDB al montar.
+  // IDB tiene prioridad sobre la URL de Firebase: garantiza que las anotaciones
+  // sean siempre visibles y que las imágenes carguen aunque Firebase no esté disponible.
   const [imagesRestoring, setImagesRestoring] = useState(false);
   useEffect(() => {
     setImagesRestoring(true);
     idbGetAll().then(urlMap => {
+      // Restaurar imágenes
       if (Object.keys(urlMap).length) {
         setState(prev => ({
           ...prev,
-          images: prev.images.map(img => ({ ...img, url: urlMap[img.id] ?? img.url }))
+          images: prev.images.map(img => ({
+            ...img,
+            url: urlMap[img.id] ?? img.url
+          }))
         }));
+      }
+      // Restaurar Registro de Visita
+      const rvName = urlMap[RV_NAME_KEY];
+      if (rvName) {
+        const pages: string[] = [];
+        let i = 0;
+        while (urlMap[`${RV_PAGE_PFX}${i}`]) {
+          pages.push(urlMap[`${RV_PAGE_PFX}${i}`]);
+          i++;
+        }
+        if (pages.length > 0) {
+          registroVisitaRef.current = pages;
+          setRegistroVisitaName(rvName);
+        }
       }
     }).finally(() => setImagesRestoring(false));
   }, []); // solo al montar
@@ -1251,8 +1392,8 @@ export default function App() {
   useEffect(() => {
     const stateForStorage = {
       ...state,
-      images: state.images.map(({ id, seccion, leyenda, estado, observacion }) =>
-        ({ id, seccion, leyenda, estado, observacion, url: '' })
+      images: state.images.map(({ id, seccion, leyenda, estado, observacion, url }) =>
+        ({ id, seccion, leyenda, estado, observacion, url: url.startsWith('http') ? url : '' })
       ),
       __version: 'v3',
     };
@@ -1314,6 +1455,7 @@ export default function App() {
     if (window.confirm(
       '¿Comenzar un nuevo registro?\nSe asignará un correlativo y se limpiarán los datos del centro, extracción, desnaturalización, almacenamiento e imágenes.\nLos datos del certificador se conservan.'
     )) {
+      logEvento('crear_registro');
       idbClear();
       const { registroId, nextCounter } = getNextCorrelativo();
       localStorage.setItem('certimar-correlativo-counter', String(nextCounter));
@@ -1377,8 +1519,8 @@ export default function App() {
       const { db } = await import('./firebase');
       const cc = state.general.centro_cultivo;
       const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
-      const snapshotImgs = state.images.map(({ id, seccion, leyenda, estado, observacion }) =>
-        ({ id, seccion, leyenda, estado, observacion })
+      const snapshotImgs = state.images.map(({ id, seccion, leyenda, estado, observacion, url }) =>
+        ({ id, seccion, leyenda, estado, observacion, url: url.startsWith('http') ? url : '' })
       );
       await setDoc(doc(db, 'historico', docId), {
         registroId: docId,
@@ -1393,6 +1535,23 @@ export default function App() {
     } catch (err) {
       console.error('Error guardando en histórico:', err);
     }
+  };
+
+  const logEvento = async (
+    tipo: EventoUso['tipo'],
+    extras?: { codigoCentro?: string; nombreCentro?: string; titular?: string }
+  ) => {
+    try {
+      const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db, auth } = await import('./firebase');
+      const user = (auth as any).currentUser;
+      const usuario = user?.email ?? (userRole === 'admin' ? 'admin-pin' : 'lector');
+      const payload: Record<string, any> = { tipo, usuario, fecha: serverTimestamp() };
+      if (extras?.codigoCentro) payload.codigoCentro = extras.codigoCentro;
+      if (extras?.nombreCentro) payload.nombreCentro = extras.nombreCentro;
+      if (extras?.titular)      payload.titular      = extras.titular;
+      await addDoc(collection(db, 'eventos_uso'), payload);
+    } catch { /* silencioso */ }
   };
 
   const updateHistoricoStatus = async (docId: string, field: string, value: boolean) => {
@@ -1411,12 +1570,12 @@ export default function App() {
   const loadFromHistorico = (entry: RegistroHistorico) => {
     if (!window.confirm(
       `¿Cargar los datos de ${entry.nombreCentro} (${entry.codigoCentro}) en el formulario?\n` +
-      'Los cambios no guardados del formulario actual se perderán.\n' +
-      'Nota: las fotografías no se restauran automáticamente.'
+      'Los cambios no guardados del formulario actual se perderán.'
     )) return;
+    logEvento('abrir_registro', { codigoCentro: entry.codigoCentro, nombreCentro: entry.nombreCentro, titular: entry.titular });
     setState({
       ...entry.snapshot,
-      images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: '' })),
+      images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: img.url ?? '' })),
       registroId: entry.registroId,
     });
     setActiveTab('general');
@@ -1474,6 +1633,8 @@ export default function App() {
       }
       registroVisitaRef.current = snapshots;
       setRegistroVisitaName(file.name);
+      // Persistir en IDB para que sobreviva recargas
+      idbSaveRegistroVisita(file.name, snapshots).catch(() => { /* quota — no crítico */ });
     } finally {
       setRegistroVisitaProcessing(false);
       setRegistroVisitaProgress(0);
@@ -1580,6 +1741,11 @@ export default function App() {
           marca_modelo: '',
           capacidad_carga_kg_h: 0,
           horas_funcionamiento_dia: 8,
+          num_quemadores_primaria: 0,
+          num_quemadores_secundaria: 0,
+          temperatura_camara_primaria_c: 0,
+          temperatura_camara_secundaria_c: 0,
+          requerimiento_energetico: '',
           sistema_carga: 'N/A',
           sistema_descarga: 'N/A',
           disposicion_final: 'N/A',
@@ -1658,6 +1824,25 @@ export default function App() {
   });
   useEffect(() => { localStorage.setItem('certimar-tema', JSON.stringify(tema)); }, [tema]);
 
+  // ── Logos de empresas clientes (Firebase Storage) ──
+  const [logosEmpresas, setLogosEmpresas] = useState<Record<string, string>>({});
+  const [logoClienteUrl, setLogoClienteUrl] = useState<string | null>(null);
+  const [logoManualOverride, setLogoManualOverride] = useState(false);
+  const logoRestoredRef = React.useRef(false);
+  const [renamingLogo, setRenamingLogo] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  // fullPath real en Firebase Storage para cada logo (clave = displayName)
+  const [logosStoragePaths, setLogosStoragePaths] = useState<Record<string, string>>({});
+  // Logos marcados para la portada (persiste en localStorage)
+  const [logosPortada, setLogosPortada] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('certimar-logos-portada') ?? '[]')); } catch { return new Set(); }
+  });
+  useEffect(() => {
+    localStorage.setItem('certimar-logos-portada', JSON.stringify([...logosPortada]));
+  }, [logosPortada]);
+  const toggleLogoPortada = (name: string) =>
+    setLogosPortada(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s; });
+
   const [datosPrueba, setDatosPrueba] = useState(false);
 
   const DATOS_PRUEBA_STATE: Partial<AppState> = {
@@ -1692,9 +1877,121 @@ export default function App() {
     }
     return true;
   });
+  const [wavesOpacity, setWavesOpacity] = useState(() => {
+    const saved = localStorage.getItem('certimar-waves-opacity');
+    return saved ? parseFloat(saved) : 0.05;
+  });
+  useEffect(() => { localStorage.setItem('certimar-waves-opacity', String(wavesOpacity)); }, [wavesOpacity]);
+
+  const [logoPortadaOpacity, setLogoPortadaOpacity] = useState(() => {
+    const saved = localStorage.getItem('certimar-logo-portada-opacity');
+    return saved ? parseFloat(saved) : 0.4;
+  });
+  useEffect(() => { localStorage.setItem('certimar-logo-portada-opacity', String(logoPortadaOpacity)); }, [logoPortadaOpacity]);
+
+  // ── Posición y tamaño del logo de marca en portada ──
+  const [logoMarcaX, setLogoMarcaX] = useState(() => parseFloat(localStorage.getItem('certimar-logo-marca-x') ?? '21'));
+  const [logoMarcaY, setLogoMarcaY] = useState(() => parseFloat(localStorage.getItem('certimar-logo-marca-y') ?? '5'));
+  const [logoMarcaW, setLogoMarcaW] = useState(() => parseFloat(localStorage.getItem('certimar-logo-marca-w') ?? '20'));
+  useEffect(() => { localStorage.setItem('certimar-logo-marca-x', String(logoMarcaX)); }, [logoMarcaX]);
+  useEffect(() => { localStorage.setItem('certimar-logo-marca-y', String(logoMarcaY)); }, [logoMarcaY]);
+  useEffect(() => { localStorage.setItem('certimar-logo-marca-w', String(logoMarcaW)); }, [logoMarcaW]);
+
+  // ── Posición, tamaño y rotación del watermark logo en portada ──
+  const [logoWmX, setLogoWmX] = useState(() => parseFloat(localStorage.getItem('certimar-logo-wm-x') ?? '183'));
+  const [logoWmY, setLogoWmY] = useState(() => parseFloat(localStorage.getItem('certimar-logo-wm-y') ?? '59'));
+  const [logoWmW, setLogoWmW] = useState(() => parseFloat(localStorage.getItem('certimar-logo-wm-w') ?? '31'));
+  const [logoWmRotation, setLogoWmRotation] = useState(() => parseFloat(localStorage.getItem('certimar-logo-wm-rot') ?? '-90'));
+  useEffect(() => { localStorage.setItem('certimar-logo-wm-x', String(logoWmX)); }, [logoWmX]);
+  useEffect(() => { localStorage.setItem('certimar-logo-wm-y', String(logoWmY)); }, [logoWmY]);
+  useEffect(() => { localStorage.setItem('certimar-logo-wm-w', String(logoWmW)); }, [logoWmW]);
+  useEffect(() => { localStorage.setItem('certimar-logo-wm-rot', String(logoWmRotation)); }, [logoWmRotation]);
+
+  // Cargar portada_settings desde Firestore al iniciar sesión
+  useEffect(() => {
+    if (!userRole) return;
+    import('firebase/firestore').then(async ({ doc, getDoc }) => {
+      const { db } = await import('./firebase');
+      const snap = await getDoc(doc(db, 'config', 'portada_settings'));
+      if (!snap.exists()) return;
+      const d = snap.data();
+      if (typeof d.logoPortadaOpacity === 'number') setLogoPortadaOpacity(d.logoPortadaOpacity);
+      if (typeof d.logoMarcaX === 'number') setLogoMarcaX(d.logoMarcaX);
+      if (typeof d.logoMarcaY === 'number') setLogoMarcaY(d.logoMarcaY);
+      if (typeof d.logoMarcaW === 'number') setLogoMarcaW(d.logoMarcaW);
+      if (typeof d.logoWmX === 'number') setLogoWmX(d.logoWmX);
+      if (typeof d.logoWmY === 'number') setLogoWmY(d.logoWmY);
+      if (typeof d.logoWmW === 'number') setLogoWmW(d.logoWmW);
+      if (typeof d.logoWmRotation === 'number') setLogoWmRotation(d.logoWmRotation);
+    }).catch(console.error);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole]);
+
+  const saveLogoPortadaOpacity = async (value: number) => {
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      await setDoc(doc(db, 'config', 'portada_settings'), { logoPortadaOpacity: value }, { merge: true });
+    } catch { /* falla silenciosa */ }
+  };
+
+  const saveLogoMarcaSettings = async () => {
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      await setDoc(doc(db, 'config', 'portada_settings'),
+        { logoMarcaX, logoMarcaY, logoMarcaW }, { merge: true });
+    } catch { /* falla silenciosa */ }
+  };
+
+  const saveLogoWmSettings = async () => {
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      await setDoc(doc(db, 'config', 'portada_settings'),
+        { logoWmX, logoWmY, logoWmW, logoWmRotation }, { merge: true });
+    } catch { /* falla silenciosa */ }
+  };
+
+  // Guardar selección de logo cliente en Firestore (por nombre, no URL)
+  const saveLogoClienteSettings = async (logoName: string | null, manualOverride: boolean) => {
+    if (!userRole) return;
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      await setDoc(doc(db, 'config', 'portada_settings'),
+        { logoClienteNombre: logoName ?? null, logoManualOverride: manualOverride },
+        { merge: true });
+    } catch { /* falla silenciosa */ }
+  };
+
+  // Restaurar selección de logo cliente desde Firestore (una sola vez, cuando logosEmpresas esté listo)
+  useEffect(() => {
+    if (!userRole || Object.keys(logosEmpresas).length === 0 || logoRestoredRef.current) return;
+    logoRestoredRef.current = true;
+    import('firebase/firestore').then(async ({ doc, getDoc }) => {
+      const { db } = await import('./firebase');
+      const snap = await getDoc(doc(db, 'config', 'portada_settings'));
+      if (!snap.exists()) return;
+      const data = snap.data();
+      if (data.logoManualOverride === true) {
+        setLogoManualOverride(true);
+        const nombre = data.logoClienteNombre;
+        setLogoClienteUrl(nombre && logosEmpresas[nombre] ? logosEmpresas[nombre] : null);
+      }
+    }).catch(console.error);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole, logosEmpresas]);
+
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
   const [subjectCopied, setSubjectCopied] = useState(false);
+
+  // Registra evento de login/acceso cada vez que el usuario inicia sesión
+  useEffect(() => {
+    if (userRole) logEvento('login');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole]);
 
   useEffect(() => {
     localStorage.setItem('certimar-dark-mode', JSON.stringify(darkMode));
@@ -1718,6 +2015,7 @@ export default function App() {
   // Carga el histórico cuando el usuario activa la pestaña
   useEffect(() => {
     if (activeTab !== 'history') return;
+    logEvento('ver_historico');
     setHistoricoLoading(true);
     import('firebase/firestore').then(async ({ collection, getDocs, orderBy, query }) => {
       const { db } = await import('./firebase');
@@ -1725,7 +2023,91 @@ export default function App() {
       const snap = await getDocs(q);
       setHistoricoEntries(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<RegistroHistorico, 'id'>) })));
     }).catch(console.error).finally(() => setHistoricoLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  // Cargar catálogo personalizado desde Firestore (solo admin)
+  useEffect(() => {
+    if (!isAdmin) return;
+    import('firebase/firestore').then(async ({ collection, getDocs }) => {
+      const { db } = await import('./firebase');
+      const snap = await getDocs(collection(db, 'catalogo_custom'));
+      setCatalogoCustom(snap.docs.map(d => d.data() as CatalogoCustomEntry));
+    }).catch(console.error);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
+
+  // Cargar logos de empresas clientes desde Firebase Storage
+  useEffect(() => {
+    if (!isAdmin) return;
+    import('firebase/storage').then(async ({ ref, listAll, getDownloadURL }) => {
+      const { storage } = await import('./firebase');
+      const listRef = ref(storage, 'logos-empresas/');
+      const result = await listAll(listRef).catch(() => null);
+      if (!result) return;
+      const entries = await Promise.all(
+        result.items.map(async item => {
+          const url = await getDownloadURL(item).catch(() => null);
+          const name = decodeURIComponent(item.name).replace(/\.[^.]+$/, '').replace(/-/g, ' ').toUpperCase();
+          return url ? { name, url, path: item.fullPath } : null;
+        })
+      );
+      const valid = entries.filter(Boolean) as { name: string; url: string; path: string }[];
+      setLogosEmpresas(Object.fromEntries(valid.map(e => [e.name, e.url])));
+      setLogosStoragePaths(Object.fromEntries(valid.map(e => [e.name, e.path])));
+    }).catch(console.error);
+  }, [isAdmin]);
+
+  // Auto-seleccionar logo del cliente según el titular (solo si el usuario no ha elegido manualmente)
+  useEffect(() => {
+    if (logoManualOverride) return;
+    if (!Object.keys(logosEmpresas).length) return;
+    const titular = state.general.centro_cultivo.titular.toUpperCase().trim();
+    if (!titular) { setLogoClienteUrl(null); return; }
+    const match = Object.keys(logosEmpresas).find(k =>
+      titular.includes(k) || k.includes(titular.split(' ')[0])
+    );
+    setLogoClienteUrl(match ? logosEmpresas[match] : null);
+  }, [state.general.centro_cultivo.titular, logosEmpresas, logoManualOverride]);
+
+  // Catálogo de leyendas guardadas en Firestore: { seccion -> string[] }
+  const [leyendasExtra, setLeyendasExtra] = useState<Partial<Record<ImageSeccion, string[]>>>({});
+
+  // Cargar leyendas guardadas desde Firestore (disponibles para todos los usuarios autenticados)
+  useEffect(() => {
+    if (!userRole) return;
+    import('firebase/firestore').then(async ({ doc, getDoc }) => {
+      const { db } = await import('./firebase');
+      const snap = await getDoc(doc(db, 'config', 'leyendas_sugeridas'));
+      if (snap.exists()) setLeyendasExtra(snap.data() as Partial<Record<ImageSeccion, string[]>>);
+    }).catch(console.error);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole]);
+
+  /** Guarda una leyenda nueva en Firestore (sólo si no existe ya en el catálogo local) */
+  const saveNewLeyenda = useCallback(async (leyenda: string, seccion: ImageSeccion) => {
+    const current = leyendasExtra[seccion] ?? [];
+    // Verificar si ya está en el catálogo estático o en el guardado
+    const staticList = CATALOGO_FOTOS[seccion] ?? [];
+    if (current.includes(leyenda) || staticList.includes(leyenda)) return;
+    // Actualizar estado local de inmediato
+    setLeyendasExtra(prev => ({ ...prev, [seccion]: [...(prev[seccion] ?? []), leyenda] }));
+    // Persistir en Firestore usando arrayUnion para evitar duplicados concurrentes
+    try {
+      const { doc, setDoc, arrayUnion } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      await setDoc(doc(db, 'config', 'leyendas_sugeridas'), { [seccion]: arrayUnion(leyenda) }, { merge: true });
+    } catch (err) {
+      console.error('Error guardando leyenda:', err);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leyendasExtra]);
+
+  // Detecta si el centro seleccionado es de operación mínima
+  const centroOperacionMinima = useMemo(() =>
+    CATALOGO_CENTROS.find(c => c.codigo === state.general.centro_cultivo.codigo_centro && c.operacion_minima) ?? null,
+    [state.general.centro_cultivo.codigo_centro]
+  );
 
   // Auto-genera la observación del sistema de extracción al cambiar nº jaulas o sistema
   useEffect(() => {
@@ -1805,11 +2187,47 @@ export default function App() {
     }));
   }, [calculatedExtraction, calculatedDenaturation, calculatedStorage]);
 
-  const canEmit = useMemo(() => {
-    return calculatedExtraction.cumple_norma &&
-           calculatedDenaturation.cumple_norma &&
-           calculatedStorage.cumple_norma;
-  }, [calculatedExtraction, calculatedDenaturation, calculatedStorage]);
+  // ── Checklist unificado — items requeridos bloquean la generación ──
+  const checklistItems = useMemo(() => {
+    const g    = state.general;
+    const cc   = g.centro_cultivo;
+    const cert = g.certificador;
+    const imgs = state.images;
+    const ext  = state.extraction.parametros;
+    const den  = state.denaturation.equipos;
+    const sto  = state.storage.parametros;
+    return [
+      // ─ General ─
+      { id: 'codigo',    tab: 'general' as const,      grupo: 'Centro',       label: 'Código de centro',              detail: cc.codigo_centro   || 'Sin ingresar', ok: !!cc.codigo_centro.trim(),         required: true  },
+      { id: 'nombre',    tab: 'general' as const,      grupo: 'Centro',       label: 'Nombre del centro',             detail: cc.nombre_centro   || 'Sin ingresar', ok: !!cc.nombre_centro.trim(),         required: true  },
+      { id: 'titular',   tab: 'general' as const,      grupo: 'Centro',       label: 'Titular / empresa',             detail: cc.titular         || 'Sin ingresar', ok: !!cc.titular.trim(),               required: true  },
+      { id: 'acs',       tab: 'general' as const,      grupo: 'Centro',       label: 'A.C.S',                         detail: cc.acs             || 'Sin ingresar', ok: !!cc.acs.trim(),                   required: true  },
+      { id: 'ubicacion', tab: 'general' as const,      grupo: 'Centro',       label: 'Ubicación',                     detail: cc.ubicacion       || 'Sin ingresar', ok: !!cc.ubicacion.trim(),             required: true  },
+      { id: 'cert_nom',  tab: 'general' as const,      grupo: 'Certificador', label: 'Nombre certificador',           detail: cert.nombre          || 'Sin ingresar', ok: !!cert.nombre.trim(),            required: true  },
+      { id: 'cert_reg',  tab: 'general' as const,      grupo: 'Certificador', label: 'N° registro',                   detail: cert.numero_registro || 'Sin ingresar', ok: !!cert.numero_registro.trim(),   required: true  },
+      { id: 'fechas',    tab: 'general' as const,      grupo: 'Fechas',       label: 'Fechas completas',              detail: g.fechas.inspeccion_terreno || 'Sin fecha', ok: !!(g.fechas.evaluacion_documental && g.fechas.inspeccion_terreno && g.fechas.emision_certificado), required: true },
+      // ─ Extracción ─
+      { id: 'jaulas',    tab: 'extraction' as const,   grupo: 'Parámetros',   label: 'N° total de jaulas',            detail: ext.numero_total_jaulas > 0 ? String(ext.numero_total_jaulas) : 'Sin ingresar', ok: ext.numero_total_jaulas > 0, required: true },
+      { id: 'cfm',       tab: 'extraction' as const,   grupo: 'Parámetros',   label: 'Potencia compresor (CFM)',       detail: ext.potencia_cfm > 0 ? String(ext.potencia_cfm) : 'Sin ingresar', ok: ext.potencia_cfm > 0, required: true },
+      { id: 'ext',       tab: 'extraction' as const,   grupo: 'Capacidad',    label: 'Extracción ≥ 15 TN/día',        detail: `${calculatedExtraction.capacidad_diaria_ton} TN/día`, ok: calculatedExtraction.cumple_norma, required: true },
+      // ─ Desnaturalización ─
+      { id: 'vel_olla',  tab: 'denaturation' as const, grupo: 'Parámetros',   label: 'Vel. nominal olla (kg/h)',       detail: den.velocidad_nominal_kg_hr > 0 ? String(den.velocidad_nominal_kg_hr) : 'Sin ingresar', ok: den.velocidad_nominal_kg_hr > 0, required: true },
+      { id: 'den',       tab: 'denaturation' as const, grupo: 'Capacidad',    label: 'Desnaturalización ≥ 15 TN/día', detail: `${calculatedDenaturation.capacidad_diaria_ton} TN/día`, ok: calculatedDenaturation.cumple_norma, required: true },
+      // ─ Almacenamiento ─
+      { id: 'cap_m3',    tab: 'storage' as const,      grupo: 'Parámetros',   label: 'Capacidad almacenaje (m³)',      detail: sto.capacidad_almacenaje_m3 > 0 ? String(sto.capacidad_almacenaje_m3) : 'Sin ingresar', ok: sto.capacidad_almacenaje_m3 > 0, required: true },
+      { id: 'sto',       tab: 'storage' as const,      grupo: 'Capacidad',    label: 'Almacenamiento ≥ 20 TN',        detail: `${calculatedStorage.capacidad_almacenaje_ton} TN`, ok: calculatedStorage.cumple_norma, required: true },
+      // ─ Informe / Fotos ─
+      { id: 'foto_port', tab: 'report' as const,       grupo: 'Fotos',        label: 'Foto de portada',               detail: `${imgs.filter(i => i.seccion === 'Portada' && i.url).length} cargada(s)`, ok: imgs.some(i => i.seccion === 'Portada' && i.url), required: false },
+      { id: 'foto_ubi',  tab: 'report' as const,       grupo: 'Fotos',        label: 'Ubicación espacial (4)',         detail: `${imgs.filter(i => i.seccion === 'Ubicación Espacial' && i.url).length}/4`, ok: imgs.filter(i => i.seccion === 'Ubicación Espacial' && i.url).length >= 4, required: true  },
+      { id: 'foto_tec',  tab: 'report' as const,       grupo: 'Fotos',        label: 'Fotos técnicas',                detail: `${imgs.filter(i => ['Extracción','Desnaturalización','Almacenamiento'].includes(i.seccion) && i.url).length} cargada(s)`, ok: imgs.some(i => ['Extracción','Desnaturalización','Almacenamiento'].includes(i.seccion) && i.url), required: false },
+      { id: 'registro',  tab: 'report' as const,       grupo: 'Fotos',        label: 'Registro de visita adjunto',    detail: registroVisitaName ?? 'Sin adjuntar', ok: !!registroVisitaName, required: false },
+    ];
+  }, [state, calculatedExtraction, calculatedDenaturation, calculatedStorage, registroVisitaName]);
+
+  const canEmit = useMemo(
+    () => checklistItems.filter(i => i.required).every(i => i.ok),
+    [checklistItems]
+  );
 
   const hasImages = state.images.length > 0;
   const [generating, setGenerating] = useState<'certificado'|'informe'|'acta'|null>(null);
@@ -1929,8 +2347,41 @@ Se despide atentamente`;
     }
   };
 
+  // Detecta si una marca/modelo no existe en el catálogo estático ni en el custom
+  const checkNuevoEquipo = (marca_modelo: string, tipo: 'trituradora' | 'incinerador') => {
+    if (!marca_modelo.trim()) return;
+    const enEstatico = tipo === 'trituradora'
+      ? CATALOGO_DESNATURALIZACION.trituradoras.some(t => t.marca_modelo.toLowerCase() === marca_modelo.toLowerCase())
+      : CATALOGO_DESNATURALIZACION.incineradores.some(i => i.marca_modelo.toLowerCase() === marca_modelo.toLowerCase());
+    const enCustom = catalogoCustom.some(c => c.tipo === tipo && c.marca_modelo.toLowerCase() === marca_modelo.toLowerCase());
+    if (!enEstatico && !enCustom) {
+      setPendingCustomEquipo({ marca_modelo, tipo });
+    }
+  };
+
+  const saveCustomEquipo = async () => {
+    if (!pendingCustomEquipo) return;
+    try {
+      const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db, auth } = await import('./firebase');
+      const user = (auth as any).currentUser;
+      const entry: CatalogoCustomEntry = {
+        tipo: pendingCustomEquipo.tipo,
+        marca_modelo: pendingCustomEquipo.marca_modelo,
+        creadoPor: user?.email ?? 'admin',
+        __createdAt: serverTimestamp(),
+      };
+      await addDoc(collection(db, 'catalogo_custom'), entry);
+      setCatalogoCustom(prev => [...prev, { ...entry, __createdAt: new Date() }]);
+      setPendingCustomEquipo(null);
+    } catch (err) {
+      console.error('Error guardando equipo personalizado:', err);
+    }
+  };
+
   const handleSelectTrituradora = (id: string) => {
-    const tri = CATALOGO_DESNATURALIZACION.trituradoras.find(t => t.id === id);
+    const tri = CATALOGO_DESNATURALIZACION.trituradoras.find(t => t.id === id)
+      ?? catalogoCustom.find(c => c.tipo === 'trituradora' && c.marca_modelo === id) as any;
     if (tri) {
       setState(prev => ({
         ...prev,
@@ -1940,8 +2391,8 @@ Se despide atentamente`;
             ...prev.denaturation.equipos,
             id_catalogo_trituradora: id,
             marca_modelo: tri.marca_modelo,
-            velocidad_nominal_kg_hr: tri.capacidad_nominal_kg_h,
-            material_construccion: tri.material,
+            velocidad_nominal_kg_hr: tri.capacidad_nominal_kg_h ?? 0,
+            material_construccion: tri.material ?? '',
             capacidad_prepicador_kg_hr: tri.capacidad_prepicador_kg_h || 0
           }
         }
@@ -1978,17 +2429,28 @@ Se despide atentamente`;
       ...prev,
       denaturation: {
         ...prev.denaturation,
+        parametros_incineracion: inc ? {
+          capacidad_carga_kg_h: inc.capacidad_carga_kg_h,
+          temperatura_operacion: `${inc.temperatura_camara_primaria_c}°C / ${inc.temperatura_camara_secundaria_c}°C`,
+          camara_primaria: inc.camara_primaria,
+          camara_secundaria: inc.camara_secundaria,
+        } : prev.denaturation.parametros_incineracion,
         incinerador: {
           ...prev.denaturation.incinerador,
           id_catalogo: id,
-          marca_modelo:         inc?.marca_modelo         ?? '',
-          capacidad_carga_kg_h: inc?.capacidad_carga_kg_h ?? 0,
-          horas_funcionamiento_dia: inc?.horas_funcionamiento ?? 8,
-          sistema_carga:        inc?.sistema_carga        ?? 'N/A',
-          sistema_descarga:     inc?.sistema_descarga      ?? 'N/A',
-          disposicion_final:    inc?.disposicion_final     ?? 'N/A',
-          almacenamiento_gas:   inc?.almacenamiento_gas   ?? 'N/A',
-          observaciones:        inc?.observaciones        ?? '',
+          marca_modelo:              inc?.marca_modelo              ?? '',
+          capacidad_carga_kg_h:      inc?.capacidad_carga_kg_h      ?? 0,
+          horas_funcionamiento_dia:  inc?.horas_funcionamiento      ?? 8,
+          num_quemadores_primaria:      inc?.num_quemadores_primaria      ?? 0,
+          num_quemadores_secundaria:    inc?.num_quemadores_secundaria    ?? 0,
+          temperatura_camara_primaria_c:   inc?.temperatura_camara_primaria_c   ?? 0,
+          temperatura_camara_secundaria_c: inc?.temperatura_camara_secundaria_c ?? 0,
+          requerimiento_energetico:     inc?.requerimiento_energetico     ?? '',
+          sistema_carga:             inc?.sistema_carga             ?? 'N/A',
+          sistema_descarga:          inc?.sistema_descarga          ?? 'N/A',
+          disposicion_final:         inc?.disposicion_final         ?? 'N/A',
+          almacenamiento_gas:        inc?.almacenamiento_gas        ?? 'N/A',
+          observaciones:             inc?.observaciones             ?? '',
         }
       }
     }));
@@ -2081,8 +2543,8 @@ Se despide atentamente`;
       reader.onload = (ev) => {
         const img = new Image();
         img.onload = () => {
-          const MAX = 1400; // px lado largo máximo
-          const QUALITY = 0.78;
+          const MAX = 2000; // px lado largo máximo
+          const QUALITY = 0.88;
           let { width, height } = img;
           if (width > MAX || height > MAX) {
             if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
@@ -2114,9 +2576,24 @@ Se despide atentamente`;
     files.forEach(async (file) => {
       const base64 = await compressImage(file);
       const id = Math.random().toString(36).substr(2, 9);
+
+      // Subir a Firebase Storage y obtener URL persistente.
+      // Siempre se guarda en IDB como respaldo (si Firebase no está disponible al recargar,
+      // la imagen se puede recuperar desde IDB).
       await idbSave(id, base64);
+      let imageUrl = base64;
+      try {
+        const { ref, uploadString, getDownloadURL } = await import('firebase/storage');
+        const { storage } = await import('./firebase');
+        const storageRef = ref(storage, `images/${id}.jpg`);
+        await uploadString(storageRef, base64, 'data_url');
+        imageUrl = await getDownloadURL(storageRef);
+      } catch {
+        // Firebase falló — imageUrl queda como base64, IDB ya fue guardado arriba
+      }
+
       const newImg: ReportImage = {
-        id, url: base64,
+        id, url: imageUrl,
         seccion: 'General', leyenda: '', estado: 'Verde',
         observacion: 'CUMPLE CON LO DECLARADO',
       };
@@ -2149,6 +2626,12 @@ Se despide atentamente`;
 
   const removeImage = (id: string) => {
     idbDelete(id);
+    // Eliminar de Firebase Storage si existe
+    import('firebase/storage').then(({ ref, deleteObject }) =>
+      import('./firebase').then(({ storage }) =>
+        deleteObject(ref(storage, `images/${id}.jpg`)).catch(() => { /* ya no existía */ })
+      )
+    );
     setState(prev => ({ ...prev, images: prev.images.filter(img => img.id !== id) }));
   };
 
@@ -2161,25 +2644,48 @@ Se despide atentamente`;
 
   // ─── Helpers PDF compartidos ───────────────────────────────────────────────
 
-  /** Corrige orientación EXIF dibujando la imagen en un canvas offscreen */
-  const fixImageOrientation = (url: string): Promise<string> =>
-    new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        const MAX_PX = 1920;
-        let w = img.naturalWidth, h = img.naturalHeight;
-        if (w > MAX_PX || h > MAX_PX) {
-          if (w >= h) { h = Math.round(h * MAX_PX / w); w = MAX_PX; }
-          else        { w = Math.round(w * MAX_PX / h); h = MAX_PX; }
-        }
-        const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        c.getContext('2d')!.drawImage(img, 0, 0, w, h);
-        resolve(c.toDataURL('image/jpeg', 0.72));
-      };
-      img.onerror = () => resolve(url);
-      img.src = url;
-    });
+  /** Corrige orientación EXIF dibujando la imagen en un canvas offscreen.
+   *  Para URLs HTTP (Firebase Storage) hace fetch como blob primero para evitar
+   *  que el canvas quede "tainted" por CORS y toDataURL() lance SecurityError.
+   *  Implementado como cadena de Promises (sin async/await) para evitar problemas
+   *  de TDZ en el estado de máquina generado por el compilador. */
+  const fixImageOrientation = (url: string): Promise<string> => {
+    if (!url) return Promise.resolve('');
+
+    const drawOnCanvas = (imageUrl: string, cleanup: () => void): Promise<string> =>
+      new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX_PX = 2400;
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (w > MAX_PX || h > MAX_PX) {
+            if (w >= h) { h = Math.round(h * MAX_PX / w); w = MAX_PX; }
+            else        { w = Math.round(w * MAX_PX / h); h = MAX_PX; }
+          }
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d')!.drawImage(img, 0, 0, w, h);
+          try { resolve(c.toDataURL('image/jpeg', 0.88)); } catch { resolve(''); }
+          cleanup();
+        };
+        img.onerror = () => { resolve(''); cleanup(); };
+        img.src = imageUrl;
+      });
+
+    if (!url.startsWith('http')) {
+      return drawOnCanvas(url, () => {}).catch(() => '');
+    }
+
+    return fetch(url)
+      .then(resp => {
+        if (!resp.ok) return Promise.resolve('');
+        return resp.blob().then(blob => {
+          const blobUrl = URL.createObjectURL(blob);
+          return drawOnCanvas(blobUrl, () => URL.revokeObjectURL(blobUrl));
+        });
+      })
+      .catch(() => '');
+  };
 
   const loadLogo = async (): Promise<string | null> => {
     const logoPath = tema.logo === 'engelbert' ? '/engelbert-logo.png' : '/certimar-logo.png';
@@ -2193,6 +2699,71 @@ Se despide atentamente`;
         reader.readAsDataURL(blob);
       });
     } catch { return null; }
+  };
+
+  const loadUrlAsDataUrl = async (url: string): Promise<string | null> => {
+    try {
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      return new Promise<string>((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result as string);
+        reader.onerror = rej;
+        reader.readAsDataURL(blob);
+      });
+    } catch { return null; }
+  };
+
+  const handleUploadLogoEmpresa = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 600_000) { alert('El archivo supera los 500 KB.'); return; }
+    const slug = file.name.replace(/\s+/g, '-').toLowerCase();
+    try {
+      const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+      const { storage } = await import('./firebase');
+      const storageRef = ref(storage, `logos-empresas/${slug}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      const name = file.name.replace(/\.[^.]+$/, '').replace(/-/g, ' ').toUpperCase();
+      setLogosEmpresas(prev => ({ ...prev, [name]: url }));
+      setLogosStoragePaths(prev => ({ ...prev, [name]: `logos-empresas/${slug}` }));
+    } catch (err) { console.error(err); alert('Error al subir el logo.'); }
+    e.target.value = '';
+  };
+
+  const deleteLogoEmpresa = async (name: string) => {
+    if (!window.confirm(`¿Eliminar logo de "${name}"?`)) return;
+    const url = logosEmpresas[name];
+    const storagePath = logosStoragePaths[name];
+    try {
+      if (storagePath) {
+        const { ref, deleteObject } = await import('firebase/storage');
+        const { storage } = await import('./firebase');
+        await deleteObject(ref(storage, storagePath));
+      }
+      setLogosEmpresas(prev => { const n = { ...prev }; delete n[name]; return n; });
+      setLogosStoragePaths(prev => { const n = { ...prev }; delete n[name]; return n; });
+      if (logoClienteUrl === url) setLogoClienteUrl(null);
+    } catch (err) { console.error('Error al eliminar logo:', err); alert('No se pudo eliminar el logo.'); }
+  };
+
+  const renameLogo = (oldName: string, newName: string) => {
+    const trimmed = newName.trim().toUpperCase();
+    if (!trimmed || trimmed === oldName) { setRenamingLogo(null); return; }
+    setLogosEmpresas(prev => {
+      const next = { ...prev };
+      next[trimmed] = next[oldName];
+      delete next[oldName];
+      return next;
+    });
+    setLogosStoragePaths(prev => {
+      const next = { ...prev };
+      next[trimmed] = next[oldName];
+      delete next[oldName];
+      return next;
+    });
+    setRenamingLogo(null);
   };
 
   const CLAUDE_API_KEY = import.meta.env.VITE_CLAUDE_API_KEY as string | undefined;
@@ -2311,15 +2882,14 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // ── Footer liviano ──
       doc.setDrawColor(...FRAME_PRI);
       doc.setLineWidth(0.18);
-      doc.line(10, H - 10, W - 10, H - 10);
+      doc.line(10, H - 14, W - 10, H - 14);
       doc.setFontSize(7); doc.setFont('helvetica', 'normal');
       doc.setTextColor(...FRAME_PRI);
-      doc.text('CERTIMAR SPA — Res. Exenta N°1511/2021', 10, H - 6);
-      doc.setTextColor(120, 120, 120);
+      doc.text(`${tema.logo === 'engelbert' ? 'Engelbert Aquastructures' : 'CERTIMAR SPA'} — Res. Exenta N°1511/2021`, 10, H - 9);
+      doc.text(`Pág. ${i} de ${n}`, W - 10, H - 9, { align: 'right' });
+      doc.setFontSize(6.5); doc.setTextColor(130, 130, 130);
       doc.text('Mario Toral 101, Puerto Aysén  ·  +56 9 45052052  ·  eflores@certimar.cl',
-               W / 2, H - 6, { align: 'center' });
-      doc.setTextColor(...FRAME_PRI);
-      doc.text(`Pág. ${i} de ${n}`, W - 10, H - 6, { align: 'right' });
+               W / 2, H - 4, { align: 'center' });
     }
   };
 
@@ -2332,17 +2902,16 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       doc.setFont('helvetica', 'normal');
       doc.setDrawColor(180, 180, 180);
       doc.line(14, 289, 196, 289);
-      doc.text('CERTIMAR SPA — Res. Exenta N°1511/2021 — D.S. (MINECON) N°15/2011', 14, 293);
+      doc.text(`${tema.palette === 'engelbert' ? 'Engelbert Aquastructures' : 'CERTIMAR SPA'} — Res. Exenta N°1511/2021 — D.S. (MINECON) N°15/2011`, 14, 293);
       doc.text(`Pág. ${i}/${n}`, 196, 293, { align: 'right' });
     }
   };
 
   // ─── CERTIFICADO ───────────────────────────────────────────────────────────
   const generateCertificadoPDF = async () => {
-    const issues = checkCapacidades();
-    if (issues.length > 0) {
-      const msg = `Advertencia de capacidades:\n${issues.join('\n')}\n\n¿Generar certificado de todas formas?`;
-      if (!window.confirm(msg)) return;
+    if (!canEmit) {
+      alert('Hay campos obligatorios sin completar. Revisa el checklist de cada sección antes de generar el certificado.');
+      return;
     }
     setGenerating('certificado');
     try {
@@ -2571,8 +3140,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       doc.text('Res. Exenta N°1511/2021 — D.S. N°320', 50, 8);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
-      doc.text('CERTIFICADO DE SISTEMAS DE', 50, 17);
-      doc.text('MANEJO DE MORTALIDAD', 50, 25);
+      doc.text('CERTIFICADO DE CAPACIDADES DE', 50, 17);
+      doc.text('SISTEMAS DE MORTALIDAD', 50, 25);
       doc.setTextColor(0, 0, 0);
 
       // ── Marca de agua: olas multicolor (paleta según tema) ──────────────────
@@ -2601,7 +3170,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         ], x0, y0, [1, 1], 'S', false);
       };
       const drawWatermarkOnPage = (yStart: number) => {
-        doc.setGState((doc as any).GState({ opacity: 0.30, 'fill-opacity': 0.30 }));
+        doc.setGState((doc as any).GState({ opacity: wavesOpacity, 'fill-opacity': wavesOpacity }));
         let row = 0;
         for (let wy = yStart + 6; wy < 275; wy += 13) {
           const color = PALETTE[row % PALETTE.length];
@@ -2654,20 +3223,20 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       });
 
       const verdY = ((doc as any).lastAutoTable?.finalY ?? 180) + 8;
-      doc.setFillColor(...(cert.cumpleGeneral ? VERDE : ROJO));
-      doc.roundedRect(14, verdY, 182, 12, 2, 2, 'F');
-      doc.setTextColor(255, 255, 255);
+      const verdText = cert.cumpleGeneral
+        ? 'g) Da cumplimiento a las capacidades mínimas establecidas en el artículo 4° A del D.S. N° 320 de 2001, del Ministerio de Economía, Fomento y Turismo.'
+        : 'g) No da cumplimiento a las capacidades mínimas establecidas en el artículo 4° A del D.S. N° 320 de 2001, del Ministerio de Economía, Fomento y Turismo.';
       doc.setFontSize(9.5);
       doc.setFont('helvetica', 'bold');
-      doc.text(
-        cert.cumpleGeneral
-          ? 'VEREDICTO: EL CENTRO CUMPLE CON LOS REQUISITOS DE LA RES. EXENTA N°1511/2021'
-          : 'VEREDICTO: EL CENTRO NO CUMPLE CON LOS REQUISITOS DE LA RES. EXENTA N°1511/2021',
-        105, verdY + 8, { align: 'center' }
-      );
+      const verdLines = doc.splitTextToSize(verdText, 172);
+      const verdH = Math.max(12, verdLines.length * 5.5 + 6);
+      doc.setFillColor(...(cert.cumpleGeneral ? VERDE : ROJO));
+      doc.roundedRect(14, verdY, 182, verdH, 2, 2, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.text(verdLines, 105, verdY + 6, { align: 'center', lineHeightFactor: 1.4 });
       doc.setTextColor(0, 0, 0);
 
-      const firmY = verdY + 55;
+      const firmY = verdY + verdH + 45;
       doc.setDrawColor(...AZUL);
       doc.setLineWidth(0.5);
       doc.line(55, firmY, 155, firmY);
@@ -2683,21 +3252,22 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         doc.setPage(i);
         doc.setFontSize(7); doc.setTextColor(150,150,150); doc.setFont('helvetica','normal');
         doc.setDrawColor(200,200,200); doc.line(14,289,196,289);
-        doc.text('CERTIMAR SPA — Res. Exenta N°1511/2021', 14, 293);
+        doc.text(`${tema.logo === 'engelbert' ? 'Engelbert Aquastructures' : 'CERTIMAR SPA'} — Res. Exenta N°1511/2021`, 14, 293);
         doc.text(`Página ${i} de ${np}`, 196, 293, { align: 'right' });
       }
 
       doc.save(`${codigo}-${formatFileDate(state.general.fechas.emision_certificado)}-CERTIFICADO.pdf`);
       setShowEmailModal(true);
       saveToHistorico('certificado');
+      logEvento('generar_certificado', { codigoCentro: state.general.centro_cultivo.codigo_centro, nombreCentro: state.general.centro_cultivo.nombre_centro, titular: state.general.centro_cultivo.titular });
     } finally { setGenerating(null); }
   };
 
   // ─── INFORME TÉCNICO ───────────────────────────────────────────────────────
   const generateInformePDF = async () => {
-    const issues = checkCapacidades();
-    if (issues.length > 0) {
-      if (!window.confirm(`Advertencia:\n${issues.join('\n')}\n\n¿Generar informe de todas formas?`)) return;
+    if (!canEmit) {
+      alert('Hay campos obligatorios sin completar. Revisa el checklist de cada sección antes de generar el informe.');
+      return;
     }
     setGenerating('informe');
     try {
@@ -2711,9 +3281,17 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       const docCode = makeDocCode(codigo, g.fechas.inspeccion_terreno);
 
       // Corregir orientación EXIF de todas las imágenes antes de insertar en PDF
+      // 'Portada' y 'Ubicación Espacial' siempre se incluyen (no requieren leyenda).
+      // El resto requiere leyenda para aparecer en el informe.
+      // 'Ubicación Espacial' NO se excluye aquí — addAerialSection las filtra por sección.
       const correctedImgs = await Promise.all(
-        state.images.map(async img => ({ ...img, url: await fixImageOrientation(img.url) }))
-      );
+        state.images
+          .filter(img =>
+            img.url &&
+            (img.seccion === 'Portada' || img.seccion === 'Paisaje' || img.seccion === 'Ubicación Espacial' || img.leyenda.trim() !== '' || img.enPortada)
+          )
+          .map(async img => ({ ...img, url: await fixImageOrientation(img.url) }))
+      ).then(imgs => imgs.filter(img => img.url));
 
       // Paleta según tema
       const isEngelbert = tema.palette === 'engelbert';
@@ -2731,7 +3309,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // Dibuja olas de marca de agua en la página actual — llamar ANTES del contenido
       // para que las olas queden detrás del texto.
       const drawBodyWaves = () => {
-        const gS25  = (doc as any).GState({ opacity: 0.25, 'fill-opacity': 0.25 });
+        const gS25  = (doc as any).GState({ opacity: wavesOpacity, 'fill-opacity': wavesOpacity });
         const gS100 = (doc as any).GState({ opacity: 1,    'fill-opacity': 1 });
         doc.setDrawColor(...(isEngelbert ? [253, 186, 116] as [number,number,number] : [168, 200, 232] as [number,number,number]));
         doc.setLineWidth(0.35);
@@ -2745,75 +3323,216 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         doc.setGState(gS100);
       };
 
-      // ── Portada ──
-      // Banda azul superior (con espacio para logo a la derecha y título a la izquierda)
-      doc.setFillColor(...AZUL_H);
-      doc.rect(0, 0, PW, 38, 'F');
-      doc.setFillColor(...AZUL_D);
-      doc.rect(0, 36, PW, 2, 'F');
-      // docCode top-left
-      doc.setFontSize(8); doc.setTextColor(255,255,255); doc.setFont('helvetica','normal');
-      doc.text(docCode, 8, 8);
-      // Logo top-right dentro del banner — badge blanco para contraste
+      // ── Portada ── diseño limpio · fondo blanco · tipografía navy · olas SVG · fotos ──
+      const logoClienteDataUrl = logoClienteUrl ? await loadUrlAsDataUrl(logoClienteUrl) : null;
+
+      // ── Procesamiento canvas para logo empresa en portada ──
+      // Task 1: rotar -90° CCW (expand=true → canvas OH×OW) + alpha * opacity → watermark derecho
+      // Task 2: si SVG → renderizar a canvas PNG (preservar colores) → header superior-izquierdo
+      let logoWmDataUrl: string | null = null;
+      let logoWmAW = 1, logoWmAH = 1;               // aspect ratio del logo tras la rotación
+      let logoHdrDataUrl: string | null = logoClienteDataUrl;
+      let logoHdrAW = 1, logoHdrAH = 1;             // aspect ratio para header
+
+      if (logoClienteDataUrl) {
+        // Obtener dimensiones originales
+        const origDims = await new Promise<{w:number; h:number}>(res => {
+          const img = new Image();
+          img.onload  = () => res({w: img.naturalWidth,  h: img.naturalHeight});
+          img.onerror = () => res({w: 1, h: 1});
+          img.src = logoClienteDataUrl;
+        });
+        logoHdrAW = origDims.w; logoHdrAH = origDims.h;
+
+        // Task 2 — SVG: renderizar con fondo transparente para preservar colores
+        if (logoClienteDataUrl.startsWith('data:image/svg')) {
+          await new Promise<void>(res => {
+            const imgEl = new Image();
+            imgEl.onload = () => {
+              const PX = Math.max(350, origDims.w);
+              const py = Math.round(PX * (origDims.h / origDims.w));
+              const c = document.createElement('canvas');
+              c.width = PX; c.height = py;
+              const ctx = c.getContext('2d')!;
+              ctx.clearRect(0, 0, PX, py);      // fondo transparente
+              ctx.drawImage(imgEl, 0, 0, PX, py);
+              logoHdrDataUrl = c.toDataURL('image/png');
+              logoHdrAW = PX; logoHdrAH = py;
+              res();
+            };
+            imgEl.onerror = () => res();
+            imgEl.src = logoClienteDataUrl;
+          });
+        }
+
+        // Task 1 — rotar con ángulo configurable (expand) y aplicar opacidad
+        if (logoPortadaOpacity > 0) {
+          await new Promise<void>(res => {
+            const imgEl = new Image();
+            imgEl.onload = () => {
+              const OW = imgEl.naturalWidth, OH = imgEl.naturalHeight;
+              const rotRad = (logoWmRotation * Math.PI) / 180;
+              const cosA = Math.abs(Math.cos(rotRad));
+              const sinA = Math.abs(Math.sin(rotRad));
+              const cW = Math.ceil(OW * cosA + OH * sinA);
+              const cH = Math.ceil(OW * sinA + OH * cosA);
+              const c = document.createElement('canvas');
+              c.width = cW; c.height = cH;
+              const ctx = c.getContext('2d')!;
+              ctx.translate(cW / 2, cH / 2);
+              ctx.rotate(rotRad);
+              ctx.drawImage(imgEl, -OW / 2, -OH / 2);
+              // canal alpha = alpha * opacity
+              const id = ctx.getImageData(0, 0, cW, cH);
+              for (let i = 3; i < id.data.length; i += 4)
+                id.data[i] = Math.round(id.data[i] * logoPortadaOpacity);
+              ctx.putImageData(id, 0, 0);
+              logoWmDataUrl = c.toDataURL('image/png');
+              logoWmAW = cW; logoWmAH = cH;
+              res();
+            };
+            imgEl.onerror = () => res();
+            imgEl.src = logoClienteDataUrl;
+          });
+        }
+      }
+
+      // Paleta portada (igual para Engelbert y Certimar salvo acento)
+      const CNVY: [number,number,number] = [27,  52, 100]; // #1B3464
+      const CT1:  [number,number,number] = [74, 155, 196]; // #4A9BC4
+      const CT2:  [number,number,number] = [107,206, 218]; // #6BCEDA
+      const CB2:  [number,number,number] = [43, 108, 176]; // #2B6CB0
+      const CB3:  [number,number,number] = [30,  71, 150]; // #1E4796
+      const CMUT: [number,number,number] = [138,172, 191]; // muted blue-grey
+      const CMID: [number,number,number] = [90, 122, 148]; // mid grey-blue
+      const WB = PH - 14;                                  // wave bottom / footer top
+
+      // ── 1. Fondo blanco ──
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 0, PW, PH, 'F');
+
+      // ── 2. Franja superior navy (2mm) ──
+      doc.setFillColor(...CNVY);
+      doc.rect(0, 0, PW, 2, 'F');
+
+      // ── 3. Header: logo ──
+      // Escalar a 50mm de ancho manteniendo aspect ratio real del archivo
+      let lH = 13; // fallback si no hay logo
       if (logo) {
-        if (isEngelbert) {
-          doc.setFillColor(255, 255, 255);
-          doc.roundedRect(PW - 49, 1.5, 45, 31, 3, 3, 'F');
-        }
-        doc.addImage(logo, 'PNG', PW - 46, 3, 40, 28);
+        const logoAR = await new Promise<number>(resolve => {
+          const img = new Image();
+          img.onload  = () => resolve(img.naturalWidth / img.naturalHeight);
+          img.onerror = () => resolve(300 / 199);
+          img.src = logo;
+        });
+        lH = parseFloat((logoMarcaW / logoAR).toFixed(2));
+        doc.addImage(logo, 'PNG', logoMarcaX, logoMarcaY, logoMarcaW, lH);
       }
-      // Título a la izquierda del banner
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-      doc.text('Inspección de Certificación', 10, 16);
-      doc.setFontSize(12);
-      doc.text('Sistema de Mortalidad', 10, 25);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-      doc.text('Res. Exenta N°1511/2021', 10, 33);
+      doc.setFont('courier', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...CNVY);
+      doc.text(docCode, PW - 8, 9, { align: 'right' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...CMID);
+      doc.text(formatDateES(g.fechas.emision_certificado), PW - 8, 16, { align: 'right' });
 
-      // Banda de identificación del centro
-      doc.setFillColor(...AZUL_D);
-      doc.rect(0, 38, PW, 16, 'F');
-      doc.setTextColor(255,255,255);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-      doc.text(`CENTRO ${codigo}  —  ${cc.nombre_centro}`, PW / 2, 46, { align: 'center' });
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
-      doc.text(`${cc.titular}  |  ACS: ${cc.acs}`, PW / 2, 51, { align: 'center' });
+      // BODY_Y: arranque del cuerpo justo debajo del logo + 4mm de margen
+      const BODY_Y = parseFloat((logoMarcaY + lH + 4).toFixed(1));
 
-      // Fotos de portada: 1 grande o 2–3 en fila
-      const fotosPortada = correctedImgs.filter(img => img.seccion === 'Portada');
-      const FOTO_TOP = 58;
-      if (fotosPortada.length === 1) {
-        try { doc.addImage(fotosPortada[0].url, 'JPEG', (PW - 150) / 2, FOTO_TOP, 150, 110); } catch { /* skip */ }
-      } else if (fotosPortada.length >= 2) {
-        const count = Math.min(fotosPortada.length, 3);
-        const fotoW = 64, fotoH = 50, gap = 4;
-        const totalW = count * fotoW + (count - 1) * gap;
-        let fx = (PW - totalW) / 2;
-        for (const foto of fotosPortada.slice(0, count)) {
-          try { doc.addImage(foto.url, 'JPEG', fx, FOTO_TOP, fotoW, fotoH); } catch { /* skip */ }
-          fx += fotoW + gap;
-        }
+      // ── 4. Barra vertical izquierda (acento) — empieza en BODY_Y, no atraviesa el logo ──
+      doc.setFillColor(...CT1);
+      doc.rect(11.5, BODY_Y, 1.1, 64, 'F');
+
+      // ── 5. Texto del cuerpo — posiciones relativas a BODY_Y ──
+      const TX = 21;
+
+      // Título "INFORME TÉCNICO"
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(27); doc.setTextColor(...CNVY);
+      doc.text('INFORME', TX, BODY_Y + 26);
+      doc.text('TÉCNICO', TX, BODY_Y + 39);
+
+      // Regla teal
+      doc.setFillColor(...CT1);
+      doc.rect(TX, BODY_Y + 43, 17, 0.9, 'F');
+
+      // Subtítulo
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...CMID);
+      doc.text('INSPECCIÓN SISTEMA DE MORTALIDAD — RES. N°1511/2021', TX, BODY_Y + 50);
+
+      // Nombre del centro
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...CNVY);
+      doc.text(doc.splitTextToSize(`CENTRO ${codigo} — ${cc.nombre_centro}`, PW - TX - 10).slice(0, 2), TX, BODY_Y + 59);
+
+      // Nombre del titular — bajo el nombre del centro
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...CMUT);
+      doc.text(cc.titular.toUpperCase(), TX, BODY_Y + 68, { maxWidth: PW - TX - 10 });
+
+      // Meta: ref + fecha
+      doc.setFont('courier', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...CMID);
+      doc.text(`${docCode}  ·  ${formatDateES(g.fechas.inspeccion_terreno)}`, TX, BODY_Y + 79);
+
+      // Certificador
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...CMID);
+      doc.text(`Cert: ${g.certificador.nombre}  ·  Reg. ${g.certificador.numero_registro}`, TX, BODY_Y + 86);
+
+      // ── 5b. Task 1: Watermark logo empresa — posición y rotación configurables ──
+      if (logoWmDataUrl) {
+        const lwW = logoWmW;
+        const lwH = logoWmW * (logoWmAH / logoWmAW);
+        try { doc.addImage(logoWmDataUrl, 'PNG', logoWmX, logoWmY, lwW, lwH); } catch { /* skip */ }
       }
 
-      // Fecha e info del certificador
-      const fotoBottom = fotosPortada.length === 1 ? FOTO_TOP + 118 : (fotosPortada.length >= 2 ? FOTO_TOP + 58 : FOTO_TOP + 6);
-      doc.setTextColor(...AZUL_T);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-      doc.text(formatDateES(g.fechas.inspeccion_terreno), PW / 2, fotoBottom + 14, { align: 'center' });
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-      doc.setTextColor(60, 60, 60);
-      doc.text(
-        `Certificador: ${g.certificador.nombre}  |  N° Registro: ${g.certificador.numero_registro}`,
-        PW / 2, fotoBottom + 24, { align: 'center' }
-      );
+      // ── 6. Ondas (5 capas SVG traducidas a jsPDF, de claro a oscuro) ──
+      // SVG viewBox 0 0 490 265 → PDF x=[0,PW] y=[159,WB]
+      // Cada onda: 2 curvas quadratic→cubic + líneas de cierre hacia abajo
 
-      // Footer portada
-      doc.setFillColor(...AZUL_H);
-      doc.rect(0, PH - 18, PW, 18, 'F');
-      doc.setFontSize(7.5); doc.setTextColor(255,255,255); doc.setFont('helvetica','normal');
-      doc.text('Mario Toral 101, Puerto Aysén', 10, PH - 8);
-      doc.text('+56 9 45052052', PW / 2, PH - 8, { align: 'center' });
-      doc.text('eflores@engelbert.cl', PW - 10, PH - 8, { align: 'right' });
+      // Wave 1 — #6BCEDA — empieza en Y≈186
+      doc.setFillColor(...CT2);
+      doc.lines([[36.1,-8.5, 72.3,-8.5, 108.4,0],[36.1,8.5, 72.0,8.3, 107.5,-0.8],[0,WB-185.4],[-215.9,0]],
+        0, 186.2, [1,1], 'F', true);
+
+      // Wave 2 — #4A9BC4 — Y≈196
+      doc.setFillColor(...CT1);
+      doc.lines([[37.6,-8.8, 74.0,-9.5, 109.3,-2.0],[35.8,8.0, 71.3,8.3, 106.6,0.8],[0,WB-195.0],[-215.9,0]],
+        0, 196.2, [1,1], 'F', true);
+
+      // Wave 3 — #2B6CB0 — Y≈206
+      doc.setFillColor(...CB2);
+      doc.lines([[34.7,-9.1, 71.1,-9.9, 109.3,-2.4],[38.1,8.5, 73.7,8.8, 106.6,0.8],[0,WB-204.6],[-215.9,0]],
+        0, 206.2, [1,1], 'F', true);
+
+      // Wave 4 — #1E4796 — Y≈216
+      doc.setFillColor(...CB3);
+      doc.lines([[33.2,-9.3, 69.6,-10.3, 109.3,-2.8],[39.6,7.5, 75.1,7.7, 106.6,0.8],[0,WB-214.2],[-215.9,0]],
+        0, 216.2, [1,1], 'F', true);
+
+      // Wave 5 — #1B3464 — Y≈226 (llena hasta el footer)
+      doc.setFillColor(...CNVY);
+      doc.lines([[31.7,-9.6, 68.2,-10.7, 109.3,-3.2],[41.1,7.5, 75.8,7.7, 106.6,0.8],[0,WB-223.8],[-215.9,0]],
+        0, 226.2, [1,1], 'F', true);
+
+      // ── 7. Tira de fotos paisaje/fondo portada (Y=237, H=28) — sobre las olas ──
+      const TIRA_Y = 237, TIRA_H = 28;
+      const fotosTecnicas = correctedImgs.filter(img =>
+        img.seccion === 'Paisaje' && img.url
+      ).slice(0, 4);
+      if (fotosTecnicas.length > 0) {
+        const gap = 1.5, fw = (PW - gap * (fotosTecnicas.length - 1)) / fotosTecnicas.length;
+        fotosTecnicas.forEach((img, idx) => {
+          try { doc.addImage(img.url, 'JPEG', idx * (fw + gap), TIRA_Y, fw, TIRA_H); } catch { /* skip */ }
+        });
+      } else {
+        const phColors: [number,number,number][] = [CT1, CB2, CT2, CB3];
+        const fw = (PW - 1.5 * 3) / 4;
+        phColors.forEach((c, idx) => { doc.setFillColor(...c); doc.rect(idx*(fw+1.5), TIRA_Y, fw, TIRA_H, 'F'); });
+      }
+
+      // ── 8. Footer (navy, H=14mm) ──
+      doc.setFillColor(...CNVY);
+      doc.rect(0, WB, PW, PH - WB, 'F');
+      doc.setGState((doc as any).GState({ opacity: 0.75, 'fill-opacity': 0.75 }));
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(255, 255, 255);
+      doc.text('Mario Toral 101, Puerto Aysén', PW / 6, WB + 9, { align: 'center' });
+      doc.text('+56 9 45052052', PW / 2, WB + 9, { align: 'center' });
+      doc.text(isEngelbert ? 'eflores@engelbert.cl' : 'eflores@certimar.cl', PW * 5 / 6, WB + 9, { align: 'center' });
+      doc.setGState((doc as any).GState({ opacity: 1, 'fill-opacity': 1 }));
 
       // ── helpers de posicionamiento ──
       const CONTENT_BOTTOM = PH - 22;
@@ -2837,6 +3556,13 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       const tocEntries: { title: string; page: number; level: number }[] = [];
       const getPage = () => (doc as any).internal.getNumberOfPages();
 
+      // ── Constantes de layout de fotos — declaradas aquí para que estén disponibles
+      //    cuando addAerialSection (función hoistada) es llamada en la sección 1 ──
+      const CAPTION_H = 9;   // altura para leyenda bajo la foto (mm)
+      const IMG_ROW_H = 54;  // alto mínimo de la celda de imagen
+      const estadoColor = (e: string): [number,number,number] =>
+        e === 'Verde' ? [22,101,52] : e === 'Amarillo' ? [161,98,7] : [185,28,28];
+
       // ── Sección 1: Identificación del centro ──
       doc.addPage();
       drawBodyWaves();
@@ -2850,7 +3576,6 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         body: [
           ['Empresa',              cc.titular],
           ['Centro',               cc.nombre_centro],
-          ['Codigo RNA',           cc.acs],
           ['Ubicación',            cc.ubicacion],
           ['Fecha inspección',     g.fechas.inspeccion_terreno],
           ['Formato del módulo',   cc.formato_modulo || '—'],
@@ -2865,15 +3590,20 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         styles: { fontSize: 9, cellPadding: 3, lineColor: BORDE_TABLA, lineWidth: 0.1, overflow: 'linebreak' },
       });
 
+      // Fotos de ubicación espacial: justo tras la tabla de identificación
+      addAerialSection('Ubicación Espacial');
+
       // 1.1 Proceso extracción
-      ensureSpace(65);
+      // ensureSpace generoso: si hay menos de 115mm disponibles el título se mueve a una página
+      // nueva donde cabrá junto con las primeras filas de la tabla (pageBreak: 'auto' = flujo natural).
+      ensureSpace(115);
       const y11 = lastY() + 10;
       tocEntries.push({ title: '1.1  Proceso extracción', page: getPage(), level: 2 });
       sectionTitle('1.1  Proceso extracción', 12, y11);
 
       autoTable(doc, {
         startY: y11 + 5,
-        pageBreak: 'avoid',
+        margin: { top: 25 },
         body: [
           [{ content: 'Flujo de Proceso de Extracción', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold', fontSize: 9 } }],
           ['Extracción de mortalidad.', `Mediante sistema ${ext.parametros.sistema_principal} con compresor de aire.`],
@@ -2927,7 +3657,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       });
 
       // 1.3 Generación eléctrica
-      ensureSpace(40);
+      ensureSpace(65);
       const y13 = lastY() + 10;
       tocEntries.push({ title: '1.3  Capacidad Generación Eléctrica', page: getPage(), level: 2 });
       sectionTitle('1.3  Capacidad Generación Eléctrica', 12, y13);
@@ -2935,7 +3665,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       if (den.generacion_electrica.length > 0) {
         autoTable(doc, {
           startY: y13 + 5,
-          pageBreak: 'avoid',
+          margin: { top: 25 },
           head: [['Tipo', 'Marca', 'Modelo', 'Capacidad (KVA)', 'Ubicación']],
           body: den.generacion_electrica.map(ge => [ge.tipo, ge.marca, ge.modelo, String(ge.capacidad_kva), ge.ubicacion]),
           theme: 'grid',
@@ -2946,23 +3676,24 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       } else {
         autoTable(doc, {
           startY: y13 + 5,
-          pageBreak: 'avoid',
+          margin: { top: 25 },
           body: [['Sin generadores registrados', '—', '—', '—', '—']],
           theme: 'grid', styles: { fontSize: 8.5, cellPadding: 2.5 },
         });
       }
 
       // 1.4 Desnaturalización y almacenamiento
-      ensureSpace(75);
+      ensureSpace(95);
       const y14 = lastY() + 10;
       tocEntries.push({ title: '1.4  Desnaturalización y almacenamiento', page: getPage(), level: 2 });
       sectionTitle('1.4  Desnaturalización y almacenamiento.', 12, y14);
 
       autoTable(doc, {
         startY: y14 + 5,
-        pageBreak: 'avoid',
+        margin: { top: 25 },
         body: [
           [{ content: 'Equipo de Desnaturalización y capacidades', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold' } }],
+          ...(den.incinerador.activo ? [['Número de plataformas de desnaturalización.', '2 (Ensilaje + Incinerador)']] : []),
           ['Número ollas trituradoras.', String(den.equipos.cantidad_sistemas)],
           ['Capacidad de procesamiento Nominal (kg/h).', `${den.equipos.velocidad_nominal_kg_hr} Kg/h`],
           ['Horas de funcionamiento al día.', `${den.equipos.horas_funcionamiento_dia} hrs.`],
@@ -2971,6 +3702,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           ['Material.', den.equipos.material_construccion],
           ['Estado (bien, mal, sin fugas).', 'Buen estado sin fugas y óxido nivel medio.'],
           ['Señalar si cuenta con prepicador y dosificación de ácido.', `${den.equipos.cuenta_con_recirculacion_acido ? 'Cuenta con sistema de Recirculación de ácido.' : '—'}`],
+          ...(den.incinerador.activo ? [
+            [{ content: 'Sistema Secundario de Desnaturalización (Incinerador)', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold' } }],
+            ['Marca/Modelo.', den.incinerador.marca_modelo],
+            ['Observaciones.', den.incinerador.observaciones || '—'],
+          ] : []),
           [{ content: 'Almacenamiento.', colSpan: 2, styles: { fontStyle: 'bold' } }],
           ['Capacidad.', `Estanque con capacidad para ${sto.parametros.capacidad_almacenaje_m3} m³ con recirculación.`],
         ],
@@ -2986,31 +3722,44 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           img.seccion === 'Desnaturalización' && img.leyenda?.toLowerCase().includes('olla')
         ) ?? correctedImgs.find(img => img.seccion === 'Desnaturalización');
         if (ollaImg?.url) {
-          // Calcular alto real de la imagen para no achatar
+          // OH_nat: alto natural de la imagen a OW de ancho (mantiene relación de aspecto)
           const OW = 120;
-          let OH = 80;
+          let OH_nat = 80;
           try {
             const tmp = new Image();
             tmp.src = ollaImg.url;
-            if (tmp.naturalWidth > 0) OH = Math.round(OW * tmp.naturalHeight / tmp.naturalWidth);
-          } catch { /* usa OH por defecto */ }
-          OH = Math.min(Math.max(OH, 60), 120); // clamp 60–120 mm
-          ensureSpace(OH + 22);
+            if (tmp.naturalWidth > 0) OH_nat = Math.round(OW * tmp.naturalHeight / tmp.naturalWidth);
+          } catch { /* usa OH_nat por defecto */ }
+          OH_nat = Math.min(Math.max(OH_nat, 60), 120);
+
+          // OH_cell: altura de la celda — se ajusta al espacio disponible para no crear página vacía
+          const CAPTION_OLLA = 9;
+          const spaceLeft = CONTENT_BOTTOM - lastY() - 14;
+          const OH_cell = spaceLeft >= 40 ? Math.min(OH_nat, spaceLeft) : OH_nat;
+          if (spaceLeft < 40) ensureSpace(OH_cell + 22);
+
           autoTable(doc, {
             startY: lastY() + 8,
             margin: { top: 25, left: (PW - OW) / 2 },
             rowPageBreak: 'avoid',
-            body: [[{ content: '', styles: { cellWidth: OW, minCellHeight: OH, cellPadding: 0 } }]],
+            body: [[{ content: '', styles: { cellWidth: OW, minCellHeight: OH_cell, cellPadding: 0 } }]],
             theme: 'plain', styles: { fontSize: 0 }, tableWidth: OW,
             didDrawCell: (data: any) => {
               if (data.section !== 'body') return;
               try {
-                const iH = data.cell.height - 9;
-                doc.addImage(ollaImg.url, 'JPEG', data.cell.x + 2, data.cell.y + 2, data.cell.width - 4, Math.max(iH - 2, 2));
+                // Dibujar manteniendo relación de aspecto (letter-box vertical)
+                const availW = data.cell.width - 4;
+                const availH = data.cell.height - CAPTION_OLLA - 4;
+                const scale  = Math.min(availW / OW, availH / OH_nat);
+                const dw = OW * scale;
+                const dh = OH_nat * scale;
+                const dx = data.cell.x + 2 + (availW - dw) / 2;
+                const dy = data.cell.y + 2;
+                doc.addImage(ollaImg.url, 'JPEG', dx, dy, dw, dh);
                 if (ollaImg.leyenda) {
                   doc.setFontSize(7.5); doc.setTextColor(40,40,40); doc.setFont('helvetica','normal');
                   const cl = doc.splitTextToSize(ollaImg.leyenda, data.cell.width - 4);
-                  doc.text(cl, data.cell.x + data.cell.width / 2, data.cell.y + iH + 5, { align: 'center' });
+                  doc.text(cl, data.cell.x + data.cell.width / 2, data.cell.y + data.cell.height - CAPTION_OLLA + 3, { align: 'center' });
                 }
               } catch { /* skip */ }
             },
@@ -3125,11 +3874,6 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       }
 
       // ── Sección 3: Inspección de terreno ──
-      // ─ constantes y helpers de fotos ────────────────────────────────────────
-      const CAPTION_H = 9;   // altura para leyenda bajo la foto (mm)
-      const IMG_ROW_H = 54;  // alto mínimo de la celda de imagen
-      const estadoColor = (e: string): [number,number,number] =>
-        e === 'Verde' ? [22,101,52] : e === 'Amarillo' ? [161,98,7] : [185,28,28];
 
       /** Tabla con bordes — cabecera azul — foto + leyenda visible */
       const addPhotoSection = (seccion: ImageSeccion) => {
@@ -3149,7 +3893,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           ensureSpace(IMG_ROW_H + 14);
           autoTable(doc, {
             startY: lastY() + 4,
-            margin: { top: 25 },
+            margin: { top: 25, left: 8, right: 8 },
             rowPageBreak: 'avoid',
             head: [['DECLARADO / Estado', '#1', '#2', '#3']],
             body: [[
@@ -3164,8 +3908,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             columnStyles: { 0: { cellWidth: 42 }, 1: { cellWidth: 50 }, 2: { cellWidth: 50 }, 3: { cellWidth: 50 } },
             didDrawCell: (data: any) => {
               if (data.section === 'body' && data.column.index >= 1) {
-                const imgIdx = data.column.index - 1 + i;
-                const img = imgs[imgIdx];
+                const img = row[data.column.index - 1];
                 if (img?.url) {
                   try {
                     const imgAreaH = data.cell.height - CAPTION_H;
@@ -3184,7 +3927,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 // Pastilla semáforo con texto (legible en escala de grises)
                 const badgeW = 26, badgeH = 5, badgeR = 1.1;
                 const bx = data.cell.x + (data.cell.width - badgeW) / 2;
-                const by = data.cell.y + data.cell.height - badgeH - 3;
+                const by = data.cell.y + (data.cell.height - badgeH) / 2;
                 const est = row[0].estado;
                 const [br, bg, bb]: [number,number,number] =
                   est === 'Verde'    ? [26, 122, 60]  :
@@ -3210,7 +3953,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
        *   Fila 1 col 0: imagen con "diagonal" / "arreglo"
        *   Fila 1 col 1: imagen con "aérea" / "general" / "contexto"
        */
-      const addAerialSection = (seccion: ImageSeccion) => {
+      // eslint-disable-next-line no-inner-declarations
+      function addAerialSection(seccion: ImageSeccion) {
         const imgs = correctedImgs.filter(img => img.seccion === seccion);
         if (imgs.length === 0) {
           autoTable(doc, {
@@ -3228,8 +3972,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         const imgDiagonal   = imgs.find(i => kw(i,'diagonal','arreglo'))  ?? imgs[1];
         const imgAerea      = imgs.find(i => kw(i,'aérea','general','contexto')) ?? imgs[2];
 
-        const FULL_W = 182, FULL_H = 76;
-        const HALF_W = 89,  HALF_H = 62;
+        const FULL_W = 182, FULL_H = 65;  // reducido para dejar espacio a las tablas de datos
+        const HALF_W = FULL_W / 2;  // 91mm — igual que la mitad de la fila superior
+        const HALF_H = 50;
         const mLeft = (PW - FULL_W) / 2;
 
         const drawCaption = (img: typeof imgs[0], cx: number, cy: number, cw: number, cellH: number) => {
@@ -3240,8 +3985,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         };
 
         // Fila 0: imagen estructure / módulo — ancho completo
+        // Reservar espacio para AMBAS filas juntas para evitar que la fila 1
+        // quede sola en una página nueva (FULL_H + HALF_H + 30 ≈ 168mm ≤ 250mm disponibles).
         if (imgEstructura?.url) {
-          ensureSpace(FULL_H + 16);
+          ensureSpace(FULL_H + HALF_H + 30);
           autoTable(doc, {
             startY: lastY() + 6,
             margin: { top: 25, left: mLeft },
@@ -3270,7 +4017,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             { content: '', styles: { cellWidth: HALF_W, minCellHeight: HALF_H, cellPadding: 0 } },
             { content: '', styles: { cellWidth: HALF_W, minCellHeight: HALF_H, cellPadding: 0 } },
           ]],
-          theme: 'plain', styles: { fontSize: 0 },
+          theme: 'plain', styles: { fontSize: 0 }, tableWidth: FULL_W,
           columnStyles: { 0: { cellWidth: HALF_W }, 1: { cellWidth: HALF_W } },
           didDrawCell: (data: any) => {
             if (data.section !== 'body') return;
@@ -3283,7 +4030,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             } catch { /* skip */ }
           },
         });
-      };
+      }
 
       doc.addPage();
       drawBodyWaves();
@@ -3364,11 +4111,44 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       doc.addPage();
       drawBodyWaves();
       tocEntries.push({ title: '5   Registro de visita', page: getPage(), level: 1 });
-      tocEntries.push({ title: '5.1  Ubicación espacial del centro', page: getPage(), level: 2 });
       sectionTitle('5  Registro de visita.', 14, 30);
-      sectionTitle('5.1  Ubicación espacial del centro', 12, 38);
-      autoTable(doc, { startY: 43, margin: { top: 25 }, body: [['']], theme: 'plain', styles: { minCellHeight: 0 } });
-      addAerialSection('Ubicación Espacial');
+
+      {
+        const snapshots = registroVisitaRef.current ?? [];
+        const FRAME_X = 14;
+        const FRAME_Y = 37;
+        const FRAME_W = PW - 28;
+        const FRAME_H = CONTENT_BOTTOM - FRAME_Y;
+
+        if (snapshots.length === 0) {
+          autoTable(doc, {
+            startY: FRAME_Y + 4,
+            body: [['Sin registro de visita adjunto.']],
+            theme: 'plain',
+            styles: { fontSize: 8.5, textColor: [130, 130, 130] as [number, number, number] },
+          });
+        } else {
+          for (let i = 0; i < snapshots.length; i++) {
+            try {
+              if (i > 0) {
+                doc.addPage();
+                drawBodyWaves();
+                const FY2 = 25;
+                const FH2 = CONTENT_BOTTOM - FY2;
+                doc.setDrawColor(...BORDE_TABLA);
+                doc.setLineWidth(0.4);
+                doc.rect(FRAME_X, FY2, FRAME_W, FH2);
+                doc.addImage(snapshots[i], 'JPEG', FRAME_X + 1, FY2 + 1, FRAME_W - 2, FH2 - 2, '', 'FAST');
+              } else {
+                doc.setDrawColor(...BORDE_TABLA);
+                doc.setLineWidth(0.4);
+                doc.rect(FRAME_X, FRAME_Y, FRAME_W, FRAME_H);
+                doc.addImage(snapshots[i], 'JPEG', FRAME_X + 1, FRAME_Y + 1, FRAME_W - 2, FRAME_H - 2, '', 'FAST');
+              }
+            } catch { /* página corrupta — se omite sin crashear el PDF */ }
+          }
+        }
+      }
 
 
       // ── Insertar página de índice en posición 2 y dibujarla ──
@@ -3454,17 +4234,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
       const filename = `${codigo}-${formatFileDate(g.fechas.emision_certificado)}-INFORME.pdf`;
 
-      // Adjuntar Registro de Visita como snapshots JPEG (ya comprimidos al subir)
-      if (registroVisitaRef.current) {
-        for (const snapshot of registroVisitaRef.current) {
-          doc.addPage([PW, PH]);
-          doc.addImage(snapshot, 'JPEG', 0, 0, PW, PH, '', 'FAST');
-        }
-      }
-
       doc.save(filename);
       setShowEmailModal(true);
       saveToHistorico('informe');
+      logEvento('generar_informe', { codigoCentro: state.general.centro_cultivo.codigo_centro, nombreCentro: state.general.centro_cultivo.nombre_centro, titular: state.general.centro_cultivo.titular });
     } finally { setGenerating(null); }
   };
 
@@ -3473,6 +4246,500 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
     onDrop: addImage,
     accept: { 'image/*': [] }
   } as any);
+
+  // --- StatsView ---
+
+  const StatsView = () => {
+    const [eventos, setEventos] = useState<(EventoUso & { id: string })[]>([]);
+    const [statsLoading, setStatsLoading] = useState(true);
+    const [filtro, setFiltro] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
+
+    useEffect(() => {
+      // Solo cargar datos cuando el tab está activo
+      if (activeTab !== 'stats' || !isAdmin) return;
+      setStatsLoading(true);
+      import('firebase/firestore').then(async ({ collection, getDocs, orderBy, query, limit }) => {
+        const { db } = await import('./firebase');
+        const q = query(collection(db, 'eventos_uso'), orderBy('fecha', 'desc'), limit(1000));
+        const snap = await getDocs(q);
+        setEventos(snap.docs.map(d => ({ id: d.id, ...(d.data() as EventoUso) })));
+      }).catch(console.error).finally(() => setStatsLoading(false));
+    }, [activeTab, isAdmin]);
+
+    const eventosFiltrados = useMemo(() => {
+      if (filtro === 'all') return eventos;
+      const dias = filtro === '7d' ? 7 : filtro === '30d' ? 30 : 90;
+      const cutoff = Date.now() - dias * 24 * 60 * 60 * 1000;
+      return eventos.filter(e => {
+        const ts = e.fecha?.toMillis?.() ?? (e.fecha?.seconds ? e.fecha.seconds * 1000 : 0);
+        return ts >= cutoff;
+      });
+    }, [eventos, filtro]);
+
+    const kpis = useMemo(() => {
+      const sesiones = eventosFiltrados.filter(e => e.tipo === 'login').length;
+      const docs = eventosFiltrados.filter(e => ['generar_certificado','generar_informe','generar_acta'].includes(e.tipo));
+      const docsTotal = docs.length;
+      const centrosUnicos = new Set(eventosFiltrados.filter(e => e.codigoCentro).map(e => e.codigoCentro)).size;
+      const usuariosUnicos = new Set(eventosFiltrados.map(e => e.usuario)).size;
+      const certCount = eventosFiltrados.filter(e => e.tipo === 'generar_certificado').length;
+      const informeCount = eventosFiltrados.filter(e => e.tipo === 'generar_informe').length;
+      const actaCount = eventosFiltrados.filter(e => e.tipo === 'generar_acta').length;
+      return { sesiones, docsTotal, centrosUnicos, usuariosUnicos, certCount, informeCount, actaCount };
+    }, [eventosFiltrados]);
+
+    const porDia = useMemo(() => {
+      const dias = filtro === '7d' ? 7 : filtro === '30d' ? 30 : filtro === '90d' ? 90 : 90;
+      const map: Record<string, { cert: number; informe: number; acta: number; otros: number }> = {};
+      const now = new Date();
+      for (let i = dias - 1; i >= 0; i--) {
+        const d = new Date(now); d.setDate(d.getDate() - i);
+        const key = d.toISOString().split('T')[0];
+        map[key] = { cert: 0, informe: 0, acta: 0, otros: 0 };
+      }
+      eventosFiltrados.forEach(e => {
+        const ts = e.fecha?.toMillis?.() ?? (e.fecha?.seconds ? e.fecha.seconds * 1000 : null);
+        if (!ts) return;
+        const key = new Date(ts).toISOString().split('T')[0];
+        if (!map[key]) return;
+        if (e.tipo === 'generar_certificado') map[key].cert++;
+        else if (e.tipo === 'generar_informe') map[key].informe++;
+        else if (e.tipo === 'generar_acta') map[key].acta++;
+        else map[key].otros++;
+      });
+      return Object.entries(map).map(([fecha, v]) => ({ fecha, ...v, total: v.cert + v.informe + v.acta + v.otros }));
+    }, [eventosFiltrados, filtro]);
+
+    const maxBarTotal = useMemo(() => Math.max(...porDia.map(d => d.total), 1), [porDia]);
+
+    const porCentro = useMemo(() => {
+      const map: Record<string, { nombreCentro: string; titular: string; cert: number; informe: number; acta: number; ultima: number }> = {};
+      eventosFiltrados.filter(e => e.codigoCentro).forEach(e => {
+        const k = e.codigoCentro!;
+        if (!map[k]) map[k] = { nombreCentro: e.nombreCentro ?? k, titular: e.titular ?? '', cert: 0, informe: 0, acta: 0, ultima: 0 };
+        if (e.tipo === 'generar_certificado') map[k].cert++;
+        else if (e.tipo === 'generar_informe') map[k].informe++;
+        else if (e.tipo === 'generar_acta') map[k].acta++;
+        const ts = e.fecha?.toMillis?.() ?? (e.fecha?.seconds ? e.fecha.seconds * 1000 : 0);
+        if (ts > map[k].ultima) { map[k].ultima = ts; map[k].titular = e.titular ?? map[k].titular; }
+      });
+      return Object.entries(map).sort((a, b) => (b[1].cert + b[1].informe + b[1].acta) - (a[1].cert + a[1].informe + a[1].acta));
+    }, [eventosFiltrados]);
+
+    const porUsuario = useMemo(() => {
+      const map: Record<string, { sesiones: number; docs: number; ultima: number }> = {};
+      eventosFiltrados.forEach(e => {
+        if (!map[e.usuario]) map[e.usuario] = { sesiones: 0, docs: 0, ultima: 0 };
+        if (e.tipo === 'login') map[e.usuario].sesiones++;
+        if (['generar_certificado','generar_informe','generar_acta'].includes(e.tipo)) map[e.usuario].docs++;
+        const ts = e.fecha?.toMillis?.() ?? (e.fecha?.seconds ? e.fecha.seconds * 1000 : 0);
+        if (ts > map[e.usuario].ultima) map[e.usuario].ultima = ts;
+      });
+      return Object.entries(map).sort((a, b) => b[1].docs - a[1].docs);
+    }, [eventosFiltrados]);
+
+    const totalUsuariosConocidos = useMemo(() => new Set(eventos.map(e => e.usuario)).size, [eventos]);
+    const usuariosActivosFiltro = useMemo(() => new Set(eventosFiltrados.map(e => e.usuario)).size, [eventosFiltrados]);
+    const tasaAdopcion = totalUsuariosConocidos > 0 ? Math.round((usuariosActivosFiltro / totalUsuariosConocidos) * 100) : 0;
+
+    const docsIniciadosTotal = useMemo(() => new Set(
+      eventos.filter(e => e.codigoCentro).map(e => e.codigoCentro)
+    ).size, [eventos]);
+    const docsCompletados = useMemo(() => new Set(
+      eventosFiltrados.filter(e => ['generar_certificado','generar_informe','generar_acta'].includes(e.tipo) && e.codigoCentro).map(e => e.codigoCentro)
+    ).size, [eventosFiltrados]);
+    const tasaCompletitud = docsIniciadosTotal > 0 ? Math.round((docsCompletados / docsIniciadosTotal) * 100) : 0;
+
+    const recenteEventos = eventosFiltrados.slice(0, 100);
+
+    const fmtDate = (ts: any) => {
+      const ms = ts?.toMillis?.() ?? (ts?.seconds ? ts.seconds * 1000 : null);
+      if (!ms) return '—';
+      const d = new Date(ms);
+      return `${d.toLocaleDateString('es-CL')} ${d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}`;
+    };
+
+    const tipoLabel: Record<string, string> = {
+      login: 'Acceso',
+      generar_certificado: 'Certificado',
+      generar_informe: 'Informe',
+      generar_acta: 'Acta',
+      ver_historico: 'Ver historial',
+      abrir_registro: 'Abrir registro',
+      crear_registro: 'Nuevo registro',
+    };
+
+    const tipoColor: Record<string, string> = {
+      login: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
+      generar_certificado: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+      generar_informe: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+      generar_acta: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
+      ver_historico: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+      abrir_registro: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+      crear_registro: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+    };
+
+    // Horario de uso (por hora del día)
+    const porHora = useMemo(() => {
+      const map: Record<number, number> = {};
+      for (let h = 0; h < 24; h++) map[h] = 0;
+      eventosFiltrados.forEach(e => {
+        const ts = e.fecha?.toMillis?.() ?? (e.fecha?.seconds ? e.fecha.seconds * 1000 : null);
+        if (!ts) return;
+        map[new Date(ts).getHours()]++;
+      });
+      return Object.entries(map).map(([h, count]) => ({ hora: Number(h), count }));
+    }, [eventosFiltrados]);
+    const maxHora = useMemo(() => Math.max(...porHora.map(h => h.count), 1), [porHora]);
+
+    const exportStatsJson = () => {
+      const data = {
+        exportado: new Date().toISOString(),
+        periodo: filtro,
+        kpis,
+        tasaAdopcion,
+        tasaCompletitud,
+        porCentro: porCentro.map(([codigo, v]) => ({ codigo, ...v, ultima: fmtDate(v.ultima ? { seconds: v.ultima / 1000 } : null) })),
+        porUsuario: porUsuario.map(([usuario, v]) => ({ usuario, ...v, ultima: fmtDate(v.ultima ? { seconds: v.ultima / 1000 } : null) })),
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `stats-certimar-${new Date().toISOString().split('T')[0]}.json`; a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    // Hooks ya fueron llamados — ahora es seguro retornar null condicionalmente
+    if (activeTab !== 'stats' || !isAdmin) return null;
+    if (statsLoading) return (
+      <div className="flex flex-col items-center justify-center py-32 gap-4">
+        <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-slate-500 dark:text-slate-400">Cargando estadísticas...</p>
+      </div>
+    );
+
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10 pb-12">
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-3">
+              <BarChart2 className="text-indigo-500" size={28} />
+              Estadísticas de Uso
+            </h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Panel de control para directivos — {eventosFiltrados.length} eventos en el período seleccionado
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 text-xs font-bold">
+              {(['7d','30d','90d','all'] as const).map(f => (
+                <button key={f} onClick={() => setFiltro(f)}
+                  className={cn("px-3 py-2 transition-colors", filtro === f ? "bg-indigo-600 text-white" : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700")}
+                >
+                  {f === '7d' ? '7 días' : f === '30d' ? '30 días' : f === '90d' ? '90 días' : 'Todo'}
+                </button>
+              ))}
+            </div>
+            <button onClick={exportStatsJson}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors"
+            >
+              <Download size={14} /> Exportar JSON
+            </button>
+          </div>
+        </div>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Sesiones', value: kpis.sesiones, icon: Activity, color: 'indigo', desc: 'Accesos al sistema' },
+            { label: 'Documentos generados', value: kpis.docsTotal, icon: FileText, color: 'emerald', desc: 'Cert. + Informes + Actas' },
+            { label: 'Centros inspeccionados', value: kpis.centrosUnicos, icon: Anchor, color: 'sky', desc: 'Centros únicos con docs' },
+            { label: 'Usuarios activos', value: kpis.usuariosUnicos, icon: Users, color: 'violet', desc: 'En el período seleccionado' },
+          ].map(({ label, value, icon: Icon, color, desc }) => (
+            <div key={label} className={cn(
+              "rounded-2xl p-5 border flex flex-col gap-2 bg-white dark:bg-slate-800",
+              color === 'indigo' && "border-indigo-100 dark:border-indigo-500/20",
+              color === 'emerald' && "border-emerald-100 dark:border-emerald-500/20",
+              color === 'sky' && "border-sky-100 dark:border-sky-500/20",
+              color === 'violet' && "border-violet-100 dark:border-violet-500/20",
+            )}>
+              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center",
+                color === 'indigo' && "bg-indigo-50 dark:bg-indigo-500/10",
+                color === 'emerald' && "bg-emerald-50 dark:bg-emerald-500/10",
+                color === 'sky' && "bg-sky-50 dark:bg-sky-500/10",
+                color === 'violet' && "bg-violet-50 dark:bg-violet-500/10",
+              )}>
+                <Icon size={20} className={cn(
+                  color === 'indigo' && "text-indigo-500",
+                  color === 'emerald' && "text-emerald-500",
+                  color === 'sky' && "text-sky-500",
+                  color === 'violet' && "text-violet-500",
+                )} />
+              </div>
+              <div className="text-3xl font-bold text-slate-800 dark:text-white">{value}</div>
+              <div>
+                <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{label}</div>
+                <div className="text-xs text-slate-400 dark:text-slate-500">{desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Indicadores pedagógicos */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-2xl p-5 border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+              <TrendingUp size={16} className="text-emerald-500" />
+              Tasa de adopción
+            </div>
+            <div className="text-4xl font-bold text-slate-800 dark:text-white">{tasaAdopcion}<span className="text-xl text-slate-400">%</span></div>
+            <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700">
+              <div className="h-2 rounded-full bg-emerald-500 transition-all" style={{ width: `${tasaAdopcion}%` }} />
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Usuarios activos vs. total registrado ({usuariosActivosFiltro}/{totalUsuariosConocidos})</p>
+          </div>
+
+          <div className="rounded-2xl p-5 border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+              <CheckCircle2 size={16} className="text-sky-500" />
+              Tasa de completitud
+            </div>
+            <div className="text-4xl font-bold text-slate-800 dark:text-white">{tasaCompletitud}<span className="text-xl text-slate-400">%</span></div>
+            <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700">
+              <div className="h-2 rounded-full bg-sky-500 transition-all" style={{ width: `${tasaCompletitud}%` }} />
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Centros con al menos un documento generado ({docsCompletados}/{docsIniciadosTotal})</p>
+          </div>
+
+          <div className="rounded-2xl p-5 border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+              <Award size={16} className="text-violet-500" />
+              Documentos por tipo
+            </div>
+            {[
+              { label: 'Certificados', count: kpis.certCount, color: 'emerald' },
+              { label: 'Informes técnicos', count: kpis.informeCount, color: 'indigo' },
+              { label: 'Actas de inspección', count: kpis.actaCount, color: 'violet' },
+            ].map(({ label, count, color }) => (
+              <div key={label} className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 dark:text-slate-400 w-36 shrink-0">{label}</span>
+                <div className="flex-1 h-2 rounded-full bg-slate-100 dark:bg-slate-700">
+                  <div className={cn("h-2 rounded-full transition-all",
+                    color === 'emerald' && "bg-emerald-500",
+                    color === 'indigo' && "bg-indigo-500",
+                    color === 'violet' && "bg-violet-500",
+                  )} style={{ width: kpis.docsTotal > 0 ? `${(count / kpis.docsTotal) * 100}%` : '0%' }} />
+                </div>
+                <span className="text-sm font-bold text-slate-700 dark:text-slate-200 w-6 text-right">{count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Actividad diaria */}
+        <div className="rounded-2xl p-6 border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2">
+            <Activity size={16} className="text-indigo-500" />
+            Actividad diaria
+            <span className="text-xs font-normal text-slate-400 dark:text-slate-500 ml-1">— apilado por tipo de documento</span>
+          </h2>
+          <div className="flex items-end gap-1 h-32 overflow-x-auto">
+            {porDia.map(({ fecha, cert, informe, acta, otros }) => {
+              const totalBar = cert + informe + acta + otros;
+              const heightPct = (totalBar / maxBarTotal) * 100;
+              const label = fecha.slice(5); // MM-DD
+              return (
+                <div key={fecha} className="flex flex-col items-center gap-1 flex-shrink-0" style={{ minWidth: filtro === 'all' || filtro === '90d' ? '10px' : filtro === '30d' ? '18px' : '32px' }}>
+                  <div className="flex flex-col-reverse justify-start w-full" style={{ height: '100px' }}>
+                    <div className="w-full flex flex-col-reverse overflow-hidden rounded-sm" style={{ height: `${Math.max(heightPct, totalBar > 0 ? 4 : 0)}%` }}>
+                      {cert > 0 && <div className="bg-emerald-500 w-full" style={{ flex: cert }} />}
+                      {informe > 0 && <div className="bg-indigo-500 w-full" style={{ flex: informe }} />}
+                      {acta > 0 && <div className="bg-violet-500 w-full" style={{ flex: acta }} />}
+                      {otros > 0 && <div className="bg-slate-300 dark:bg-slate-600 w-full" style={{ flex: otros }} />}
+                    </div>
+                  </div>
+                  {(filtro === '7d' || (filtro === '30d' && porDia.indexOf(porDia.find(d => d.fecha === fecha)!) % 3 === 0)) && (
+                    <span className="text-[8px] text-slate-400 dark:text-slate-500 rotate-45 origin-left w-8">{label}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-4 mt-3 text-xs text-slate-500 dark:text-slate-400">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500 inline-block" /> Certificado</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-indigo-500 inline-block" /> Informe</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-violet-500 inline-block" /> Acta</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-slate-300 dark:bg-slate-600 inline-block" /> Otras acciones</span>
+          </div>
+        </div>
+
+        {/* Horario de uso */}
+        <div className="rounded-2xl p-6 border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2">
+            <Clock size={16} className="text-amber-500" />
+            Horario de uso
+            <span className="text-xs font-normal text-slate-400 dark:text-slate-500 ml-1">— distribución de actividad por hora del día</span>
+          </h2>
+          <div className="flex items-end gap-1 h-20">
+            {porHora.map(({ hora, count }) => (
+              <div key={hora} className="flex flex-col items-center gap-1 flex-1">
+                <div className="w-full flex flex-col justify-end" style={{ height: '60px' }}>
+                  <div className={cn("w-full rounded-sm transition-all", count > 0 ? "bg-amber-400 dark:bg-amber-500" : "bg-slate-100 dark:bg-slate-700")}
+                    style={{ height: `${Math.max((count / maxHora) * 100, count > 0 ? 8 : 2)}%` }} />
+                </div>
+                {hora % 6 === 0 && (
+                  <span className="text-[9px] text-slate-400 dark:text-slate-500">{hora}h</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Top Centros */}
+          <div className="rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
+              <Anchor size={16} className="text-sky-500" />
+              <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200">Centros inspeccionados</h2>
+              <span className="ml-auto text-xs text-slate-400">{porCentro.length} centros</span>
+            </div>
+            {porCentro.length === 0 ? (
+              <div className="px-6 py-8 text-center text-sm text-slate-400 dark:text-slate-500">Sin datos para el período</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-700">
+                      <th className="px-4 py-2 text-left font-semibold text-slate-500 dark:text-slate-400">Centro</th>
+                      <th className="px-2 py-2 text-center font-semibold text-emerald-600 dark:text-emerald-400">Cert</th>
+                      <th className="px-2 py-2 text-center font-semibold text-indigo-600 dark:text-indigo-400">Inf</th>
+                      <th className="px-2 py-2 text-center font-semibold text-violet-600 dark:text-violet-400">Acta</th>
+                      <th className="px-3 py-2 text-right font-semibold text-slate-500 dark:text-slate-400">Última actividad</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {porCentro.slice(0, 15).map(([codigo, v]) => (
+                      <tr key={codigo} className="border-b border-slate-50 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                        <td className="px-4 py-2.5">
+                          <div className="font-semibold text-slate-700 dark:text-slate-200 truncate max-w-[160px]">{v.nombreCentro}</div>
+                          <div className="text-slate-400 dark:text-slate-500">{codigo}</div>
+                        </td>
+                        <td className="px-2 py-2.5 text-center">
+                          <span className={cn("px-1.5 py-0.5 rounded-md font-bold", v.cert > 0 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" : "text-slate-300 dark:text-slate-600")}>{v.cert}</span>
+                        </td>
+                        <td className="px-2 py-2.5 text-center">
+                          <span className={cn("px-1.5 py-0.5 rounded-md font-bold", v.informe > 0 ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300" : "text-slate-300 dark:text-slate-600")}>{v.informe}</span>
+                        </td>
+                        <td className="px-2 py-2.5 text-center">
+                          <span className={cn("px-1.5 py-0.5 rounded-md font-bold", v.acta > 0 ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" : "text-slate-300 dark:text-slate-600")}>{v.acta}</span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                          {fmtDate({ seconds: v.ultima / 1000 })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Actividad por usuario */}
+          <div className="rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
+              <Users size={16} className="text-violet-500" />
+              <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200">Actividad por usuario</h2>
+              <span className="ml-auto text-xs text-slate-400">{porUsuario.length} usuarios</span>
+            </div>
+            {porUsuario.length === 0 ? (
+              <div className="px-6 py-8 text-center text-sm text-slate-400 dark:text-slate-500">Sin datos para el período</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-700">
+                      <th className="px-4 py-2 text-left font-semibold text-slate-500 dark:text-slate-400">Usuario</th>
+                      <th className="px-2 py-2 text-center font-semibold text-slate-500 dark:text-slate-400">Sesiones</th>
+                      <th className="px-2 py-2 text-center font-semibold text-slate-500 dark:text-slate-400">Docs gen.</th>
+                      <th className="px-3 py-2 text-right font-semibold text-slate-500 dark:text-slate-400">Último acceso</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {porUsuario.map(([usuario, v]) => {
+                      const semaforo = v.docs > 5 ? 'verde' : v.docs > 1 ? 'amarillo' : 'rojo';
+                      return (
+                        <tr key={usuario} className="border-b border-slate-50 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className={cn("w-2 h-2 rounded-full shrink-0",
+                                semaforo === 'verde' && "bg-emerald-500",
+                                semaforo === 'amarillo' && "bg-amber-400",
+                                semaforo === 'rojo' && "bg-rose-400",
+                              )} />
+                              <span className="font-medium text-slate-700 dark:text-slate-200 truncate max-w-[150px]">{usuario}</span>
+                            </div>
+                          </td>
+                          <td className="px-2 py-2.5 text-center font-semibold text-slate-700 dark:text-slate-200">{v.sesiones}</td>
+                          <td className="px-2 py-2.5 text-center">
+                            <span className={cn("px-2 py-0.5 rounded-md font-bold",
+                              v.docs > 0 ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300" : "text-slate-300 dark:text-slate-600"
+                            )}>{v.docs}</span>
+                          </td>
+                          <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                            {fmtDate({ seconds: v.ultima / 1000 })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Log de actividad reciente */}
+        <div className="rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
+            <AlertTriangle size={16} className="text-amber-500" />
+            <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200">Log de actividad reciente</h2>
+            <span className="ml-auto text-xs text-slate-400">Últimos {recenteEventos.length} eventos</span>
+          </div>
+          <div className="overflow-x-auto max-h-96 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10">
+                <tr className="border-b border-slate-100 dark:border-slate-700">
+                  <th className="px-4 py-2 text-left font-semibold text-slate-500 dark:text-slate-400">Fecha</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-500 dark:text-slate-400">Usuario</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-500 dark:text-slate-400">Acción</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-500 dark:text-slate-400">Centro</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recenteEventos.map((e) => (
+                  <tr key={e.id} className="border-b border-slate-50 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                    <td className="px-4 py-2 whitespace-nowrap text-slate-500 dark:text-slate-400 font-mono">{fmtDate(e.fecha)}</td>
+                    <td className="px-3 py-2 text-slate-700 dark:text-slate-200 max-w-[160px] truncate">{e.usuario}</td>
+                    <td className="px-3 py-2">
+                      <span className={cn("px-2 py-0.5 rounded-md font-semibold text-[11px]", tipoColor[e.tipo] ?? 'bg-slate-100 text-slate-600')}>
+                        {tipoLabel[e.tipo] ?? e.tipo}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-500 dark:text-slate-400 max-w-[180px] truncate">
+                      {e.nombreCentro ? <span title={e.codigoCentro}>{e.nombreCentro}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}
+                    </td>
+                  </tr>
+                ))}
+                {recenteEventos.length === 0 && (
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500">Sin actividad en el período</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // --- Views ---
 
@@ -3523,6 +4790,15 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <FormCard title="Identificación del Centro">
           <div className="space-y-4">
+            {centroOperacionMinima && (
+              <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-500/30 rounded-xl text-xs">
+                <AlertTriangle size={14} className="text-amber-500 mt-0.5 shrink-0" />
+                <div>
+                  <span className="font-bold text-amber-700 dark:text-amber-300">Centro Operación Mínima</span>
+                  <span className="text-amber-600 dark:text-amber-400 ml-1">— {centroOperacionMinima.nota}</span>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <CenterCodeAutocomplete
                 inputRef={centerCodeRef}
@@ -3703,6 +4979,217 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           icon={darkMode ? Moon : Sun}
         />
 
+        {/* Intensidad de olas en PDF */}
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 px-5 py-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Olas en el PDF</p>
+              <p className="text-xs text-slate-400 mt-0.5">Intensidad de las líneas decorativas en el informe y certificado</p>
+            </div>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 w-10 text-right">
+              {Math.round(wavesOpacity * 100)}%
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0} max={0.20} step={0.01}
+            value={wavesOpacity}
+            onChange={e => setWavesOpacity(parseFloat(e.target.value))}
+            className="w-full accent-indigo-600"
+          />
+          <div className="flex justify-between text-[10px] text-slate-400">
+            <span>Sin olas</span>
+            <span>Muy visibles</span>
+          </div>
+        </div>
+
+        {/* Opacidad logo empresa en portada */}
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 px-5 py-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Logo empresa en portada</p>
+              <p className="text-xs text-slate-400 mt-0.5">Opacidad de la marca de agua vertical del logo seleccionado</p>
+            </div>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 w-10 text-right">
+              {Math.round(logoPortadaOpacity * 100)}%
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0} max={1} step={0.05}
+            value={logoPortadaOpacity}
+            onChange={e => setLogoPortadaOpacity(parseFloat(e.target.value))}
+            onPointerUp={e => saveLogoPortadaOpacity(parseFloat((e.target as HTMLInputElement).value))}
+            className="w-full accent-violet-600"
+          />
+          <div className="flex justify-between text-[10px] text-slate-400">
+            <span>Invisible</span>
+            <span>Opaco</span>
+          </div>
+        </div>
+
+        {/* Posición y tamaño del logo de marca */}
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 px-5 py-4 space-y-4">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Logo de marca — posición y tamaño</p>
+
+          {/* Vista preliminar */}
+          {(() => {
+            const PW_MM = 215.9, SHOW_H_MM = 120;
+            const sc = (n: number) => `${(n / PW_MM * 100).toFixed(3)}%`;
+            const sy = (n: number) => `${(n / SHOW_H_MM * 100).toFixed(3)}%`;
+            const logoSrc = tema.logo === 'engelbert' ? '/engelbert-logo.png' : '/certimar-logo.png';
+            const gX = Array.from({length: Math.floor(PW_MM / 10)}, (_, i) => (i + 1) * 10);
+            const gY = Array.from({length: Math.floor(SHOW_H_MM / 10)}, (_, i) => (i + 1) * 10);
+            // Posiciones fijas de referencia (no se mueven con el logo)
+            const BAR_Y = 24, TITLE_Y = 50;
+            return (
+              <div className="relative bg-white border border-slate-300 dark:border-slate-600 rounded-lg overflow-hidden w-full shadow-inner"
+                   style={{paddingTop: `${(SHOW_H_MM / PW_MM * 100).toFixed(2)}%`}}>
+                <div className="absolute inset-0">
+                  {/* Grilla cada 10mm */}
+                  {gX.map(x => (
+                    <div key={`gx${x}`} className="absolute top-0 bottom-0"
+                         style={{left: sc(x), width: '1px', background: x % 50 === 0 ? 'rgba(99,120,150,.18)' : 'rgba(99,120,150,.07)'}} />
+                  ))}
+                  {gY.map(y => (
+                    <div key={`gy${y}`} className="absolute left-0 right-0"
+                         style={{top: sy(y), height: '1px', background: y % 50 === 0 ? 'rgba(99,120,150,.18)' : 'rgba(99,120,150,.07)'}} />
+                  ))}
+                  {/* Franja navy */}
+                  <div className="absolute left-0 right-0 top-0" style={{height: sy(2), background: '#1B3464'}} />
+                  {/* Barra vertical — fija en x=11.5mm, y=BAR_Y */}
+                  <div className="absolute" style={{
+                    left: sc(11.5), top: sy(BAR_Y),
+                    width: sc(1.1), height: sy(55), background: '#4A9BC4', borderRadius: '1px'
+                  }} />
+                  {/* Título INFORME TÉCNICO — fijo */}
+                  <div className="absolute select-none" style={{left: sc(21), top: sy(TITLE_Y)}}>
+                    <p style={{fontSize: '9px', fontWeight: 900, color: '#1B3464', margin: 0, lineHeight: 1.15, fontFamily: 'Arial Black, Arial, sans-serif'}}>INFORME</p>
+                    <p style={{fontSize: '9px', fontWeight: 900, color: '#1B3464', margin: 0, lineHeight: 1.15, fontFamily: 'Arial Black, Arial, sans-serif'}}>TÉCNICO</p>
+                  </div>
+                  {/* Logo marca */}
+                  <img src={logoSrc} alt="preview logo"
+                    style={{position: 'absolute', left: sc(logoMarcaX), top: sy(logoMarcaY), width: sc(logoMarcaW), objectFit: 'contain', display: 'block'}}
+                  />
+                  {/* Ref y fecha — derecha */}
+                  <div className="absolute select-none" style={{right: sc(8), top: sy(9), textAlign: 'right', lineHeight: 1.7}}>
+                    <p style={{fontSize: '5.5px', color: '#1B3464', fontFamily: 'monospace', margin: 0}}>110549190226MOR</p>
+                    <p style={{fontSize: '5.5px', color: '#5a7a94', margin: 0}}>22 de marzo del 2026</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Sliders */}
+          {([
+            { label: 'X', unit: 'mm', val: logoMarcaX, set: setLogoMarcaX, min: 0, max: 80, step: 0.5 },
+            { label: 'Y', unit: 'mm', val: logoMarcaY, set: setLogoMarcaY, min: 2, max: 25, step: 0.5 },
+            { label: 'Tamaño', unit: 'mm', val: logoMarcaW, set: setLogoMarcaW, min: 5, max: 60, step: 0.5 },
+          ] as const).map(({ label, unit, val, set, min, max, step }) => (
+            <div key={label} className="space-y-1">
+              <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span className="font-medium">{label}</span>
+                <span className="font-bold text-slate-700 dark:text-slate-200">{val.toFixed(1)} {unit}</span>
+              </div>
+              <input type="range" min={min} max={max} step={step} value={val}
+                onChange={e => set(parseFloat(e.target.value))}
+                className="w-full accent-indigo-500"
+              />
+            </div>
+          ))}
+
+          <button
+            onClick={saveLogoMarcaSettings}
+            className="w-full py-2 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white transition-colors"
+          >
+            Guardar posición
+          </button>
+        </div>
+
+        {/* Posición, tamaño y rotación del watermark logo */}
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 px-5 py-4 space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Logo empresa — watermark portada</p>
+            <p className="text-xs text-slate-400 mt-0.5">Posición, tamaño y rotación del logo de la empresa</p>
+          </div>
+
+          {/* Vista preliminar página completa */}
+          {(() => {
+            const PW_MM = 215.9, PH_MM = 279.4;
+            const scw = (n: number) => `${(n / PW_MM * 100).toFixed(3)}%`;
+            const sch = (n: number) => `${(n / PH_MM * 100).toFixed(3)}%`;
+            return (
+              <div className="relative bg-white border border-slate-300 dark:border-slate-600 rounded-lg overflow-hidden w-full shadow-inner"
+                   style={{paddingTop: `${(PH_MM / PW_MM * 100).toFixed(2)}%`}}>
+                <div className="absolute inset-0">
+                  {/* Franja navy */}
+                  <div className="absolute left-0 right-0 top-0" style={{height: sch(2), background: '#1B3464'}} />
+                  {/* Ondas aprox al fondo */}
+                  <div className="absolute left-0 right-0" style={{bottom: 0, height: sch(80), background: 'linear-gradient(to bottom, rgba(107,206,218,.4), rgba(30,71,150,.5))'}} />
+                  {/* Barra vertical — referencia fija */}
+                  <div className="absolute" style={{left: scw(11.5), top: sch(24), width: scw(1.1), height: sch(55), background: '#4A9BC4'}} />
+                  {/* Título — referencia fija */}
+                  <div className="absolute select-none" style={{left: scw(21), top: sch(50)}}>
+                    <p style={{fontSize: '5px', fontWeight: 900, color: '#1B3464', margin: 0, lineHeight: 1.2, fontFamily: 'Arial Black, Arial, sans-serif'}}>INFORME</p>
+                    <p style={{fontSize: '5px', fontWeight: 900, color: '#1B3464', margin: 0, lineHeight: 1.2, fontFamily: 'Arial Black, Arial, sans-serif'}}>TÉCNICO</p>
+                  </div>
+                  {/* Watermark logo */}
+                  {logoClienteUrl ? (
+                    <img src={logoClienteUrl} alt="wm preview"
+                      style={{
+                        position: 'absolute',
+                        left: scw(logoWmX), top: sch(logoWmY),
+                        width: scw(logoWmW),
+                        opacity: logoPortadaOpacity,
+                        transform: `rotate(${logoWmRotation}deg)`,
+                        transformOrigin: 'top left',
+                        objectFit: 'contain',
+                        display: 'block',
+                      }}
+                    />
+                  ) : (
+                    <div style={{
+                      position: 'absolute', left: scw(logoWmX), top: sch(logoWmY),
+                      width: scw(logoWmW), height: sch(15),
+                      background: 'rgba(100,150,200,0.12)', border: '1px dashed rgba(100,150,200,0.35)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '4px', color: '#7a9ab4',
+                      transform: `rotate(${logoWmRotation}deg)`, transformOrigin: 'top left',
+                    }}>logo</div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Sliders */}
+          {([
+            { label: 'X', unit: 'mm', val: logoWmX, set: setLogoWmX, min: 0, max: 210, step: 0.5, decimals: 1 },
+            { label: 'Y', unit: 'mm', val: logoWmY, set: setLogoWmY, min: 0, max: 260, step: 0.5, decimals: 1 },
+            { label: 'Tamaño', unit: 'mm', val: logoWmW, set: setLogoWmW, min: 5, max: 80, step: 0.5, decimals: 1 },
+            { label: 'Rotación', unit: '°', val: logoWmRotation, set: setLogoWmRotation, min: -180, max: 180, step: 1, decimals: 0 },
+          ] as const).map(({ label, unit, val, set, min, max, step, decimals }) => (
+            <div key={label} className="space-y-1">
+              <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span className="font-medium">{label}</span>
+                <span className="font-bold text-slate-700 dark:text-slate-200">{val.toFixed(decimals)} {unit}</span>
+              </div>
+              <input type="range" min={min} max={max} step={step} value={val}
+                onChange={e => set(parseFloat(e.target.value))}
+                className="w-full accent-violet-500"
+              />
+            </div>
+          ))}
+
+          <button
+            onClick={saveLogoWmSettings}
+            className="w-full py-2 rounded-xl text-sm font-semibold bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white transition-colors"
+          >
+            Guardar watermark
+          </button>
+        </div>
+
         {/* Tema / Marca */}
         <div className="space-y-3">
           <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 px-1">Tema / Marca</p>
@@ -3861,6 +5348,108 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           </button>
         )}
       </section>
+
+      {/* ── Logos de Empresas ── */}
+      {isAdmin && (
+        <section className="space-y-5">
+          <div className="flex items-center gap-2 mb-1">
+            <Building2 size={16} className="text-violet-500" />
+            <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Logos de Empresas Clientes</h2>
+          </div>
+
+          {Object.keys(logosEmpresas).length === 0 ? (
+            <p className="text-xs text-slate-400 dark:text-slate-500">Sin logos cargados. Sube los logos de tus empresas clientes para que aparezcan en la portada del informe.</p>
+          ) : (() => {
+            const portadaEntries = Object.entries(logosEmpresas).filter(([n]) => logosPortada.has(n));
+            const restEntries    = Object.entries(logosEmpresas).filter(([n]) => !logosPortada.has(n));
+
+            const LogoCard = ({ name, url }: { name: string; url: string }) => (
+              <div key={name} className={cn(
+                "flex flex-col items-center gap-1.5 p-3 rounded-xl border bg-white dark:bg-slate-800",
+                logosPortada.has(name)
+                  ? "border-violet-300 dark:border-violet-500/50 ring-1 ring-violet-200 dark:ring-violet-500/20"
+                  : "border-slate-200 dark:border-slate-700"
+              )}>
+                <img src={url} alt={name} className="h-10 w-auto object-contain max-w-full" />
+                {renamingLogo === name ? (
+                  <div className="flex flex-col items-center gap-1 w-full">
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') renameLogo(name, renameValue);
+                        if (e.key === 'Escape') setRenamingLogo(null);
+                      }}
+                      className="w-full text-[10px] text-center px-1.5 py-1 rounded border border-indigo-300 dark:border-indigo-500 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={() => renameLogo(name, renameValue)} className="text-[10px] text-indigo-500 hover:text-indigo-700 font-semibold transition-colors">Guardar</button>
+                      <button onClick={() => setRenamingLogo(null)} className="text-[10px] text-slate-400 hover:text-slate-600 transition-colors">Cancelar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-500 text-center break-all leading-tight">{name}</span>
+                    <button onClick={() => { setRenamingLogo(name); setRenameValue(name); }} className="text-slate-300 hover:text-indigo-400 transition-colors shrink-0" title="Renombrar">
+                      <Pencil size={10} />
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mt-0.5">
+                  <button
+                    onClick={() => toggleLogoPortada(name)}
+                    className={cn(
+                      "text-[10px] font-semibold transition-colors",
+                      logosPortada.has(name)
+                        ? "text-violet-500 hover:text-violet-700"
+                        : "text-slate-400 hover:text-violet-500"
+                    )}
+                  >
+                    {logosPortada.has(name) ? '★ Portada' : '☆ Portada'}
+                  </button>
+                  <span className="text-slate-200 dark:text-slate-700 text-[10px]">·</span>
+                  <button onClick={() => deleteLogoEmpresa(name)} className="text-[10px] text-red-400 hover:text-red-600 transition-colors">Eliminar</button>
+                </div>
+              </div>
+            );
+
+            return (
+              <div className="space-y-5">
+                {/* Categoría Portada */}
+                {portadaEntries.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold text-violet-500 uppercase tracking-widest flex items-center gap-1">
+                      <Star size={10} /> Portada del informe
+                    </p>
+                    <div className="grid grid-cols-3 gap-3">
+                      {portadaEntries.map(([name, url]) => <LogoCard key={name} name={name} url={url} />)}
+                    </div>
+                  </div>
+                )}
+
+                {/* Categoría General */}
+                {restEntries.length > 0 && (
+                  <div className="space-y-2">
+                    {portadaEntries.length > 0 && (
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Todas las empresas</p>
+                    )}
+                    <div className="grid grid-cols-3 gap-3">
+                      {restEntries.map(([name, url]) => <LogoCard key={name} name={name} url={url} />)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400 text-xs font-semibold border border-violet-200 dark:border-violet-500/30 cursor-pointer hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors">
+            <Upload size={13} />
+            Subir logo de empresa
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="sr-only" onChange={handleUploadLogoEmpresa} />
+          </label>
+        </section>
+      )}
 
       {/* ── Sistema ── */}
       <section className="space-y-3">
@@ -4326,9 +5915,34 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       {CATALOGO_DESNATURALIZACION.trituradoras.map(t => (
                         <option key={t.id} value={t.id}>{t.marca_modelo}</option>
                       ))}
+                      {catalogoCustom.filter(c => c.tipo === 'trituradora').length > 0 && (
+                        <optgroup label="— Equipos personalizados —">
+                          {catalogoCustom.filter(c => c.tipo === 'trituradora').map(c => (
+                            <option key={c.marca_modelo} value={c.marca_modelo}>{c.marca_modelo}</option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                   </div>
-                  <InputField label="Marca/Modelo Olla" value={state.denaturation.equipos.marca_modelo} onChange={(v) => updateDenaturation('equipos.marca_modelo', v)} />
+                  {pendingCustomEquipo && (
+                    <div className="md:col-span-2 flex items-center gap-3 px-4 py-3 bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-500/30 rounded-xl text-xs">
+                      <Info size={14} className="text-sky-500 shrink-0" />
+                      <span className="text-sky-700 dark:text-sky-300 flex-1">
+                        <span className="font-bold">"{pendingCustomEquipo.marca_modelo}"</span> no está en el catálogo del sistema.
+                        ¿Guardarlo para que todos los usuarios lo vean en el futuro?
+                      </span>
+                      <button onClick={saveCustomEquipo}
+                        className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg transition-colors"
+                      >Guardar</button>
+                      <button onClick={() => setPendingCustomEquipo(null)}
+                        className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-600 dark:text-slate-300 font-bold rounded-lg transition-colors"
+                      >Omitir</button>
+                    </div>
+                  )}
+                  <InputField label="Marca/Modelo Olla" value={state.denaturation.equipos.marca_modelo}
+                    onChange={(v) => updateDenaturation('equipos.marca_modelo', v)}
+                    onBlur={() => checkNuevoEquipo(state.denaturation.equipos.marca_modelo, 'trituradora')}
+                  />
                   <InputField label="Material Construcción" value={state.denaturation.equipos.material_construccion} onChange={(v) => updateDenaturation('equipos.material_construccion', v)} />
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Estado Olla Trituradora</label>
@@ -4432,6 +6046,26 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                           <span className="text-xs text-slate-400 ml-auto">TN/Día</span>
                         </div>
                       </div>
+                      {state.denaturation.incinerador.id_catalogo && (() => {
+                        const inc = state.denaturation.incinerador;
+                        const ReadOnly = ({ label, value }: { label: string; value: string | number }) => (
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
+                            <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-700 dark:text-slate-300 font-mono">
+                              {value || 'N/A'}
+                            </div>
+                          </div>
+                        );
+                        return (
+                          <>
+                            <ReadOnly label="Cámara Primaria (Dimensiones)" value={inc.num_quemadores_primaria ? `${state.denaturation.parametros_incineracion.camara_primaria} — ${inc.num_quemadores_primaria} quemador(es)` : ''} />
+                            <ReadOnly label="Temperatura Cámara Primaria" value={inc.temperatura_camara_primaria_c ? `${inc.temperatura_camara_primaria_c}°C` : ''} />
+                            <ReadOnly label="Cámara Secundaria (Dimensiones)" value={inc.num_quemadores_secundaria ? `${state.denaturation.parametros_incineracion.camara_secundaria} — ${inc.num_quemadores_secundaria} quemador(es)` : ''} />
+                            <ReadOnly label="Temperatura Cámara Secundaria" value={inc.temperatura_camara_secundaria_c ? `${inc.temperatura_camara_secundaria_c}°C` : ''} />
+                            <ReadOnly label="Requerimiento Energético" value={inc.requerimiento_energetico} />
+                          </>
+                        );
+                      })()}
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sistema de Carga</label>
                         <select value={state.denaturation.incinerador.sistema_carga} onChange={(e) => updateDenaturation('incinerador.sistema_carga', e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none">
@@ -4465,6 +6099,25 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               </FormCard>
             </>
           ) : (
+            <>
+            {(() => {
+              // Propuesta D: advertencia solo cuando incineración es el sistema ÚNICO y principal.
+              // Si es complementario (tipo_sistema === 'Ensilaje' con incinerador.activo), no aplica.
+              const cap_kg_h = state.denaturation.parametros_incineracion.capacidad_carga_kg_h;
+              const max_ton_dia = (cap_kg_h * 24) / 1000;
+              return cap_kg_h > 0 && max_ton_dia < 15 ? (
+                <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-500/40 rounded-xl text-sm">
+                  <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                  <div className="text-amber-800 dark:text-amber-300">
+                    <span className="font-semibold">Capacidad insuficiente:</span> Este incinerador alcanza un máximo de{' '}
+                    <span className="font-mono font-bold">{max_ton_dia.toFixed(2)} TN/día</span> operando 24 horas.
+                    {' '}El umbral mínimo exigido por la Res. Exenta N°1511/2021 es de <span className="font-semibold">15 TN/día</span>.
+                    {' '}Como sistema único principal, no puede certificar cumplimiento normativo.
+                    {' '}Considere complementar con un sistema de ensilaje.
+                  </div>
+                </div>
+              ) : null;
+            })()}
             <FormCard title="Sistema de Incineración">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-1.5 md:col-span-2">
@@ -4488,6 +6141,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 <InputField label="Cámara Secundaria" value={state.denaturation.parametros_incineracion.camara_secundaria} onChange={(v) => updateDenaturation('parametros_incineracion.camara_secundaria', v)} />
               </div>
             </FormCard>
+            </>
           )}
 
           <FormCard title="Generación Eléctrica">
@@ -4638,10 +6292,44 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           </FormCard>
 
           <FormCard title="Dimensiones A/N Pontón">
-            <div className="grid grid-cols-3 gap-4">
-              <InputField label="Eslora" value={state.storage.infraestructura.eslora_m} onChange={(v) => updateStorage('infraestructura.eslora_m', v)} suffix="m" placeholder="25" />
-              <InputField label="Manga" value={state.storage.infraestructura.manga_m} onChange={(v) => updateStorage('infraestructura.manga_m', v)} suffix="m" placeholder="8" />
-              <InputField label="Puntual" value={state.storage.infraestructura.puntual_m} onChange={(v) => updateStorage('infraestructura.puntual_m', v)} suffix="m" placeholder="1.2" />
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Cargar desde catálogo</label>
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    const p = CATALOGO_PLATAFORMAS.find(p => p.nombre === e.target.value);
+                    if (p) {
+                      setState(prev => ({
+                        ...prev,
+                        storage: {
+                          ...prev.storage,
+                          infraestructura: {
+                            ...prev.storage.infraestructura,
+                            eslora_m: p.eslora,
+                            manga_m: p.manga,
+                            puntual_m: p.puntal,
+                          }
+                        }
+                      }));
+                    }
+                    e.target.value = '';
+                  }}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium text-sm"
+                >
+                  <option value="">Seleccionar plataforma conocida…</option>
+                  {CATALOGO_PLATAFORMAS.map(p => (
+                    <option key={p.nombre} value={p.nombre}>
+                      {p.nombre} — {p.eslora} × {p.manga} × {p.puntal} m
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <InputField label="Eslora" value={state.storage.infraestructura.eslora_m} onChange={(v) => updateStorage('infraestructura.eslora_m', v)} suffix="m" placeholder="25" />
+                <InputField label="Manga" value={state.storage.infraestructura.manga_m} onChange={(v) => updateStorage('infraestructura.manga_m', v)} suffix="m" placeholder="8" />
+                <InputField label="Puntual" value={state.storage.infraestructura.puntual_m} onChange={(v) => updateStorage('infraestructura.puntual_m', v)} suffix="m" placeholder="1.2" />
+              </div>
             </div>
           </FormCard>
 
@@ -4786,6 +6474,60 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           description="Grilla de registro fotográfico. Arrastra imágenes y asigna estados y leyendas."
         />
 
+        {/* ── Logo del cliente para la portada ── */}
+        {userRole !== null && Object.keys(logosEmpresas).length > 0 && (
+          <div className="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50">
+            <Building2 size={18} className="text-slate-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Logo en portada del informe</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {logoClienteUrl
+                  ? logoManualOverride
+                    ? `Logo seleccionado manualmente`
+                    : `Auto-seleccionado para "${state.general.centro_cultivo.titular || 'empresa'}"`
+                  : 'Sin logo de empresa en portada.'}
+              </p>
+            </div>
+            {logoClienteUrl && (
+              <img src={logoClienteUrl} alt="logo cliente" className="h-10 w-auto object-contain max-w-[80px] shrink-0" />
+            )}
+            <div className="flex flex-col gap-1 shrink-0">
+              <select
+                value={logoClienteUrl ?? ''}
+                onChange={e => {
+                  const url = e.target.value || null;
+                  const nombre = url ? (Object.keys(logosEmpresas).find(n => logosEmpresas[n] === url) ?? null) : null;
+                  setLogoManualOverride(true);
+                  setLogoClienteUrl(url);
+                  saveLogoClienteSettings(nombre, true);
+                }}
+                className="text-xs px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+              >
+                <option value="">Sin logo</option>
+                {Object.entries(logosEmpresas).map(([name, url]) => (
+                  <option key={name} value={url}>{name}</option>
+                ))}
+              </select>
+              {logoManualOverride && (
+                <button
+                  onClick={() => { setLogoManualOverride(false); saveLogoClienteSettings(null, false); }}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-600 transition-colors text-right"
+                >
+                  Volver a auto-selección
+                </button>
+              )}
+              {logoClienteUrl && (
+                <button
+                  onClick={() => { setLogoManualOverride(true); setLogoClienteUrl(null); saveLogoClienteSettings(null, true); }}
+                  className="text-[10px] text-red-400 hover:text-red-600 transition-colors text-right"
+                >
+                  Quitar logo
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Contador por sección — sticky */}
         <div className="sticky top-0 z-30 -mx-8 md:-mx-12 px-8 md:px-12 py-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-3">
           <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
@@ -4883,7 +6625,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               />
               {registroVisitaName && !registroVisitaProcessing && (
                 <button
-                  onClick={() => { registroVisitaRef.current = null; setRegistroVisitaName(null); }}
+                  onClick={() => { registroVisitaRef.current = null; setRegistroVisitaName(null); idbDeleteRegistroVisita(); }}
                   className="text-rose-500 hover:text-rose-600 transition-colors"
                   title="Quitar PDF"
                 >
@@ -5007,13 +6749,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 .filter(i => i.seccion === img.seccion && i.id !== img.id && i.leyenda !== '')
                 .map(i => i.leyenda);
 
-              // Avisar si ya existe una Portada
-              const isPortada = img.seccion === 'Portada';
-              const portadaConflict = isPortada && state.images.filter(i => i.seccion === 'Portada').length > 1;
-
-              // Fotos de Ubicación Espacial: indicar cuántas hay (máx recomendado = 4)
+              const isPortada  = img.seccion === 'Portada';
+              const isPaisaje  = img.seccion === 'Paisaje';
               const isUbicacion = img.seccion === 'Ubicación Espacial';
               const ubicacionCount = state.images.filter(i => i.seccion === 'Ubicación Espacial').length;
+              const isTecnica = ['Extracción','Desnaturalización','Almacenamiento','General'].includes(img.seccion);
 
               return (
                 <motion.div
@@ -5024,23 +6764,29 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   exit={{ opacity: 0, scale: 0.9 }}
                   className={cn(
                     "bg-white dark:bg-slate-900 rounded-2xl border overflow-hidden shadow-sm group",
-                    isPortada ? "border-violet-300 dark:border-violet-600 ring-2 ring-violet-200 dark:ring-violet-900"
+                    isPortada  ? "border-violet-300 dark:border-violet-600 ring-2 ring-violet-200 dark:ring-violet-900"
+                    : isPaisaje  ? "border-emerald-300 dark:border-emerald-700 ring-2 ring-emerald-100 dark:ring-emerald-900"
                     : isUbicacion ? "border-sky-300 dark:border-sky-600"
+                    : img.enPortada ? "border-violet-200 dark:border-violet-700"
                     : "border-slate-200 dark:border-slate-700"
                   )}
                 >
-                  {/* Etiqueta especial para Portada / Ubicación */}
-                  {(isPortada || isUbicacion) && (
+                  {/* Etiqueta superior por tipo */}
+                  {(isPortada || isPaisaje || isUbicacion) && (
                     <div className={cn(
                       "px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white flex items-center gap-2",
-                      isPortada ? "bg-violet-600" : "bg-sky-600"
+                      isPortada ? "bg-violet-600" : isPaisaje ? "bg-emerald-700" : "bg-sky-600"
                     )}>
-                      {isPortada ? '★ Foto Portada — Aparece en la tapa del informe' : `Ubicación Espacial ${ubicacionCount > 4 ? '⚠ máx. 4 recomendadas' : `(${ubicacionCount}/4)`}`}
+                      {isPortada
+                        ? '★ Foto portada principal'
+                        : isPaisaje
+                        ? '🌄 Paisaje — Fondo de portada'
+                        : `Ubicación Espacial ${ubicacionCount > 4 ? '⚠ máx. 4 recomendadas' : `(${ubicacionCount}/4)`}`}
                     </div>
                   )}
-                  {portadaConflict && (
-                    <div className="px-4 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-[10px] font-semibold">
-                      ⚠ Solo se usará la primera foto Portada en el informe
+                  {img.enPortada && isTecnica && (
+                    <div className="px-4 py-1 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-[10px] font-semibold flex items-center gap-1.5">
+                      <Star size={10} /> También aparece en portada
                     </div>
                   )}
 
@@ -5095,8 +6841,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                           onChange={(e) => updateImage(img.id, { seccion: e.target.value as ImageSeccion })}
                           className="w-full text-xs font-medium bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 outline-none text-slate-900 dark:text-slate-100"
                         >
+                          <optgroup label="── Portada ──">
+                            <option value="Paisaje">🌄 Paisaje / Fondo portada</option>
+                            <option value="Portada">★ Foto portada principal</option>
+                          </optgroup>
                           <optgroup label="── Informe ──">
-                            <option value="Portada">★ Foto Portada</option>
                             <option value="Ubicación Espacial">Ubicación Espacial (4 fotos)</option>
                           </optgroup>
                           <optgroup label="── Secciones técnicas ──">
@@ -5120,6 +6869,20 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         </select>
                       </div>
                     </div>
+                    {isTecnica && (
+                      <button
+                        onClick={() => updateImage(img.id, { enPortada: !img.enPortada })}
+                        className={cn(
+                          "w-full flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold border transition-all",
+                          img.enPortada
+                            ? "bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/40"
+                            : "bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-violet-50 dark:hover:bg-violet-500/10 hover:text-violet-600 hover:border-violet-200"
+                        )}
+                      >
+                        <Star size={11} />
+                        {img.enPortada ? 'En portada · Quitar' : 'Añadir a portada del informe'}
+                      </button>
+                    )}
                     <LeyendaCombo
                       seccion={img.seccion}
                       value={img.leyenda}
@@ -5127,6 +6890,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       m3={state.storage.parametros.capacidad_almacenaje_m3}
                       kva={state.denaturation.generacion_electrica[0]?.capacidad_kva ?? 0}
                       usedLeyendas={usedLeyendas}
+                      savedOpciones={leyendasExtra[img.seccion] ?? []}
+                      onNewLeyenda={saveNewLeyenda}
                     />
                   </div>
                 </motion.div>
@@ -5165,60 +6930,85 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <FormCard title="Checklist de Validación">
-          <div className="space-y-6">
-            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-3">
-                <div className={cn("p-2 rounded-lg", state.extraction.resultados.cumple_norma ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : "bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400")}>
-                  {state.extraction.resultados.cumple_norma ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
+          {(() => {
+            const required = checklistItems.filter(i => i.required);
+            const optional = checklistItems.filter(i => !i.required);
+            const doneReq  = required.filter(i => i.ok).length;
+            const pct      = Math.round((doneReq / required.length) * 100);
+            const grupos   = ['Centro', 'Certificador', 'Capacidades'] as const;
+            return (
+              <div className="space-y-5">
+                {/* Barra de progreso */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-slate-600 dark:text-slate-400">Requisitos obligatorios</span>
+                    <span className={pct === 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}>
+                      {doneReq} / {required.length}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className={cn('h-full rounded-full transition-all duration-500', pct === 100 ? 'bg-emerald-500' : 'bg-rose-500')}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <p className="font-bold text-slate-900 dark:text-white">Extracción</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Mínimo 15 TN/Día</p>
-                </div>
-              </div>
-              <p className="font-mono font-bold text-slate-700 dark:text-slate-300">{state.extraction.resultados.capacidad_diaria_ton} TN</p>
-            </div>
 
-            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-3">
-                <div className={cn("p-2 rounded-lg", state.denaturation.resultados.cumple_norma ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : "bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400")}>
-                  {state.denaturation.resultados.cumple_norma ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
-                </div>
-                <div>
-                  <p className="font-bold text-slate-900 dark:text-white">Desnaturalización</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Mínimo 15 TN/Día</p>
-                </div>
-              </div>
-              <p className="font-mono font-bold text-slate-700 dark:text-slate-300">{state.denaturation.resultados.capacidad_diaria_ton} TN</p>
-            </div>
+                {/* Items obligatorios por grupo */}
+                {grupos.map(grupo => {
+                  const items = required.filter(i => i.grupo === grupo);
+                  return (
+                    <div key={grupo} className="space-y-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 px-1">{grupo}</p>
+                      {items.map(item => (
+                        <div key={item.id} className={cn(
+                          'flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm',
+                          item.ok
+                            ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20'
+                            : 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/20'
+                        )}>
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {item.ok
+                              ? <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+                              : <AlertCircle  size={15} className="text-rose-500 shrink-0" />}
+                            <span className={cn('font-medium truncate', item.ok ? 'text-slate-700 dark:text-slate-200' : 'text-slate-700 dark:text-slate-300')}>
+                              {item.label}
+                            </span>
+                          </div>
+                          <span className={cn('text-xs font-mono shrink-0 ml-2', item.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500')}>
+                            {item.ok ? item.detail : item.detail}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
 
-            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-3">
-                <div className={cn("p-2 rounded-lg", state.storage.resultados.cumple_norma ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : "bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400")}>
-                  {state.storage.resultados.cumple_norma ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
-                </div>
-                <div>
-                  <p className="font-bold text-slate-900 dark:text-white">Almacenamiento</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Mínimo 20 TN</p>
-                </div>
-              </div>
-              <p className="font-mono font-bold text-slate-700 dark:text-slate-300">{state.storage.resultados.capacidad_almacenaje_ton} TN</p>
-            </div>
-
-            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-3">
-                <div className={cn("p-2 rounded-lg", hasImages ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : "bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400")}>
-                  {hasImages ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
-                </div>
-                <div>
-                  <p className="font-bold text-slate-900 dark:text-white">Registro Fotográfico</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {hasImages ? `Imágenes cargadas: ${state.images.length}` : 'Recomendado — sin fotos el informe no tendrá anexo visual'}
-                  </p>
+                {/* Items recomendados */}
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 px-1">Recomendados</p>
+                  {optional.map(item => (
+                    <div key={item.id} className={cn(
+                      'flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm',
+                      item.ok
+                        ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20'
+                        : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20'
+                    )}>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {item.ok
+                          ? <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+                          : <AlertCircle  size={15} className="text-amber-500 shrink-0" />}
+                        <span className="font-medium text-slate-700 dark:text-slate-300 truncate">{item.label}</span>
+                      </div>
+                      <span className={cn('text-xs font-mono shrink-0 ml-2', item.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400')}>
+                        {item.detail}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-          </div>
+            );
+          })()}
         </FormCard>
 
         <div className="flex flex-col justify-center items-center p-12 bg-indigo-600 rounded-3xl text-white text-center space-y-6 shadow-xl shadow-indigo-500/20">
@@ -5267,15 +7057,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           {/* Botón Acta */}
           <button
             disabled={generating !== null || !isAdmin}
-            onClick={async () => {
-              setGenerating('acta');
-              try {
-                await generateActaPdf(state);
-                setShowEmailModal(true);
-                saveToHistorico('acta');
-              } finally {
-                setGenerating(null);
-              }
+            onClick={() => {
+              generateActaPdf(state);
+              setShowEmailModal(true);
+              saveToHistorico('acta');
+              logEvento('generar_acta', { codigoCentro: state.general.centro_cultivo.codigo_centro, nombreCentro: state.general.centro_cultivo.nombre_centro, titular: state.general.centro_cultivo.titular });
             }}
             className={cn(
               "w-full py-3 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-3 shadow-lg",
@@ -5284,20 +7070,19 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 : "bg-indigo-400 text-indigo-200 cursor-not-allowed"
             )}
           >
-            {generating === 'acta'
-              ? <><span className="animate-spin inline-block w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full" /> Generando PDF…</>
-              : <><ShieldCheck size={20} /> Descargar Acta de Inspección</>}
+            <><ShieldCheck size={20} /> Descargar Acta de Inspección</>
           </button>
 
           {!canEmit && (
-            <p className="text-xs text-indigo-200 italic">
-              * Asegúrate de que los 3 sistemas cumplan las capacidades mínimas.
-            </p>
-          )}
-          {canEmit && !hasImages && (
-            <p className="text-xs text-amber-300 italic">
-              * Sin fotos el PDF no incluirá anexo fotográfico.
-            </p>
+            <div className="text-xs text-indigo-200 space-y-0.5 text-left w-full">
+              <p className="font-semibold mb-1">Pendiente para desbloquear:</p>
+              {checklistItems.filter(i => i.required && !i.ok).map(i => (
+                <p key={i.id} className="flex items-center gap-1.5">
+                  <span className="w-1 h-1 rounded-full bg-indigo-300 shrink-0 inline-block" />
+                  {i.label}
+                </p>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -5409,6 +7194,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             )}
             <NavItem active={activeTab === 'issue'}   onClick={() => setActiveTab('issue')}   icon={ShieldCheck} label="Certificado" collapsed={isSidebarCollapsed} variant="emerald" />
             <NavItem active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={History}     label="Históricos"  collapsed={isSidebarCollapsed} />
+            {isAdmin && (
+              <NavItem active={activeTab === 'stats'} onClick={() => setActiveTab('stats')} icon={BarChart2} label="Estadísticas" collapsed={isSidebarCollapsed} />
+            )}
           </div>
 
           {/* ── Grupo 3: Gestión de datos ── */}
@@ -5553,9 +7341,43 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             {activeTab === 'issue' && IssueView()}
             {activeTab === 'history' && HistoryView()}
             {activeTab === 'config' && ConfigView()}
+            {StatsView()}
           </AnimatePresence>
         </div>
       </main>
+
+      {/* ─ Checklist flotante por sección ─ */}
+      {isAdmin && (['general','extraction','denaturation','storage','report'] as const).includes(activeTab as any) && (() => {
+        const sectionItems = checklistItems.filter(i => i.tab === activeTab);
+        const done  = sectionItems.filter(i => i.ok).length;
+        const total = sectionItems.length;
+        const allOk = done === total;
+        const sectionLabel: Record<string, string> = {
+          general: 'General', extraction: 'Extracción', denaturation: 'Desnaturalización',
+          storage: 'Almacenamiento', report: 'Informe',
+        };
+        return (
+          <div className="fixed bottom-6 right-5 z-50 w-60 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm overflow-hidden select-none">
+            <div className={`flex items-center justify-between px-3 py-2 font-semibold text-white text-xs ${allOk ? 'bg-emerald-600' : 'bg-[#0f2d5e]'}`}>
+              <span>Checklist · {sectionLabel[activeTab]}</span>
+              <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${allOk ? 'bg-emerald-400 text-emerald-900' : 'bg-white/20'}`}>{done}/{total}</span>
+            </div>
+            <ul className="divide-y divide-slate-100 dark:divide-slate-700 max-h-64 overflow-y-auto">
+              {sectionItems.map(item => (
+                <li key={item.id} className="flex items-center gap-2 px-3 py-1.5">
+                  <span className={`flex-shrink-0 font-bold text-base leading-none ${item.ok ? 'text-emerald-500' : item.required ? 'text-red-500' : 'text-amber-400'}`}>
+                    {item.ok ? '✓' : item.required ? '✗' : '○'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs truncate ${item.ok ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{item.label}</p>
+                    {!item.ok && <p className="text-[10px] text-slate-400 truncate">{item.detail}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
 
       {/* Anotador de imagen */}
       {annotatingImg && (

@@ -156,7 +156,7 @@ describe('buildCertificadoData — Centro 110814 PAMELA', () => {
   const cert = buildCertificadoData(FIXTURE_STATE);
 
   it('tiene el título y normativa correctos', () => {
-    expect(cert.titulo).toBe('CERTIFICADO DE SISTEMAS DE MORTALIDAD');
+    expect(cert.titulo).toBe('CERTIFICADO DE CAPACIDADES DE SISTEMAS DE MORTALIDAD');
     expect(cert.normativa).toContain('1511/2021');
   });
 
@@ -164,7 +164,7 @@ describe('buildCertificadoData — Centro 110814 PAMELA', () => {
     expect(cert.identificacion['Código Centro']).toBe('110814');
     expect(cert.identificacion['Nombre Centro']).toBe('PAMELA');
     expect(cert.identificacion['Titular']).toBe('EXPORTADORA LOS FIORDOS LTDA.');
-    expect(cert.identificacion['A.C.S / R.N.A']).toBe('24');
+    expect(cert.identificacion['A.C.S']).toBe('24');
     expect(cert.identificacion['Ubicación']).toContain('Región de Aysén');
     expect(cert.identificacion['Fecha Inspección Terreno']).toBe('2026-01-08');
     expect(cert.identificacion['Fecha Emisión']).toBe('2026-02-10');
@@ -173,7 +173,7 @@ describe('buildCertificadoData — Centro 110814 PAMELA', () => {
   it('capacidades reflejan los valores del registro real', () => {
     const ext = cert.capacidades.find(c => c.descripcion === 'Extracción de Mortalidad')!;
     const den = cert.capacidades.find(c => c.descripcion === 'Desnaturalización')!;
-    const alm = cert.capacidades.find(c => c.descripcion === 'Almacenamiento de Ácido Fórmico')!;
+    const alm = cert.capacidades.find(c => c.descripcion === 'Almacenamiento')!;
 
     expect(ext.valor).toBe('23.60 TN/día');
     expect(den.valor).toBe('17.90 TN/día');
@@ -188,7 +188,7 @@ describe('buildCertificadoData — Centro 110814 PAMELA', () => {
   it('los umbrales regulatorios son los correctos (Res. 1511)', () => {
     const ext = cert.capacidades.find(c => c.descripcion === 'Extracción de Mortalidad')!;
     const den = cert.capacidades.find(c => c.descripcion === 'Desnaturalización')!;
-    const alm = cert.capacidades.find(c => c.descripcion === 'Almacenamiento de Ácido Fórmico')!;
+    const alm = cert.capacidades.find(c => c.descripcion === 'Almacenamiento')!;
 
     expect(ext.umbral).toContain(`${MIN_EXTRACTION_TON_DIA}`);
     expect(den.umbral).toContain(`${MIN_DENATURATION_TON_DIA}`);

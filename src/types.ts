@@ -91,6 +91,11 @@ export interface DenaturationData {
     marca_modelo: string;
     capacidad_carga_kg_h: number;
     horas_funcionamiento_dia: number;
+    num_quemadores_primaria: number;
+    num_quemadores_secundaria: number;
+    temperatura_camara_primaria_c: number;
+    temperatura_camara_secundaria_c: number;
+    requerimiento_energetico: string;
     sistema_carga: string;
     sistema_descarga: string;
     disposicion_final: string;
@@ -140,6 +145,7 @@ export interface StorageData {
 
 export type ImageSeccion =
   | 'Portada'
+  | 'Paisaje'
   | 'Ubicación Espacial'
   | 'Extracción'
   | 'Desnaturalización'
@@ -153,6 +159,7 @@ export interface ReportImage {
   leyenda: string;
   estado: 'Verde' | 'Amarillo' | 'Rojo';
   observacion: string;
+  enPortada?: boolean;
 }
 
 export interface AppState {
@@ -192,6 +199,37 @@ export interface HistoryEntry {
   hes: string;
 }
 
+export type EventoTipo =
+  | 'login'
+  | 'generar_certificado'
+  | 'generar_informe'
+  | 'generar_acta'
+  | 'ver_historico'
+  | 'abrir_registro'
+  | 'crear_registro';
+
+export interface EventoUso {
+  tipo: EventoTipo;
+  usuario: string;
+  codigoCentro?: string;
+  nombreCentro?: string;
+  titular?: string;
+  fecha: any; // Firestore Timestamp
+}
+
+export interface CatalogoCustomEntry {
+  tipo: 'trituradora' | 'incinerador';
+  marca_modelo: string;
+  capacidad_nominal_kg_h?: number;
+  almacenamiento_l?: number;
+  material?: string;
+  capacidad_prepicador_kg_h?: number;
+  configuraciones_batch?: Array<{ label: string; kilos: number; t_proceso: number; t_pausa: number }>;
+  capacidad_carga_kg_h?: number;
+  creadoPor: string;
+  __createdAt: any;
+}
+
 export interface RegistroHistorico {
   id?: string;               // Firestore doc ID (= registroId)
   registroId: string;
@@ -205,9 +243,9 @@ export interface RegistroHistorico {
   firmado?: boolean;
   enviado_sernapesca?: boolean;
   cliente_notificado?: boolean;
-  // Snapshot del estado (sin URLs de imágenes)
+  // Snapshot del estado (con URLs de Firebase Storage)
   snapshot: Omit<AppState, 'images'> & {
-    images: Array<Omit<ReportImage, 'url'>>;
+    images: Array<Omit<ReportImage, 'url'> & { url?: string }>;
   };
   __updatedAt?: any;
 }

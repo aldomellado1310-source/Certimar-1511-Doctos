@@ -22,6 +22,7 @@ import {
   PAUSA_PROPORCIONAL_COEF,
   PREPICADOR_BATCH_FACTOR,
 } from './constants';
+import { CATALOGO_EXTRACCION } from '../constants/masterData';
 
 // ---------------------------------------------------------------------------
 // EXTRACCIÓN
@@ -60,7 +61,18 @@ export function calculateExtraction(
   const t_ciclo_total = t_trabajo + t_pausa + pausa_proporcional;
 
   const ciclos_por_dia = (parametros.horas_efectivas_trabajo * 60) / t_ciclo_total;
-  const kg_bins = biomasa_max_kg * parametros.factor_ajuste_biomasa;
+
+  // Propuesta C — Opción B: capacidad nominal del equipo como límite superior de kg_bins.
+  // El equipo puede procesar como máximo capacidad_kg_h × (t_trabajo / 60) kg por ciclo.
+  // Si no hay equipo seleccionado, se usa el límite regulatorio sin restricción de equipo.
+  let kg_bins = biomasa_max_kg * parametros.factor_ajuste_biomasa;
+  if (parametros.id_catalogo_equipo) {
+    const equipo = CATALOGO_EXTRACCION.sistemas.find(s => s.id === parametros.id_catalogo_equipo);
+    if (equipo) {
+      const capacidad_equipo_kg_ciclo = equipo.capacidad_kg_h * (t_trabajo / 60);
+      kg_bins = Math.min(kg_bins, capacidad_equipo_kg_ciclo);
+    }
+  }
 
   // Res. Exenta N°1511/2021 — Umbral mínimo Extracción: 15 TN/día
   // motocompresores_por_jaula multiplica las líneas de extracción paralelas por jaula
