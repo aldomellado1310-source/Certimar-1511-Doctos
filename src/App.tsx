@@ -49,8 +49,68 @@ import {
   Download,
   Building2,
   Upload,
+  ClipboardList,
+  BarChart3,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+// ── WelcomeScreen constants (outside component to avoid re-renders) ──
+const SCHOOL_FISH = Array.from({ length: 22 }, (_, i) => {
+  const angle = (i / 22) * Math.PI * 2 + (i % 3) * 0.25;
+  const r     = 55 + (i % 4) * 18;
+  return {
+    startX:  Math.cos(angle) * r,
+    startY:  Math.sin(angle) * r * 0.52,
+    endX:    Math.cos(angle) * (320 + (i % 4) * 70),
+    endY:    Math.sin(angle) * (190 + (i % 5) * 40),
+    size:    10 + (i % 5) * 4,
+    flipX:   Math.cos(angle) < 0,
+    delay:   i * 0.038,
+    dur:     0.55 + (i % 4) * 0.12,
+  };
+});
+const BG_FISH = [
+  { x: -8, y: 20, size: 24, dir: 1,  dur: 22, delay: 0  },
+  { x: -8, y: 70, size: 16, dir: 1,  dur: 18, delay: 5  },
+  { x:108, y: 38, size: 20, dir: -1, dur: 26, delay: 2  },
+  { x:108, y: 82, size: 13, dir: -1, dur: 20, delay: 8  },
+  { x: -8, y: 55, size: 30, dir: 1,  dur: 31, delay: 13 },
+  { x:108, y: 14, size: 15, dir: -1, dur: 24, delay: 6  },
+  { x: -8, y: 88, size: 18, dir: 1,  dur: 28, delay: 17 },
+  { x:108, y: 62, size: 22, dir: -1, dur: 22, delay: 10 },
+];
+const BG_JELLYFISH = [
+  { x:  8, dur: 14, delay:  0, size: 20 },
+  { x: 78, dur: 18, delay:  5, size: 16 },
+  { x: 45, dur: 16, delay:  9, size: 24 },
+  { x: 92, dur: 12, delay:  3, size: 14 },
+  { x: 25, dur: 20, delay: 14, size: 18 },
+];
+const BG_BUBBLES = Array.from({ length: 12 }, (_, i) => ({
+  x:     (i * 41 + 7) % 100,
+  dur:   9 + (i * 2.3) % 10,
+  delay: (i * 1.7) % 15,
+  size:  2 + (i % 3) * 2,
+}));
+// Algas: puntos de bezier base y offset para animación sway
+const BG_SEAWEED = [
+  { x:  5, h: 160, color: '#10b981', delay: 0,   dur: 3.5 },
+  { x: 12, h: 220, color: '#059669', delay: 0.8, dur: 4.2 },
+  { x: 20, h: 130, color: '#34d399', delay: 1.5, dur: 3.8 },
+  { x: 60, h: 190, color: '#10b981', delay: 0.5, dur: 4.0 },
+  { x: 72, h: 150, color: '#059669', delay: 1.2, dur: 3.3 },
+  { x: 82, h: 240, color: '#34d399', delay: 0.2, dur: 4.8 },
+  { x: 91, h: 120, color: '#10b981', delay: 2.0, dur: 3.6 },
+];
+// Rocas en el fondo
+const BG_ROCKS = [
+  { x: 3,  w: 90,  h: 50 },
+  { x: 14, w: 60,  h: 35 },
+  { x: 35, w: 120, h: 60 },
+  { x: 55, w: 80,  h: 45 },
+  { x: 70, w: 100, h: 55 },
+  { x: 85, w: 70,  h: 38 },
+  { x: 93, w: 55,  h: 30 },
+];
 import { useDropzone } from 'react-dropzone';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -978,15 +1038,42 @@ const CheckboxField = ({ label, checked, onChange }: { label: string, checked: b
 const WelcomeScreen = ({
   setUserRole,
   setShowWelcome,
+  logoProvider = 'certimar',
 }: {
-  setUserRole: React.Dispatch<React.SetStateAction<'admin' | 'reader' | null>>;
+  setUserRole:    React.Dispatch<React.SetStateAction<'admin' | 'reader' | null>>;
   setShowWelcome: React.Dispatch<React.SetStateAction<boolean>>;
+  logoProvider?:  'certimar' | 'engelbert';
 }) => {
-  const [step, setStep]         = React.useState<'google' | 'pin'>('google');
+  const [phase, setPhase]             = React.useState<'splash' | 'login'>('splash');
+  const [splashPhase, setSplashPhase] = React.useState<'school' | 'logo' | 'out'>('school');
+  const [step, setStep]               = React.useState<'google' | 'pin'>('google');
   const [googleEmail, setGoogleEmail] = React.useState('');
-  const [pin, setPin]           = React.useState('');
-  const [error, setError]       = React.useState('');
-  const [loading, setLoading]   = React.useState(false);
+  const [pin, setPin]                 = React.useState('');
+  const [error, setError]             = React.useState('');
+  const [loading, setLoading]         = React.useState(false);
+  const [aquaPhase, setAquaPhase]     = React.useState<'idle' | 'in' | 'hold' | 'out'>('idle');
+  const pendingRoleRef                = React.useRef<'admin' | 'reader' | null>(null);
+
+  const triggerAquaLogin = React.useCallback((role: 'admin' | 'reader') => {
+    pendingRoleRef.current = role;
+    setAquaPhase('in');
+    setTimeout(() => setAquaPhase('hold'), 600);
+    setTimeout(() => setAquaPhase('out'),  1100);
+    setTimeout(() => {
+      setUserRole(pendingRoleRef.current);
+      setShowWelcome(false);
+    }, 1700);
+  }, [setUserRole, setShowWelcome]);
+
+  const logoSrc = logoProvider === 'engelbert' ? '/engelbert-logo.png' : '/certimar-logo.png';
+  const logoAlt = logoProvider === 'engelbert' ? 'Engelbert Aquastructures' : 'CERTIMAR';
+
+  React.useEffect(() => {
+    const t1 = setTimeout(() => setSplashPhase('logo'),  1300);
+    const t2 = setTimeout(() => setSplashPhase('out'),   3100);
+    const t3 = setTimeout(() => setPhase('login'),       3600);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, []);
 
   const handleGoogleSignIn = React.useCallback(async () => {
     setError('');
@@ -1008,8 +1095,7 @@ const WelcomeScreen = ({
         setStep('pin');
       } else {
         localStorage.setItem('certimar-session', JSON.stringify({ role: 'reader', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
-        setUserRole('reader');
-        setShowWelcome(false);
+        triggerAquaLogin('reader');
       }
     } catch (e: any) {
       if (e?.code !== 'auth/popup-closed-by-user') {
@@ -1018,207 +1104,373 @@ const WelcomeScreen = ({
     } finally {
       setLoading(false);
     }
-  }, [setUserRole, setShowWelcome]);
+  }, [triggerAquaLogin]);
 
   const handlePin = () => {
     if (ADMIN_PIN && pin === ADMIN_PIN) {
       localStorage.setItem('certimar-session', JSON.stringify({ role: 'admin', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
-      setUserRole('admin');
-      setShowWelcome(false);
+      triggerAquaLogin('admin');
     } else if (pin === '') {
       localStorage.setItem('certimar-session', JSON.stringify({ role: 'reader', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
-      setUserRole('reader');
-      setShowWelcome(false);
+      triggerAquaLogin('reader');
     } else {
       setError('PIN incorrecto.');
     }
   };
 
+  // ── Google SVG helper ──
+  const GoogleIcon = () => (
+    <svg width="17" height="17" viewBox="0 0 24 24">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+    </svg>
+  );
+
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden"
-    >
-      {/* ── SKY ── deep cerulean dawn gradient */}
-      <div className="absolute inset-0" style={{
-        background: 'linear-gradient(to bottom, #0a1628 0%, #0e2a4a 18%, #133d6b 35%, #1a5f8a 50%, #2a89b0 62%, #5fb8cc 72%, #8ed4dc 80%, #b8e8e4 88%, #cff0e8 95%, #ddf4ee 100%)'
-      }} />
-      <div className="absolute pointer-events-none" style={{ top: '8%', left: '72%', width: 80, height: 80, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,245,200,0.95) 30%, rgba(255,220,120,0.4) 60%, transparent 80%)', filter: 'blur(2px)' }} />
-      <div className="absolute pointer-events-none" style={{ top: '5%', left: '70%', width: 140, height: 140, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,245,200,0.12) 40%, transparent 70%)' }} />
-      {[{x:5,y:4},{x:14,y:8},{x:28,y:3},{x:38,y:12},{x:52,y:6},{x:60,y:2},{x:48,y:15},{x:22,y:18},{x:8,y:22},{x:33,y:7},{x:80,y:5},{x:88,y:12},{x:95,y:7}].map((s,i)=>(
-        <motion.div key={`star-${i}`} className="absolute rounded-full bg-white pointer-events-none"
-          style={{ left:`${s.x}%`, top:`${s.y}%`, width: i%3===0?3:i%2===0?2:1.5, height: i%3===0?3:i%2===0?2:1.5 }}
-          animate={{ opacity:[0.3,1,0.3], scale:[0.8,1.2,0.8] }}
-          transition={{ duration:2+i*0.4, repeat:Infinity, delay:i*0.3, ease:'easeInOut' }}
-        />
-      ))}
-      {[{x:-5,y:28,w:380,op:0.18},{x:30,y:22,w:280,op:0.12},{x:60,y:32,w:320,op:0.15},{x:75,y:25,w:260,op:0.1}].map((c,i)=>(
-        <motion.div key={`cloud-${i}`} className="absolute pointer-events-none" style={{ left:`${c.x}%`, top:`${c.y}%`, width:c.w, height:60, borderRadius:40, background:'rgba(255,255,255,0.9)', filter:'blur(22px)', opacity:c.op }}
-          animate={{ x:[0,30,0], opacity:[c.op, c.op*1.5, c.op] }}
-          transition={{ duration:18+i*4, repeat:Infinity, ease:'easeInOut', delay:i*3 }}
-        />
-      ))}
-      <div className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{ bottom: '30%' }}>
-        <svg viewBox="0 0 1440 300" preserveAspectRatio="none" style={{ width:'100%', height:260, display:'block' }}>
-          <defs>
-            <linearGradient id="mtn1" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#4a7fa0" stopOpacity="0.55"/>
-              <stop offset="100%" stopColor="#2d5f80" stopOpacity="0.65"/>
-            </linearGradient>
-          </defs>
-          <path d="M0,300 L0,210 L60,165 L120,200 L200,130 L280,175 L360,105 L450,165 L520,95 L610,160 L680,85 L760,155 L840,70 L930,145 L1010,80 L1100,155 L1180,90 L1280,160 L1360,100 L1440,155 L1440,300Z" fill="url(#mtn1)" />
-          {[[200,130],[360,105],[520,95],[680,85],[840,70],[1010,80],[1180,90]].map(([cx,cy],i)=>(
-            <polygon key={i} points={`${cx},${cy} ${cx-22},${cy+30} ${cx+22},${cy+30}`} fill="rgba(220,235,245,0.55)" />
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: '#080c14', overflow: 'hidden' }}>
+
+      {/* ══ AMBIENTE MARINO ══ 30% opacidad, siempre visible ══ */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden', opacity: 0.3 }}>
+
+        {/* Rocas en el fondo */}
+        <svg style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: 120, display: 'block' }} viewBox="0 0 1440 120" preserveAspectRatio="none">
+          {BG_ROCKS.map((r, i) => (
+            <ellipse key={i} cx={`${r.x + r.w * 0.35}%`} cy="105" rx={`${r.w * 0.4}%`} ry={r.h * 0.4} fill={i % 2 === 0 ? '#1e3a5f' : '#0f2040'} />
           ))}
+          <path d="M0,90 Q80,60 160,80 Q240,100 320,70 Q400,40 480,65 Q560,90 640,60 Q720,30 800,55 Q880,80 960,50 Q1040,20 1120,45 Q1200,70 1280,50 Q1360,30 1440,55 L1440,120 L0,120Z" fill="#0d1b2e" />
         </svg>
-      </div>
-      <div className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{ bottom: '22%' }}>
-        <svg viewBox="0 0 1440 280" preserveAspectRatio="none" style={{ width:'100%', height:220, display:'block' }}>
-          <defs>
-            <linearGradient id="mtn2" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#1a4a2e"/><stop offset="60%" stopColor="#0d3320"/><stop offset="100%" stopColor="#0a2818"/>
-            </linearGradient>
-            <linearGradient id="mtn2mist" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#4a9080" stopOpacity="0.35"/><stop offset="100%" stopColor="#4a9080" stopOpacity="0"/>
-            </linearGradient>
-          </defs>
-          <path d="M0,280 L0,190 L90,140 L170,185 L260,120 L350,175 L430,105 L530,168 L615,95 L710,170 L790,108 L890,178 L975,100 L1070,172 L1155,110 L1250,178 L1340,115 L1440,175 L1440,280Z" fill="url(#mtn2)" />
-          <path d="M0,280 L0,210 C180,195 360,200 540,190 C720,180 900,195 1080,188 C1260,181 1380,195 1440,200 L1440,280Z" fill="url(#mtn2mist)" />
-        </svg>
-      </div>
-      <div className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{ bottom: '15%' }}>
-        <svg viewBox="0 0 1440 200" preserveAspectRatio="none" style={{ width:'100%', height:160, display:'block' }}>
-          <defs>
-            <linearGradient id="mtn3" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#0d2e1a"/><stop offset="100%" stopColor="#061410"/>
-            </linearGradient>
-          </defs>
-          <path d="M0,200 L0,130 L80,90 L150,125 L230,70 L310,115 L390,55 L480,110 L565,60 L660,115 L740,65 L830,118 L915,58 L1010,120 L1095,62 L1190,118 L1275,68 L1370,120 L1440,75 L1440,200Z" fill="url(#mtn3)" />
-        </svg>
-      </div>
-      <div className="absolute bottom-0 left-0 right-0" style={{ height: '18%' }}>
-        <div className="w-full h-full" style={{ background: 'linear-gradient(to bottom, #0d4a5a 0%, #0a3545 40%, #062530 100%)' }} />
-      </div>
-      {[12,28,45,62,78,88].map((top,i)=>(
-        <motion.div key={`wl-${i}`} className="absolute left-0 right-0 pointer-events-none"
-          style={{ bottom:`${top * 0.18}%`, height:1, background:'linear-gradient(to right, transparent, rgba(100,200,220,0.3), rgba(150,230,240,0.5), rgba(100,200,220,0.3), transparent)' }}
-          animate={{ opacity:[0.2,0.7,0.2], scaleX:[0.8,1,0.8] }}
-          transition={{ duration:3+i*0.7, repeat:Infinity, delay:i*0.5, ease:'easeInOut' }}
-        />
-      ))}
-      <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{ height:'18%', opacity:0.25 }}>
-        <svg viewBox="0 0 1440 100" preserveAspectRatio="none" style={{ width:'100%', height:'100%', transform:'scaleY(-0.4)', transformOrigin:'top' }}>
-          <path d="M0,100 L0,40 L80,10 L150,35 L230,0 L310,25 L390,0 L480,20 L565,0 L660,25 L740,5 L830,28 L915,0 L1010,30 L1095,2 L1190,28 L1275,8 L1370,30 L1440,0 L1440,100Z" fill="#0d4a5a" />
-        </svg>
-      </div>
-      {FISH_DATA.slice(0,5).map((f,i)=>(
-        <motion.div key={`lf-${i}`} className="absolute pointer-events-none" style={{ color:'rgba(100,210,200,0.45)', top:`${82 + (i%3)*2}%` }}
-          initial={{ x: f.dir>0 ? '-8vw' : '108vw' }}
-          animate={{ x: f.dir>0 ? '108vw' : '-8vw', y:[0, Math.sin(i)*8, 0], opacity:[0,0.6,0.6,0] }}
-          transition={{ duration:f.dur, repeat:Infinity, delay:f.delay, ease:'linear' }}
-        >
-          <Fish size={f.size * 0.7} className={f.dir<0 ? 'scale-x-[-1]' : ''} />
-        </motion.div>
-      ))}
 
-      {/* ── LOGIN CARD ── glassmorphism */}
-      <motion.div
-        initial={{ opacity:0, y:24, scale:0.97 }}
-        animate={{ opacity:1, y:0, scale:1 }}
-        transition={{ delay:0.3, duration:0.6, ease:[0.22,1,0.36,1] }}
-        className="relative z-10 w-full max-w-xs"
-        style={{ filter:'drop-shadow(0 25px 60px rgba(0,0,0,0.5))' }}
-      >
-        <div style={{ background:'rgba(255,255,255,0.12)', backdropFilter:'blur(28px)', WebkitBackdropFilter:'blur(28px)', border:'1px solid rgba(255,255,255,0.25)', borderRadius:28, padding:'36px 32px 32px' }}>
-          <div className="flex flex-col items-center mb-7">
-            <div className="relative w-14 h-14 mb-3">
-              <div className="absolute inset-0 rounded-2xl" style={{ background:'linear-gradient(135deg,#4f46e5,#0f172a)', boxShadow:'0 8px 32px rgba(79,70,229,0.4)' }}/>
-              <div className="relative h-full w-full grid grid-cols-2 grid-rows-2 p-2.5 gap-1">
-                <Fish size={13} className="text-white/35"/>
-                <Fish size={13} className="text-white/35"/>
-                <Fish size={13} className="text-white/35"/>
-                <div className="flex items-center justify-center"><CheckCircle2 size={15} className="text-cyan-300" /></div>
-              </div>
-            </div>
-            <h1 className="text-2xl font-black tracking-tight" style={{ color:'#fff', textShadow:'0 2px 12px rgba(0,0,0,0.4)' }}>
-              CERTI<span style={{ color:'#7dd3fc' }}>MAR</span>
-            </h1>
-            <p className="text-[10px] font-bold tracking-[0.25em] uppercase mt-1" style={{ color:'rgba(255,255,255,0.55)' }}>Norma 1511 — Puerto Aysén</p>
-          </div>
+        {/* Algas (seaweed) animadas */}
+        {BG_SEAWEED.map((s, i) => (
+          <motion.div
+            key={`sw-${i}`}
+            style={{ position: 'absolute', bottom: 0, left: `${s.x}%`, width: 8, height: s.h, borderRadius: '4px 4px 0 0', background: s.color, transformOrigin: 'bottom center' }}
+            animate={{ rotate: [-6, 6, -4, 8, -6], scaleX: [1, 0.85, 1.1, 0.9, 1] }}
+            transition={{ duration: s.dur, delay: s.delay, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        ))}
 
-          <AnimatePresence mode="wait">
-            {step === 'google' ? (
-              <motion.div key="google-step" initial={{opacity:0,x:-10}} animate={{opacity:1,x:0}} exit={{opacity:0,x:10}} className="space-y-3">
-                <p className="text-center text-sm font-medium mb-4" style={{ color:'rgba(255,255,255,0.7)' }}>
-                  Inicia sesión con tu cuenta institucional
-                </p>
-                <button
-                  onClick={handleGoogleSignIn}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-3 py-3 rounded-2xl transition-all text-sm font-semibold disabled:opacity-60 disabled:cursor-wait"
-                  style={{ background:'rgba(255,255,255,0.92)', color:'#3c4043', boxShadow:'0 2px 12px rgba(0,0,0,0.25)', border:'1px solid rgba(255,255,255,0.5)' }}
-                >
-                  {loading ? (
-                    <svg className="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4285F4" strokeWidth="2.5">
-                      <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                    </svg>
-                  )}
-                  {loading ? 'Iniciando sesión...' : 'Continuar con Google'}
-                </button>
-                {error && <p className="text-center text-xs font-medium mt-2" style={{ color:'#fca5a5' }}>{error}</p>}
-                <p className="text-center text-[10px] mt-3" style={{ color:'rgba(255,255,255,0.35)' }}>Solo cuentas @certimar.cl</p>
+        {/* Ola de marea */}
+        <motion.svg style={{ position: 'absolute', bottom: 60, left: 0, width: '200%', height: 40 }} viewBox="0 0 2880 40" preserveAspectRatio="none"
+          animate={{ x: [0, -1440] }} transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}>
+          <path d="M0,20 Q90,5 180,20 Q270,35 360,20 Q450,5 540,20 Q630,35 720,20 Q810,5 900,20 Q990,35 1080,20 Q1170,5 1260,20 Q1350,35 1440,20 Q1530,5 1620,20 Q1710,35 1800,20 Q1890,5 1980,20 Q2070,35 2160,20 Q2250,5 2340,20 Q2430,35 2520,20 Q2610,5 2700,20 Q2790,35 2880,20 L2880,40 L0,40Z" fill="rgba(56,189,248,0.15)" />
+        </motion.svg>
+
+        {/* Segunda ola (offset) */}
+        <motion.svg style={{ position: 'absolute', bottom: 50, left: 0, width: '200%', height: 30 }} viewBox="0 0 2880 30" preserveAspectRatio="none"
+          animate={{ x: [-720, -2160] }} transition={{ duration: 11, repeat: Infinity, ease: 'linear' }}>
+          <path d="M0,15 Q120,2 240,15 Q360,28 480,15 Q600,2 720,15 Q840,28 960,15 Q1080,2 1200,15 Q1320,28 1440,15 Q1560,2 1680,15 Q1800,28 1920,15 Q2040,2 2160,15 Q2280,28 2400,15 Q2520,2 2640,15 Q2760,28 2880,15 L2880,30 L0,30Z" fill="rgba(56,189,248,0.1)" />
+        </motion.svg>
+
+        {/* Peces nadando */}
+        {BG_FISH.map((f, i) => (
+          <motion.div key={`bgf-${i}`} style={{ position: 'absolute', top: `${f.y}%`, color: '#7dd3fc' }}
+            initial={{ x: f.dir > 0 ? '-8vw' : '108vw' }}
+            animate={{ x: f.dir > 0 ? '110vw' : '-10vw', y: [0, Math.sin(i) * 10, -Math.sin(i) * 7, 0] }}
+            transition={{ duration: f.dur, repeat: Infinity, delay: f.delay, ease: 'linear' }}>
+            <Fish size={f.size} style={{ transform: f.dir < 0 ? 'scaleX(-1)' : 'none' }} />
+          </motion.div>
+        ))}
+
+        {/* Medusas */}
+        {BG_JELLYFISH.map((j, i) => (
+          <motion.div key={`bgj-${i}`} style={{ position: 'absolute', left: `${j.x}%`, color: '#a5b4fc' }}
+            initial={{ y: '-12vh' }}
+            animate={{ y: '110vh', x: [0, 12, -8, 6, 0] }}
+            transition={{ duration: j.dur, repeat: Infinity, delay: j.delay, ease: 'linear' }}>
+            <svg width={j.size} height={j.size * 1.4} viewBox="0 0 40 55" fill="none">
+              <ellipse cx="20" cy="18" rx="16" ry="14" fill="currentColor" fillOpacity="0.35" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.6" />
+              {[8,13,18,23,28,33].map((cx, k) => (
+                <motion.line key={k} x1={cx} y1="31" x2={cx + (k%2===0?-3:3)} y2="52"
+                  stroke="currentColor" strokeWidth="1" strokeOpacity="0.45" strokeLinecap="round"
+                  animate={{ x2: [cx+(k%2===0?-3:3), cx+(k%2===0?3:-3), cx+(k%2===0?-3:3)] }}
+                  transition={{ duration: 1.4+k*0.2, repeat: Infinity, ease: 'easeInOut' }} />
+              ))}
+            </svg>
+          </motion.div>
+        ))}
+
+        {/* Burbujas */}
+        {BG_BUBBLES.map((b, i) => (
+          <motion.div key={`bgb-${i}`} style={{ position: 'absolute', bottom: '-5%', left: `${b.x}%`, width: b.size, height: b.size, borderRadius: '50%', background: 'rgba(125,211,252,0.45)', border: '1px solid rgba(125,211,252,0.25)' }}
+            animate={{ y: [0, '-105vh'], opacity: [0, 0.8, 0.8, 0], x: [0, Math.sin(i)*18, 0] }}
+            transition={{ duration: b.dur, repeat: Infinity, delay: b.delay, ease: 'easeInOut' }} />
+        ))}
+      </div>
+
+      {/* ══ SPLASH ══ cardumen → logo protagonista ══ */}
+      <AnimatePresence>
+        {phase === 'splash' && (
+          <motion.div
+            key="splash"
+            style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            animate={{ opacity: splashPhase === 'out' ? 0 : 1 }}
+            transition={{ duration: 0.5, ease: 'easeInOut' }}
+          >
+            {/* Cardumen que se dispersa */}
+            {SCHOOL_FISH.map((f, i) => (
+              <motion.div
+                key={`sf-${i}`}
+                style={{ position: 'absolute', color: '#7dd3fc' }}
+                animate={{
+                  x:       splashPhase === 'school' ? f.startX : f.endX,
+                  y:       splashPhase === 'school' ? f.startY : f.endY,
+                  opacity: splashPhase === 'school' ? 0.65 : 0,
+                  scale:   splashPhase === 'school' ? 1 : 0.2,
+                }}
+                transition={{ duration: splashPhase === 'logo' ? f.dur : 0.6, delay: splashPhase === 'logo' ? f.delay : 0, ease: 'easeOut' }}
+              >
+                <Fish size={f.size} style={{ transform: f.flipX ? 'scaleX(-1)' : 'none' }} />
               </motion.div>
-            ) : (
-              <motion.div key="pin-step" initial={{opacity:0,x:10}} animate={{opacity:1,x:0}} exit={{opacity:0,x:-10}} className="space-y-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <button onClick={()=>{setStep('google');setPin('');setError('');}} className="text-white/50 hover:text-white/80 transition-colors">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-                  </button>
-                  <p className="text-sm font-medium" style={{ color:'rgba(255,255,255,0.8)' }}>
-                    Acceso a <span className="text-cyan-300 font-bold">Operaciones</span>
+            ))}
+
+            {/* Logo protagonista — aparece al dispersarse el cardumen */}
+            <motion.div
+              style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, textAlign: 'center' }}
+              animate={{
+                opacity: splashPhase === 'school' ? 0 : 1,
+                scale:   splashPhase === 'school' ? 0.75 : 1,
+              }}
+              transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <img
+                src={logoSrc}
+                alt={logoAlt}
+                style={{ height: 130, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.95, maxWidth: 320 }}
+              />
+              <p style={{ color: '#475569', fontSize: 11, fontWeight: 600, letterSpacing: '0.22em', textTransform: 'uppercase', marginTop: 4 }}>
+                Norma 1511 · Puerto Aysén
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ══ TRANSICIÓN ACUÁTICA LOGIN ══ */}
+      <AnimatePresence>
+        {aquaPhase !== 'idle' && (
+          <motion.div
+            key="aqua-transition"
+            style={{ position: 'absolute', inset: 0, zIndex: 200, overflow: 'hidden', pointerEvents: 'none' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: aquaPhase === 'out' ? 0 : 1 }}
+            transition={{ duration: aquaPhase === 'out' ? 0.6 : 0.45, ease: 'easeInOut' }}
+          >
+            {/* Fondo principal — profundidad marina */}
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #020d1a 0%, #051929 40%, #072840 70%, #0a3354 100%)' }} />
+
+            {/* Cáusticas — destellos de luz bajo el agua */}
+            {[...Array(8)].map((_, i) => (
+              <motion.div key={`caustic-${i}`}
+                style={{ position: 'absolute', borderRadius: '50%', background: 'rgba(56,189,248,0.06)', filter: 'blur(30px)',
+                  width: 120 + i * 40, height: 80 + i * 25,
+                  left: `${(i * 17 + 5) % 90}%`, top: `${(i * 13 + 10) % 80}%` }}
+                animate={{ scale: [1, 1.3, 0.9, 1.2, 1], opacity: [0.4, 0.8, 0.5, 0.9, 0.4], x: [0, 20, -15, 10, 0], y: [0, -12, 8, -5, 0] }}
+                transition={{ duration: 2 + i * 0.3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.15 }}
+              />
+            ))}
+
+            {/* Rayos de luz desde la superficie */}
+            <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0.12 }} viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+              {[180, 360, 540, 720, 900, 1080, 1260].map((x, i) => (
+                <motion.polygon key={i}
+                  points={`${x - 30},0 ${x + 30},0 ${x + 80 + i * 10},900 ${x - 80 - i * 10},900`}
+                  fill="rgba(125,211,252,0.9)"
+                  animate={{ opacity: [0.3, 0.8, 0.3], scaleX: [1, 1.1, 0.95, 1] }}
+                  transition={{ duration: 2.5 + i * 0.2, repeat: Infinity, ease: 'easeInOut', delay: i * 0.18 }}
+                />
+              ))}
+            </svg>
+
+            {/* Olas (3 capas) */}
+            {[
+              { bottom: 0,   dur: 6,  fill: 'rgba(7,40,64,0.95)',   dx: [0, -720] },
+              { bottom: 30,  dur: 9,  fill: 'rgba(5,25,41,0.7)',    dx: [-360, -1080] },
+              { bottom: 60,  dur: 12, fill: 'rgba(10,51,84,0.5)',   dx: [0, -1440] },
+            ].map((w, i) => (
+              <motion.svg key={`wave-${i}`}
+                style={{ position: 'absolute', bottom: w.bottom, left: 0, width: '200%', height: 80 }}
+                viewBox="0 0 2880 80" preserveAspectRatio="none"
+                animate={{ x: w.dx }} transition={{ duration: w.dur, repeat: Infinity, ease: 'linear' }}>
+                <path d={`M0,40 Q90,10 180,40 Q270,70 360,40 Q450,10 540,40 Q630,70 720,40 Q810,10 900,40 Q990,70 1080,40 Q1170,10 1260,40 Q1350,70 1440,40 Q1530,10 1620,40 Q1710,70 1800,40 Q1890,10 1980,40 Q2070,70 2160,40 Q2250,10 2340,40 Q2430,70 2520,40 Q2610,10 2700,40 Q2790,70 2880,40 L2880,80 L0,80Z`} fill={w.fill} />
+              </motion.svg>
+            ))}
+
+            {/* Cardumen de peces cruzando */}
+            {[...Array(14)].map((_, i) => {
+              const dir = i % 2 === 0 ? 1 : -1;
+              return (
+                <motion.div key={`at-fish-${i}`}
+                  style={{ position: 'absolute', top: `${15 + (i * 6) % 70}%`, color: '#7dd3fc', opacity: 0.7 }}
+                  initial={{ x: dir > 0 ? '-5vw' : '105vw' }}
+                  animate={{ x: dir > 0 ? '110vw' : '-10vw', y: [0, Math.sin(i) * 14, -Math.sin(i) * 9, 0] }}
+                  transition={{ duration: 0.9 + (i % 4) * 0.15, ease: 'easeInOut', delay: i * 0.06 }}>
+                  <Fish size={10 + (i % 5) * 4} style={{ transform: dir < 0 ? 'scaleX(-1)' : 'none' }} />
+                </motion.div>
+              );
+            })}
+
+            {/* Burbujas ascendentes */}
+            {[...Array(18)].map((_, i) => (
+              <motion.div key={`at-bub-${i}`}
+                style={{ position: 'absolute', bottom: '-5%', left: `${(i * 19 + 3) % 97}%`,
+                  width: 3 + (i % 4) * 2, height: 3 + (i % 4) * 2, borderRadius: '50%',
+                  background: 'rgba(125,211,252,0.5)', border: '1px solid rgba(125,211,252,0.3)' }}
+                animate={{ y: [0, '-110vh'], opacity: [0, 0.9, 0.9, 0], x: [0, Math.sin(i) * 22, 0] }}
+                transition={{ duration: 1.0 + (i % 5) * 0.12, ease: 'easeOut', delay: i * 0.05 }}
+              />
+            ))}
+
+            {/* Texto central */}
+            <motion.div
+              style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: aquaPhase === 'hold' ? 1 : 0, y: aquaPhase === 'hold' ? 0 : 20 }}
+              transition={{ duration: 0.4 }}
+            >
+              <Fish size={36} style={{ color: '#7dd3fc', opacity: 0.9 }} />
+              <p style={{ color: 'rgba(125,211,252,0.8)', fontSize: 12, fontWeight: 600, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
+                Cargando sistema
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ══ SPLIT LAYOUT ══ */}
+      <AnimatePresence>
+        {phase === 'login' && (
+          <motion.div
+            key="login"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          >
+            <div style={{ width: '100%', maxWidth: 900, display: 'flex', flexWrap: 'wrap', overflow: 'hidden', borderRadius: 20, border: '1px solid #1e2535', boxShadow: '0 24px 64px rgba(0,0,0,0.7)', minHeight: 520 }}>
+
+              {/* ── PANEL IZQUIERDO ── */}
+              <div style={{ flex: '0 0 55%', minWidth: 280, background: '#0d1117', padding: '44px 40px 36px', borderRight: '1px solid #1e2535', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
+
+                {/* Patrón topográfico sutil */}
+                <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.03, pointerEvents: 'none' }} viewBox="0 0 480 520" preserveAspectRatio="xMidYMid slice">
+                  {[40,80,120,160,200,240,280,320,360,400,440,480].map((r, i) => (
+                    <ellipse key={i} cx="240" cy="280" rx={r} ry={r * 0.55} fill="none" stroke="#3b82f6" strokeWidth="1" />
+                  ))}
+                </svg>
+
+                <div style={{ position: 'relative', zIndex: 1 }}>
+                  {/* Logo */}
+                  <div style={{ marginBottom: 20 }}>
+                    <img src={logoSrc} alt={logoAlt} style={{ height: 48, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.9 }} />
+                    <p style={{ color: '#334155', fontSize: 10, fontWeight: 600, letterSpacing: '0.18em', textTransform: 'uppercase', marginTop: 8 }}>
+                      Sistema de Certificación · Norma 1511
+                    </p>
+                  </div>
+
+                  <p style={{ color: '#64748b', fontSize: 12, lineHeight: 1.65, marginBottom: 24 }}>
+                    Sistema integrado de certificación bajo <span style={{ color: '#94a3b8' }}>Resolución Exenta N°1511/2021</span> para centros de cultivo de salmónidos. Gestiona el ciclo completo: registro de visita con firma digital en campo, elaboración de informes técnicos, generación de certificados en PDF y despacho a SERNAPESCA — todo en una sola plataforma con trazabilidad de extremo a extremo.
+                  </p>
+
+                  <div style={{ height: 1, background: '#1e2535', marginBottom: 24 }} />
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    {([
+                      { icon: <ClipboardList size={14} style={{ color: '#3b82f6' }} />, label: 'Registro de Visita', desc: 'Captura digital con firma en campo' },
+                      { icon: <FileText size={14} style={{ color: '#3b82f6' }} />, label: 'Informe 1511', desc: 'Certificados y actas en PDF con firma digital' },
+                      { icon: <BarChart3 size={14} style={{ color: '#3b82f6' }} />, label: 'Métricas de Despacho', desc: 'Trazabilidad visita → informe con delay' },
+                    ] as { icon: React.ReactNode; label: string; desc: string }[]).map(({ icon, label, desc }) => (
+                      <div key={label} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1, background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.15)' }}>
+                          {icon}
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', marginBottom: 2 }}>{label}</p>
+                          <p style={{ fontSize: 11, color: '#475569' }}>{desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ position: 'relative', zIndex: 1, marginTop: 32, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 20, height: 1, background: '#1e2535' }} />
+                  <p style={{ fontSize: 10, fontWeight: 400, color: '#334155', letterSpacing: '0.05em' }}>
+                    Developed by Chucao Tech SpA, 2026, Puerto Aysén
                   </p>
                 </div>
-                <p className="text-xs" style={{ color:'rgba(255,255,255,0.5)' }}>
-                  Cuenta: <span className="text-white/70">{googleEmail}</span>
-                </p>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider block mb-1.5" style={{ color:'rgba(255,255,255,0.5)' }}>
-                    PIN Administrador <span className="normal-case font-normal opacity-70">(dejar vacío = solo lectura)</span>
-                  </label>
-                  <input
-                    type="password"
-                    value={pin}
-                    autoFocus
-                    onChange={(e)=>{setPin(e.target.value);setError('');}}
-                    onKeyDown={(e)=>e.key==='Enter'&&handlePin()}
-                    placeholder="••••"
-                    maxLength={4}
-                    className="w-full px-4 py-3 rounded-xl text-sm outline-none text-center tracking-[0.5em] font-bold"
-                    style={{ background:'rgba(255,255,255,0.1)', border:'1px solid rgba(255,255,255,0.2)', color:'#fff', caretColor:'#7dd3fc' }}
-                  />
+              </div>
+
+              {/* ── PANEL DERECHO ── login */}
+              <div style={{ flex: '0 0 45%', minWidth: 260, background: '#111827', padding: '44px 40px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: '100%', maxWidth: 280 }}>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: '#f1f5f9', marginBottom: 4 }}>Ingresar al sistema</p>
+                  <p style={{ fontSize: 12, color: '#475569', marginBottom: 32 }}>Usa tu cuenta institucional para acceder</p>
+
+                  <AnimatePresence mode="wait">
+                    {step === 'google' ? (
+                      <motion.div key="google-step" initial={{opacity:0,x:-8}} animate={{opacity:1,x:0}} exit={{opacity:0,x:8}} transition={{duration:0.2}} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <button
+                          onClick={handleGoogleSignIn}
+                          disabled={loading}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 600, background: '#f1f5f9', color: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.5 : 1, transition: 'background 0.15s' }}
+                          onMouseEnter={e => !loading && (e.currentTarget.style.background = '#e2e8f0')}
+                          onMouseLeave={e => (e.currentTarget.style.background = '#f1f5f9')}
+                        >
+                          {loading ? (
+                            <svg className="animate-spin" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5">
+                              <circle cx="12" cy="12" r="10" strokeOpacity="0.2"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
+                            </svg>
+                          ) : <GoogleIcon />}
+                          {loading ? 'Iniciando sesión...' : 'Continuar con Google'}
+                        </button>
+                        {error && <p style={{ textAlign: 'center', fontSize: 12, color: '#f87171' }}>{error}</p>}
+                        <p style={{ textAlign: 'center', fontSize: 10, color: '#334155', marginTop: 8 }}>
+                          Acceso restringido · Solo cuentas @certimar.cl
+                        </p>
+                      </motion.div>
+                    ) : (
+                      <motion.div key="pin-step" initial={{opacity:0,x:8}} animate={{opacity:1,x:0}} exit={{opacity:0,x:-8}} transition={{duration:0.2}} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <button onClick={() => { setStep('google'); setPin(''); setError(''); }} style={{ color: '#475569', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
+                            onMouseEnter={e=>(e.currentTarget.style.color='#94a3b8')} onMouseLeave={e=>(e.currentTarget.style.color='#475569')}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+                          </button>
+                          <p style={{ fontSize: 14, fontWeight: 500, color: '#cbd5e1' }}>
+                            Acceso a <span style={{ color: '#3b82f6', fontWeight: 700 }}>Operaciones</span>
+                          </p>
+                        </div>
+                        <p style={{ fontSize: 12, color: '#475569' }}>Cuenta: <span style={{ color: '#94a3b8' }}>{googleEmail}</span></p>
+                        <div>
+                          <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#475569', display: 'block', marginBottom: 6 }}>
+                            PIN Administrador <span style={{ textTransform: 'none', fontWeight: 400, color: '#334155' }}>(vacío = solo lectura)</span>
+                          </label>
+                          <input type="password" value={pin} autoFocus
+                            onChange={e => { setPin(e.target.value); setError(''); }}
+                            onKeyDown={e => e.key === 'Enter' && handlePin()}
+                            placeholder="••••" maxLength={4}
+                            style={{ width: '100%', padding: '12px 16px', borderRadius: 12, fontSize: 14, outline: 'none', textAlign: 'center', letterSpacing: '0.5em', fontWeight: 700, background: '#0d1117', border: '1px solid #1e2535', color: '#f1f5f9', caretColor: '#3b82f6', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                        {error && <p style={{ fontSize: 12, color: '#f87171' }}>{error}</p>}
+                        <button onClick={handlePin}
+                          style={{ width: '100%', padding: '12px 0', borderRadius: 12, fontSize: 14, fontWeight: 700, background: '#1d4ed8', color: '#fff', border: 'none', cursor: 'pointer', transition: 'background 0.15s' }}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#2563eb')}
+                          onMouseLeave={e=>(e.currentTarget.style.background='#1d4ed8')}>
+                          Ingresar
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-                {error && <p className="text-xs font-medium" style={{ color:'#fca5a5' }}>{error}</p>}
-                <button onClick={handlePin}
-                  className="w-full py-3 rounded-xl text-sm font-bold transition-all"
-                  style={{ background:'linear-gradient(135deg,#4f46e5,#3730a3)', color:'#fff', boxShadow:'0 4px 20px rgba(79,70,229,0.5)' }}
-                >
-                  Ingresar
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </motion.div>
-    </motion.div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 };
 
@@ -7155,7 +7407,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex font-sans text-slate-900 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900 selection:text-indigo-900 dark:selection:text-indigo-100 transition-colors duration-500">
       <MarineBackground />
       <AnimatePresence>
-        {showWelcome && <WelcomeScreen setUserRole={setUserRole} setShowWelcome={setShowWelcome} />}
+        {showWelcome && <WelcomeScreen setUserRole={setUserRole} setShowWelcome={setShowWelcome} logoProvider={tema.logo} />}
       </AnimatePresence>
       
       {/* Sidebar Navigation */}
