@@ -32,6 +32,7 @@ export const CATALOGO_DESNATURALIZACION = {
         { label: '1.400 kg / 33,6 min  (23 + 10,6)',  kilos: 1400,   t_proceso: 23,   t_pausa: 10.6 },
         { label: '1.400 kg / 25 min    (21 + 4) — optimizado', kilos: 1400, t_proceso: 21, t_pausa: 4 },
         { label: '1.081,1 kg / 23 min  (21 + 2)',     kilos: 1081, t_proceso: 21,   t_pausa: 2    },
+        { label: '1.081,1 kg / 17,3 min  (15,3 + 2) — Op. Mínima con Prepicador', kilos: 1081, t_proceso: 15.3, t_pausa: 2 },
       ],
     },
     {
@@ -97,6 +98,20 @@ export const CATALOGO_DESNATURALIZACION = {
         { label: '1.100 kg / 21 min  (15 + 6)  — Con Prepicador PR 60/7',  kilos: 1100, t_proceso: 15, t_pausa: 6  },
       ],
     },
+    {
+      // Global Fluid (Estándar 1000L) — Datos fabricante 2026-03-29
+      // Capacidad molienda: 2.100 kg/h | Estanque: 1.000 L | Pez promedio: 2,5 kg
+      // Turno 8h: 6.720 peces → 16,8 TN/día
+      // Obs. fabricante: capacidad exacta depende del tamaño del estanque y del pez.
+      id: 'global-fluid-1000',
+      marca_modelo: 'Global Fluid (Estándar 1000L)',
+      capacidad_nominal_kg_h: 2100,
+      almacenamiento_l: 1000,
+      material: 'Acero inoxidable',
+      configuraciones_batch: [
+        { label: '1.000 kg / 29 min  (28,6 + 0,4) — Estándar fabricante', kilos: 1000, t_proceso: 28.6, t_pausa: 0.4 },
+      ],
+    },
   ],
   incineradores: [
     {
@@ -149,6 +164,7 @@ export const CATALOGO_GENERADORES = [
   { id: 'werbank-160g', marca: 'Werbank', modelo: '160G', kva: 160 },
   { id: 'weichai-wpg33l1', marca: 'Weichai', modelo: 'WPG33L1', kva: 33 },
   { id: 'mwm-sgd330-50', marca: 'MWM', modelo: 'SGD330.50', kva: 330 },
+  { id: 'caterpillar-fg-wilson-p56', marca: 'Caterpillar / FG Wilson', modelo: 'P56', kva: 50 },
 ];
 
 export const CATALOGO_ALMACENAMIENTO = [20, 21, 30, 32, 40, 45, 50];

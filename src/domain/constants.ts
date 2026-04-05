@@ -123,3 +123,38 @@ export const ETA_BY_SYSTEM_DEEP: Record<ExtractionSystem, number> = {
   'ROV':                ETA_ROV_DEEP,
   'Succión por Yoma':   ETA_YOMA,
 };
+
+// ---------------------------------------------------------------------------
+// PRESET: OPERACIÓN MÍNIMA
+// Res. Exenta N°1511/2021 — centros con peces pequeños (<1.5 kg), extracción
+// ROV/manual y dotación mínima de 2 personas.
+// t_trabajo=15 sobreescribe FISH_PARAMS['Pequeño']=10 porque en ROV/manual la
+// manipulación por jaula tarda más que en un Lift-Up estándar.
+// ---------------------------------------------------------------------------
+
+export const OPERACION_MINIMA_EXTRACTION = {
+  talla_pez:              'Pequeño (<1.5kg)' as FishSize,
+  t_trabajo_override_min: 15,
+  jaulas_simultaneas:     2,
+  personal_operativo:     2,       // < MIN_PERSONNEL_THRESHOLD → FD_REDUCTION_LOW_PERSONNEL auto
+  disponibilidad_base_fd: 1.0,     // penalización viene del personal, no de base_fd
+  sistema_principal:      'ROV' as ExtractionSystem,
+} as const;
+
+/**
+ * Índice del batch config de Op. Mínima por id de trituradora.
+ * OPTIMO MIX usa índice 2 (t_proceso: 6 min) — más conservador entre los dos de 350 kg.
+ * AQUAINOX sin prepicador: índice 4 (1081 kg / 23 min).
+ * AQUAINOX con prepicador: config especial OPERACION_MINIMA_AQUAINOX_PREPICADOR.
+ */
+export const OPERACION_MINIMA_BATCH_INDEX: Record<string, number> = {
+  'aquainox-1430':    4,   // 1081 kg / 23 min (21+2)
+  'ocea-sw700':       2,   // 529.2 kg / 12 min (10+2) — label "Peces pequeños"
+  'acuimaster-ac715': 1,   // 529.2 kg / 16 min (15+1)
+  'optimo-mix-500':   2,   // 350 kg / 8 min (6+2)
+};
+
+/** Config especial AQUAINOX con prepicador activo en Op. Mínima (índice 5 del catálogo). */
+export const OPERACION_MINIMA_AQUAINOX_PREPICADOR = {
+  kilos: 1081, t_proceso: 15.3, t_pausa: 2,  // total 17.3 min
+};

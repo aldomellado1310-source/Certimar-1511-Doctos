@@ -42,7 +42,10 @@ export function calculateExtraction(
   parametros: ExtractionData['parametros']
 ): ExtractionData['resultados'] {
   // Parámetros base según talla del pez — Res. Exenta N°1511/2021
-  const { t_trabajo, t_pausa, biomasa_max_kg } = FISH_PARAMS[parametros.talla_pez];
+  const { t_trabajo: t_trabajo_base, t_pausa, biomasa_max_kg } = FISH_PARAMS[parametros.talla_pez];
+  const t_trabajo = (parametros.t_trabajo_override_min != null && parametros.t_trabajo_override_min > 0)
+    ? parametros.t_trabajo_override_min
+    : t_trabajo_base;
 
   // Factor de eficiencia η según sistema y profundidad de operación
   const isDeep = parametros.profundidad_operacion_m > DEPTH_THRESHOLD_M;
