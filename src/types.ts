@@ -20,6 +20,7 @@ export interface GeneralData {
     inspeccion_terreno: string;
     emision_certificado: string;
   };
+  modo_operacion_minima?: boolean;
 }
 
 export type FishSize = 'Pequeño (<1.5kg)' | 'Mediano (1.5-4.5kg)' | 'Grande (>=4.5kg)';
@@ -48,6 +49,7 @@ export interface ExtractionData {
     potencia_cfm: number;
     capacidad_receptor_bins_litros: number;
     disponibilidad_base_fd: number;
+    t_trabajo_override_min?: number;  // sobreescribe FISH_PARAMS cuando está en modo Op. Mínima
     motocompresores_por_jaula: number;  // N° motocompresores por jaula
     ubicacion_compresor: string;        // Ubicación física del compresor de aire
     observacion_sistema: string;        // Observación libre del sistema automático
@@ -171,34 +173,6 @@ export interface AppState {
   registroId?: string;  // correlativo interno (REG-001…), nunca incluido en documentos
 }
 
-export interface HistoryEntry {
-  estado: string;
-  fechaIngreso: string;
-  fechaEnvioDoc: string;
-  fechaFirma: string;
-  fechaEmision: string;
-  fechaRecepcionImg: string;
-  rv: string;
-  area: string;
-  acs: string;
-  empresa: string;
-  titular: string;
-  codigoCentro: string;
-  nombreCentro: string;
-  numJaulas: string;
-  tipoSistema: string;
-  capExtraccion: string;
-  capDesnaturalizacion: string;
-  capAlmacenamiento: string;
-  observaciones: string;
-  fechaObs: string;
-  nombreCertificador: string;
-  numRegistro: string;
-  firmante: string;
-  oc: string;
-  hes: string;
-}
-
 export type EventoTipo =
   | 'login'
   | 'generar_certificado'
@@ -239,6 +213,7 @@ export interface RegistroHistorico {
   fechaInspeccion: string;
   documentosGenerados: string[];  // 'certificado' | 'informe' | 'acta'
   // Estado de gestión
+  esBorrador?: boolean;
   aprobado?: boolean;
   firmado?: boolean;
   enviado_sernapesca?: boolean;
@@ -246,6 +221,26 @@ export interface RegistroHistorico {
   // Snapshot del estado (con URLs de Firebase Storage)
   snapshot: Omit<AppState, 'images'> & {
     images: Array<Omit<ReportImage, 'url'> & { url?: string }>;
+  };
+  metricas?: {
+    capExtraccion: number;
+    capDesnaturalizacion: number;
+    capAlmacenamiento: number;
+    cumpleExtraccion: boolean;
+    cumpleDesnaturalizacion: boolean;
+    cumpleAlmacenamiento: boolean;
+    sistemaExtraccion: string;
+    sistemaDesnaturalizacion: string;
+    modoOperacionMinima: boolean;
+    numJaulas: number;
+    jaulas_simultaneas: number;
+    profundidad_m: number;
+  };
+  documentUrls?: {
+    certificado?: string;
+    informe?: string;
+    acta?: string;
+    registro_visita?: string;
   };
   __updatedAt?: any;
 }

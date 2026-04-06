@@ -51,6 +51,7 @@ import {
   Upload,
   ClipboardList,
   BarChart3,
+  ExternalLink,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 // ── WelcomeScreen constants (outside component to avoid re-renders) ──
@@ -122,7 +123,6 @@ import {
   CATALOGO_GENERADORES,
   CATALOGO_ALMACENAMIENTO,
   CATALOGO_FOTOS,
-  HISTORICO_CERTIFICACIONES,
   TITULARES_CONOCIDOS,
   FORMATOS_MODULO_CONOCIDOS,
   TAMANOS_JAULAS_CONOCIDOS,
@@ -145,7 +145,12 @@ import {
   buildInformeTecnicoData,
   buildActaInspeccionData,
 } from './domain/documents';
-import { generateActaPdf } from './domain/actaHtml';
+import { generateActaPdf, buildActaHtml } from './domain/actaHtml';
+import {
+  OPERACION_MINIMA_EXTRACTION,
+  OPERACION_MINIMA_BATCH_INDEX,
+  OPERACION_MINIMA_AQUAINOX_PREPICADOR,
+} from './domain/constants';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 // ─── Credenciales desde variables de entorno (.env — no subir a git) ────────
@@ -1052,6 +1057,15 @@ const WelcomeScreen = ({
   const [error, setError]             = React.useState('');
   const [loading, setLoading]         = React.useState(false);
   const [aquaPhase, setAquaPhase]     = React.useState<'idle' | 'in' | 'hold' | 'out'>('idle');
+
+  // ── responsive ──
+  const [winW, setWinW] = React.useState(() => window.innerWidth);
+  React.useEffect(() => {
+    const onResize = () => setWinW(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const isMobile = winW < 640;
   const pendingRoleRef                = React.useRef<'admin' | 'reader' | null>(null);
 
   const triggerAquaLogin = React.useCallback((role: 'admin' | 'reader') => {
@@ -1238,7 +1252,7 @@ const WelcomeScreen = ({
               <img
                 src={logoSrc}
                 alt={logoAlt}
-                style={{ height: 130, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.95, maxWidth: 320 }}
+                style={{ height: isMobile ? 80 : 130, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.95, maxWidth: isMobile ? 200 : 320 }}
               />
               <p style={{ color: '#475569', fontSize: 11, fontWeight: 600, letterSpacing: '0.22em', textTransform: 'uppercase', marginTop: 4 }}>
                 Norma 1511 · Puerto Aysén
@@ -1347,12 +1361,12 @@ const WelcomeScreen = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+            style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'center', padding: isMobile ? '16px 12px' : 24 }}
           >
-            <div style={{ width: '100%', maxWidth: 900, display: 'flex', flexWrap: 'wrap', overflow: 'hidden', borderRadius: 20, border: '1px solid #1e2535', boxShadow: '0 24px 64px rgba(0,0,0,0.7)', minHeight: 520 }}>
+            <div style={{ width: '100%', maxWidth: 900, display: 'flex', flexWrap: 'wrap', overflow: 'hidden', borderRadius: isMobile ? 16 : 20, border: '1px solid #1e2535', boxShadow: '0 24px 64px rgba(0,0,0,0.7)', minHeight: isMobile ? 'unset' : 520 }}>
 
               {/* ── PANEL IZQUIERDO ── */}
-              <div style={{ flex: '0 0 55%', minWidth: 280, background: '#0d1117', padding: '44px 40px 36px', borderRight: '1px solid #1e2535', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ flex: '0 0 55%', minWidth: 280, background: '#0d1117', padding: '44px 40px 36px', borderRight: '1px solid #1e2535', display: isMobile ? 'none' : 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
 
                 {/* Patrón topográfico sutil */}
                 <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.03, pointerEvents: 'none' }} viewBox="0 0 480 520" preserveAspectRatio="xMidYMid slice">
@@ -1404,8 +1418,16 @@ const WelcomeScreen = ({
               </div>
 
               {/* ── PANEL DERECHO ── login */}
-              <div style={{ flex: '0 0 45%', minWidth: 260, background: '#111827', padding: '44px 40px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ width: '100%', maxWidth: 280 }}>
+              <div style={{ flex: isMobile ? '1 1 100%' : '0 0 45%', minWidth: isMobile ? 'unset' : 260, background: '#111827', padding: isMobile ? '32px 24px 28px' : '44px 40px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                {isMobile && (
+                  <div style={{ marginBottom: 28, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                    <img src={logoSrc} alt={logoAlt} style={{ height: 44, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.9 }} />
+                    <p style={{ color: '#334155', fontSize: 10, fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase' }}>
+                      Sistema de Certificación · Norma 1511
+                    </p>
+                  </div>
+                )}
+                <div style={{ width: '100%', maxWidth: isMobile ? '100%' : 280 }}>
                   <p style={{ fontSize: 15, fontWeight: 700, color: '#f1f5f9', marginBottom: 4 }}>Ingresar al sistema</p>
                   <p style={{ fontSize: 12, color: '#475569', marginBottom: 32 }}>Usa tu cuenta institucional para acceder</p>
 
@@ -1750,6 +1772,54 @@ export default function App() {
         __savedBy: state.general.certificador.nombre || 'desconocido',
         __section: section,
       });
+      // Upsert entrada borrador en historico (no sobreescribe esBorrador:false si ya hay docs generados)
+      const calcExt = calculatedExtraction;
+      const calcDen = calculatedDenaturation;
+      const calcSto = calculatedStorage;
+      const existingEntry = historicoEntries.find(e => e.id === docId);
+      const keepNonBorrador = existingEntry && existingEntry.esBorrador === false;
+      if (!keepNonBorrador) {
+        await setDoc(doc(db, 'historico', docId), {
+          registroId: docId,
+          codigoCentro: cc.codigo_centro,
+          nombreCentro: cc.nombre_centro,
+          titular: cc.titular,
+          fechaInspeccion: state.general.fechas.inspeccion_terreno,
+          esBorrador: true,
+          snapshot: { ...state, images: imagesMetadata },
+          metricas: {
+            capExtraccion: calcExt.capacidad_diaria_ton,
+            capDesnaturalizacion: calcDen.capacidad_diaria_ton,
+            capAlmacenamiento: calcSto.capacidad_almacenaje_ton,
+            cumpleExtraccion: calcExt.cumple_norma,
+            cumpleDesnaturalizacion: calcDen.cumple_norma,
+            cumpleAlmacenamiento: calcSto.cumple_norma,
+            sistemaExtraccion: state.extraction.parametros.sistema_principal,
+            sistemaDesnaturalizacion: state.denaturation.equipos.tipo_sistema,
+            modoOperacionMinima: state.general.modo_operacion_minima ?? false,
+            numJaulas: state.extraction.parametros.numero_total_jaulas,
+            jaulas_simultaneas: state.extraction.parametros.jaulas_simultaneas,
+            profundidad_m: state.extraction.parametros.profundidad_operacion_m,
+          },
+          __updatedAt: serverTimestamp(),
+        }, { merge: true });
+        setHistoricoEntries(prev => {
+          const idx = prev.findIndex(e => e.id === docId);
+          const updated: RegistroHistorico = {
+            ...(idx >= 0 ? prev[idx] : {}),
+            id: docId,
+            registroId: docId,
+            codigoCentro: cc.codigo_centro,
+            nombreCentro: cc.nombre_centro,
+            titular: cc.titular,
+            fechaInspeccion: state.general.fechas.inspeccion_terreno,
+            esBorrador: true,
+            documentosGenerados: idx >= 0 ? (prev[idx].documentosGenerados ?? []) : [],
+            snapshot: { ...state, images: imagesMetadata } as any,
+          };
+          return idx >= 0 ? prev.map(e => e.id === docId ? updated : e) : [updated, ...prev];
+        });
+      }
       firestoreOk = true;
     } catch (err: any) {
       console.error('Error guardando en Firestore:', err);
@@ -1765,7 +1835,10 @@ export default function App() {
   };
 
   // ─── Histórico: guardar snapshot tras generar un documento ────────────────
-  const saveToHistorico = async (tipo: 'certificado' | 'informe' | 'acta') => {
+  const saveToHistorico = async (
+    tipo: 'certificado' | 'informe' | 'acta',
+    documentUrl?: string
+  ) => {
     try {
       const { doc, setDoc, serverTimestamp, arrayUnion } = await import('firebase/firestore');
       const { db } = await import('./firebase');
@@ -1774,18 +1847,81 @@ export default function App() {
       const snapshotImgs = state.images.map(({ id, seccion, leyenda, estado, observacion, url }) =>
         ({ id, seccion, leyenda, estado, observacion, url: url.startsWith('http') ? url : '' })
       );
-      await setDoc(doc(db, 'historico', docId), {
+      const payload: Record<string, any> = {
         registroId: docId,
         codigoCentro: cc.codigo_centro,
         nombreCentro: cc.nombre_centro,
         titular: cc.titular,
         fechaInspeccion: state.general.fechas.inspeccion_terreno,
+        esBorrador: false,
         documentosGenerados: arrayUnion(tipo),
         snapshot: { ...state, images: snapshotImgs },
+        metricas: {
+          capExtraccion: calculatedExtraction.capacidad_diaria_ton,
+          capDesnaturalizacion: calculatedDenaturation.capacidad_diaria_ton,
+          capAlmacenamiento: calculatedStorage.capacidad_almacenaje_ton,
+          cumpleExtraccion: calculatedExtraction.cumple_norma,
+          cumpleDesnaturalizacion: calculatedDenaturation.cumple_norma,
+          cumpleAlmacenamiento: calculatedStorage.cumple_norma,
+          sistemaExtraccion: state.extraction.parametros.sistema_principal,
+          sistemaDesnaturalizacion: state.denaturation.equipos.tipo_sistema,
+          modoOperacionMinima: state.general.modo_operacion_minima ?? false,
+          numJaulas: state.extraction.parametros.numero_total_jaulas,
+          jaulas_simultaneas: state.extraction.parametros.jaulas_simultaneas,
+          profundidad_m: state.extraction.parametros.profundidad_operacion_m,
+        },
         __updatedAt: serverTimestamp(),
-      }, { merge: true });
+      };
+      if (documentUrl) {
+        payload[`documentUrls.${tipo}`] = documentUrl;
+      }
+      await setDoc(doc(db, 'historico', docId), payload, { merge: true });
     } catch (err) {
       console.error('Error guardando en histórico:', err);
+    }
+  };
+
+  const uploadDocToStorage = async (
+    blob: Blob,
+    docId: string,
+    tipo: 'certificado' | 'informe' | 'acta' | 'registro_visita'
+  ): Promise<string> => {
+    const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+    const { storage } = await import('./firebase');
+    const storageRef = ref(storage, `historico/${docId}/${tipo}.pdf`);
+    await uploadBytes(storageRef, blob);
+    return getDownloadURL(storageRef);
+  };
+
+  const generateActaBlob = async (): Promise<Blob> => {
+    const html = buildActaHtml(state);
+    // Usamos un iframe aislado para evitar que html2canvas herede el CSS de Tailwind v4
+    // (que usa oklch(), no soportado por html2canvas)
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;left:-20000px;top:0;width:816px;height:1200px;border:none;visibility:hidden;';
+    document.body.appendChild(iframe);
+    try {
+      const iframeDoc = iframe.contentDocument!;
+      iframeDoc.open();
+      iframeDoc.write(html);
+      iframeDoc.close();
+      await new Promise<void>((resolve) => {
+        if (iframeDoc.readyState === 'complete') resolve();
+        else iframe.addEventListener('load', () => resolve(), { once: true });
+      });
+      const doc = new jsPDF({ format: [215.9, 355.6], unit: 'mm' });
+      await new Promise<void>((resolve) => {
+        (doc as any).html(iframeDoc.body, {
+          callback: () => resolve(),
+          x: 0, y: 0,
+          width: 215.9,
+          windowWidth: 816,
+          autoPaging: 'text',
+        });
+      });
+      return doc.output('blob');
+    } finally {
+      document.body.removeChild(iframe);
     }
   };
 
@@ -1804,6 +1940,53 @@ export default function App() {
       if (extras?.titular)      payload.titular      = extras.titular;
       await addDoc(collection(db, 'eventos_uso'), payload);
     } catch { /* silencioso */ }
+  };
+
+  const applyOperacionMinima = () => {
+    const { talla_pez, t_trabajo_override_min, jaulas_simultaneas, personal_operativo, disponibilidad_base_fd, sistema_principal } = OPERACION_MINIMA_EXTRACTION;
+    const idTri = state.denaturation.equipos.id_catalogo_trituradora;
+    const batchIndex = idTri ? OPERACION_MINIMA_BATCH_INDEX[idTri] : undefined;
+
+    setState(prev => {
+      const next: AppState = {
+        ...prev,
+        general: { ...prev.general, modo_operacion_minima: true },
+        extraction: {
+          ...prev.extraction,
+          parametros: {
+            ...prev.extraction.parametros,
+            talla_pez,
+            t_trabajo_override_min,
+            jaulas_simultaneas,
+            personal_operativo,
+            disponibilidad_base_fd,
+            sistema_principal,
+          },
+        },
+      };
+
+      if (idTri && batchIndex !== undefined) {
+        const catTri = CATALOGO_DESNATURALIZACION.trituradoras.find(t => t.id === idTri);
+        const batchCfg = catTri?.configuraciones_batch?.[batchIndex];
+        if (batchCfg) {
+          const useAquainoxPre = idTri === 'aquainox-1430' && prev.denaturation.equipos.cuenta_con_prepicador;
+          const cfg = useAquainoxPre
+            ? OPERACION_MINIMA_AQUAINOX_PREPICADOR
+            : { kilos: batchCfg.kilos, t_proceso: batchCfg.t_proceso, t_pausa: batchCfg.t_pausa };
+          next.denaturation = {
+            ...prev.denaturation,
+            parametros_batch: {
+              ...prev.denaturation.parametros_batch,
+              kilos_por_batch: cfg.kilos,
+              tiempo_procesamiento_min: cfg.t_proceso,
+              tiempo_pausa_min: cfg.t_pausa,
+            },
+          };
+        }
+      }
+
+      return next;
+    });
   };
 
   const updateHistoricoStatus = async (docId: string, field: string, value: boolean) => {
@@ -1866,6 +2049,23 @@ export default function App() {
     e.target.value = '';
     setRegistroVisitaProcessing(true);
     setRegistroVisitaProgress(0);
+    // Upload original PDF to Storage if registroId is set
+    const rvDocId = state.registroId;
+    if (rvDocId) {
+      const rvBlob = new Blob([await file.arrayBuffer()], { type: 'application/pdf' });
+      uploadDocToStorage(rvBlob, rvDocId, 'registro_visita').then(url => {
+        import('firebase/firestore').then(async ({ doc, updateDoc }) => {
+          const { db } = await import('./firebase');
+          await updateDoc(doc(db, 'historico', rvDocId), { 'documentUrls.registro_visita': url });
+          setHistoricoEntries(prev =>
+            prev.map(e => e.id === rvDocId
+              ? { ...e, documentUrls: { ...e.documentUrls, registro_visita: url } }
+              : e
+            )
+          );
+        });
+      }).catch(() => { /* silencioso */ });
+    }
     try {
       const arrayBuffer = await file.arrayBuffer();
       const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist');
@@ -2460,7 +2660,7 @@ export default function App() {
       { id: 'fechas',    tab: 'general' as const,      grupo: 'Fechas',       label: 'Fechas completas',              detail: g.fechas.inspeccion_terreno || 'Sin fecha', ok: !!(g.fechas.evaluacion_documental && g.fechas.inspeccion_terreno && g.fechas.emision_certificado), required: true },
       // ─ Extracción ─
       { id: 'jaulas',    tab: 'extraction' as const,   grupo: 'Parámetros',   label: 'N° total de jaulas',            detail: ext.numero_total_jaulas > 0 ? String(ext.numero_total_jaulas) : 'Sin ingresar', ok: ext.numero_total_jaulas > 0, required: true },
-      { id: 'cfm',       tab: 'extraction' as const,   grupo: 'Parámetros',   label: 'Potencia compresor (CFM)',       detail: ext.potencia_cfm > 0 ? String(ext.potencia_cfm) : 'Sin ingresar', ok: ext.potencia_cfm > 0, required: true },
+      { id: 'cfm',       tab: 'extraction' as const,   grupo: 'Parámetros',   label: 'Potencia compresor (CFM)',       detail: g.modo_operacion_minima ? 'N/A (Op. Mín.)' : (ext.potencia_cfm > 0 ? String(ext.potencia_cfm) : 'Sin ingresar'), ok: g.modo_operacion_minima || ext.potencia_cfm > 0, required: true },
       { id: 'ext',       tab: 'extraction' as const,   grupo: 'Capacidad',    label: 'Extracción ≥ 15 TN/día',        detail: `${calculatedExtraction.capacidad_diaria_ton} TN/día`, ok: calculatedExtraction.cumple_norma, required: true },
       // ─ Desnaturalización ─
       { id: 'vel_olla',  tab: 'denaturation' as const, grupo: 'Parámetros',   label: 'Vel. nominal olla (kg/h)',       detail: den.velocidad_nominal_kg_hr > 0 ? String(den.velocidad_nominal_kg_hr) : 'Sin ingresar', ok: den.velocidad_nominal_kg_hr > 0, required: true },
@@ -2820,6 +3020,49 @@ Se despide atentamente`;
 
   const [historicoEntries, setHistoricoEntries] = useState<RegistroHistorico[]>([]);
   const [historicoLoading, setHistoricoLoading] = useState(false);
+  const [selectedHistoricoEntry, setSelectedHistoricoEntry] = useState<RegistroHistorico | null>(null);
+  const [resubirLoadingId, setResubirLoadingId] = useState<string | null>(null); // "docId-tipo"
+  const resubirPendienteRef = useRef<{ entry: RegistroHistorico; tipo: string } | null>(null);
+  const resubirFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleResubirDocumento = (entry: RegistroHistorico, tipo: string) => {
+    resubirPendienteRef.current = { entry, tipo };
+    resubirFileInputRef.current?.click();
+  };
+
+  const handleResubirFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const pending = resubirPendienteRef.current;
+    e.target.value = '';
+    if (!file || !pending) return;
+    const { entry, tipo } = pending;
+    resubirPendienteRef.current = null;
+    const loadingKey = `${entry.id}-${tipo}`;
+    setResubirLoadingId(loadingKey);
+    try {
+      const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+      const { storage } = await import('./firebase');
+      const storageRef = ref(storage, `historico/${entry.id}/${tipo}.pdf`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      const { doc, updateDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      await updateDoc(doc(db, 'historico', entry.id!), {
+        [`documentUrls.${tipo}`]: url,
+      });
+      setHistoricoEntries(prev =>
+        prev.map(e => e.id === entry.id
+          ? { ...e, documentUrls: { ...e.documentUrls, [tipo]: url } }
+          : e
+        )
+      );
+    } catch (err) {
+      console.error('Error en re-subida:', err);
+      alert('No se pudo subir el archivo. Verifica tu conexión e inténtalo de nuevo.');
+    } finally {
+      setResubirLoadingId(null);
+    }
+  };
 
   const addImage = (files: File[]) => {
     if (!files.length) return;
@@ -3508,9 +3751,13 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         doc.text(`Página ${i} de ${np}`, 196, 293, { align: 'right' });
       }
 
+      const certBlob = doc.output('blob');
       doc.save(`${codigo}-${formatFileDate(state.general.fechas.emision_certificado)}-CERTIFICADO.pdf`);
       setShowEmailModal(true);
-      saveToHistorico('certificado');
+      const certDocId = state.registroId ?? `sin-reg_${codigo || 'borrador'}`;
+      uploadDocToStorage(certBlob, certDocId, 'certificado')
+        .then(url => saveToHistorico('certificado', url))
+        .catch(() => saveToHistorico('certificado'));
       logEvento('generar_certificado', { codigoCentro: state.general.centro_cultivo.codigo_centro, nombreCentro: state.general.centro_cultivo.nombre_centro, titular: state.general.centro_cultivo.titular });
     } finally { setGenerating(null); }
   };
@@ -3863,8 +4110,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           ['Traslado Mortalidad a plataforma de Ensilaje.', `Hacia ${cc.nombre_an_ensilaje || 'A/N Pontón'} por medio de tachos rotulados.`],
           ['Marca.',                 ext.parametros.marca_equipo],
           ['Capacidad nominal',      `${ext.parametros.jaulas_simultaneas} jaulas en simultáneo`],
-          ['Marca/modelo equipo de aire.', ext.parametros.tipo_compresor],
-          ['Potencia Extracción (CFM).', `${ext.parametros.potencia_cfm} CFM`],
+          ['Marca/modelo equipo de aire.', g.modo_operacion_minima ? 'N/A' : ext.parametros.tipo_compresor],
+          ['Potencia Extracción (CFM).', g.modo_operacion_minima ? 'N/A' : `${ext.parametros.potencia_cfm} CFM`],
           ['Ubicación del compresor.', ext.parametros.ubicacion_compresor || '—'],
         ],
         theme: 'striped',
@@ -4485,10 +4732,13 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       addInformePageFrame(doc, docCode, logo, 'Informe Técnico');
 
       const filename = `${codigo}-${formatFileDate(g.fechas.emision_certificado)}-INFORME.pdf`;
-
+      const informeBlob = doc.output('blob');
       doc.save(filename);
       setShowEmailModal(true);
-      saveToHistorico('informe');
+      const informeDocId = state.registroId ?? `sin-reg_${codigo || 'borrador'}`;
+      uploadDocToStorage(informeBlob, informeDocId, 'informe')
+        .then(url => saveToHistorico('informe', url))
+        .catch(() => saveToHistorico('informe'));
       logEvento('generar_informe', { codigoCentro: state.general.centro_cultivo.codigo_centro, nombreCentro: state.general.centro_cultivo.nombre_centro, titular: state.general.centro_cultivo.titular });
     } finally { setGenerating(null); }
   };
@@ -5037,6 +5287,49 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── Operación Mínima toggle ── */}
+      {isAdmin && (
+        <FormCard>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-0.5">
+              <span className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                <ShieldCheck size={15} className="text-amber-500" />
+                Modo Operación Mínima
+              </span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Aplica parámetros regulatorios mínimos (Res. Exenta N°1511/2021): ROV, talla pequeña, 2 jaulas, 2 personas.
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                const hasParams = state.extraction.parametros.numero_total_jaulas > 0 ||
+                  state.denaturation.equipos.id_catalogo_trituradora !== '';
+                if (state.general.modo_operacion_minima) {
+                  setState(prev => ({ ...prev, general: { ...prev.general, modo_operacion_minima: false } }));
+                } else if (hasParams && !window.confirm(
+                  'Se sobreescribirán los parámetros de extracción (talla pez, jaulas, personal, sistema) ' +
+                  'y el batch de desnaturalización. ¿Continuar?'
+                )) {
+                  return;
+                } else {
+                  applyOperacionMinima();
+                }
+              }}
+              className={cn(
+                'shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all border',
+                state.general.modo_operacion_minima
+                  ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/40'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-amber-300'
+              )}
+            >
+              {state.general.modo_operacion_minima
+                ? <><ToggleRight size={18} /> Activo</>
+                : <><ToggleLeft size={18} /> Inactivo</>}
+            </button>
+          </div>
+        </FormCard>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -5729,16 +6022,19 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
   const HistoryView = () => {
     const StatusChip = ({
-      active, onToggle, labelOn, labelOff, colorOn,
-    }: { active: boolean; onToggle: () => void; labelOn: string; labelOff: string; colorOn: string; }) => (
+      active, onToggle, labelOn, labelOff, colorOn, disabled,
+    }: { active: boolean; onToggle: () => void; labelOn: string; labelOff: string; colorOn: string; disabled?: boolean; }) => (
       <button
-        onClick={onToggle}
-        title={active ? `Marcar como: ${labelOff}` : `Marcar como: ${labelOn}`}
+        onClick={disabled ? undefined : onToggle}
+        title={disabled ? 'No disponible en borradores' : (active ? `Marcar como: ${labelOff}` : `Marcar como: ${labelOn}`)}
+        disabled={disabled}
         className={cn(
           'px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide border transition-colors whitespace-nowrap',
-          active
-            ? colorOn
-            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700 hover:border-slate-400'
+          disabled
+            ? 'bg-slate-50 dark:bg-slate-900 text-slate-300 dark:text-slate-700 border-slate-100 dark:border-slate-800 cursor-not-allowed'
+            : active
+              ? colorOn
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700 hover:border-slate-400'
         )}
       >
         {active ? labelOn : labelOff}
@@ -5782,144 +6078,236 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             </div>
           )}
           {!historicoLoading && historicoEntries.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Centro</th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Titular</th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Inspección</th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Certificador</th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Documentos</th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Estado gestión</th>
-                    <th className="px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {historicoEntries.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-bold text-slate-900 dark:text-white">{entry.nombreCentro || '—'}</span>
-                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{entry.codigoCentro}</span>
-                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{entry.registroId}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 max-w-[140px]">{entry.titular || '—'}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">{entry.fechaInspeccion || '—'}</td>
-                      <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                        {entry.snapshot?.general?.certificador?.nombre || '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {(entry.documentosGenerados ?? []).map(d => <DocBadge key={d} tipo={d} />)}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1.5">
-                          <StatusChip
-                            active={entry.aprobado ?? false}
-                            onToggle={() => updateHistoricoStatus(entry.id!, 'aprobado', !(entry.aprobado ?? false))}
-                            labelOn="Aprobado" labelOff="No aprobado"
-                            colorOn="bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/40"
-                          />
-                          <StatusChip
-                            active={entry.firmado ?? false}
-                            onToggle={() => updateHistoricoStatus(entry.id!, 'firmado', !(entry.firmado ?? false))}
-                            labelOn="Firmado" labelOff="Sin firma"
-                            colorOn="bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-500/40"
-                          />
-                          <StatusChip
-                            active={entry.enviado_sernapesca ?? false}
-                            onToggle={() => updateHistoricoStatus(entry.id!, 'enviado_sernapesca', !(entry.enviado_sernapesca ?? false))}
-                            labelOn="Enviado SERNAPESCA" labelOff="Sin enviar"
-                            colorOn="bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400 border-violet-300 dark:border-violet-500/40"
-                          />
-                          <StatusChip
-                            active={entry.cliente_notificado ?? false}
-                            onToggle={() => updateHistoricoStatus(entry.id!, 'cliente_notificado', !(entry.cliente_notificado ?? false))}
-                            labelOn="Cliente notificado" labelOff="Sin notificar"
-                            colorOn="bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/40"
-                          />
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => loadFromHistorico(entry)}
-                          title="Cargar datos en el formulario para editar y regenerar documentos"
-                          className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors border border-indigo-200 dark:border-indigo-500/30"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
+              {historicoEntries.map((entry) => {
+                const docs = entry.documentosGenerados ?? [];
+                const urls = entry.documentUrls ?? {};
+                const m = entry.metricas;
+                return (
+                  <div key={entry.id} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 flex flex-col gap-3 hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-colors">
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900 dark:text-white text-sm truncate">{entry.nombreCentro || '—'}</p>
+                        <p className="text-[10px] font-mono text-slate-400 dark:text-slate-500">{entry.codigoCentro} · {entry.registroId}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        {entry.esBorrador && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-bold uppercase border border-slate-300 dark:border-slate-600">Borrador</span>
+                        )}
+                        {entry.metricas?.modoOperacionMinima && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold uppercase">Op. Min.</span>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{entry.titular || '—'}</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 font-mono">{entry.fechaInspeccion || '—'}</p>
+
+                    {/* Compliance badges */}
+                    {m && (
+                      <div className="flex gap-1.5 flex-wrap">
+                        {([
+                          { label: 'Extr.', cumple: m.cumpleExtraccion, val: m.capExtraccion },
+                          { label: 'Desn.', cumple: m.cumpleDesnaturalizacion, val: m.capDesnaturalizacion },
+                          { label: 'Alm.',  cumple: m.cumpleAlmacenamiento,   val: m.capAlmacenamiento },
+                        ]).map(({ label, cumple, val }) => (
+                          <span key={label} className={cn(
+                            'px-2 py-0.5 rounded-md text-[10px] font-bold',
+                            cumple
+                              ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400'
+                              : 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400'
+                          )}>
+                            {label} {typeof val === 'number' ? val.toFixed(1) : val}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Doc badges — green if URL exists, grey with re-upload button otherwise */}
+                    <div className="flex gap-1 flex-wrap">
+                      {docs.map(d => {
+                        const hasUrl = !!urls[d as keyof typeof urls];
+                        const loadingKey = `${entry.id}-${d}`;
+                        const isUploading = resubirLoadingId === loadingKey;
+                        return hasUrl ? (
+                          <span key={d} className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400">{d}</span>
+                        ) : (
+                          <button
+                            key={d}
+                            onClick={() => handleResubirDocumento(entry, d)}
+                            disabled={isUploading}
+                            title={`Re-subir ${d} (selecciona el PDF ya generado)`}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-amber-500/20 dark:hover:text-amber-400 border border-dashed border-slate-300 dark:border-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isUploading ? '…' : '↑'} {d}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Status chips */}
+                    <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700">
+                      <StatusChip active={entry.aprobado ?? false} onToggle={() => updateHistoricoStatus(entry.id!, 'aprobado', !(entry.aprobado ?? false))} labelOn="Aprobado" labelOff="No aprobado" colorOn="bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/40" disabled={entry.esBorrador} />
+                      <StatusChip active={entry.firmado ?? false} onToggle={() => updateHistoricoStatus(entry.id!, 'firmado', !(entry.firmado ?? false))} labelOn="Firmado" labelOff="Sin firma" colorOn="bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-500/40" disabled={entry.esBorrador} />
+                      <StatusChip active={entry.enviado_sernapesca ?? false} onToggle={() => updateHistoricoStatus(entry.id!, 'enviado_sernapesca', !(entry.enviado_sernapesca ?? false))} labelOn="SERNAPESCA" labelOff="Sin enviar" colorOn="bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400 border-violet-300 dark:border-violet-500/40" disabled={entry.esBorrador} />
+                      <StatusChip active={entry.cliente_notificado ?? false} onToggle={() => updateHistoricoStatus(entry.id!, 'cliente_notificado', !(entry.cliente_notificado ?? false))} labelOn="Notificado" labelOff="Sin notificar" colorOn="bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/40" disabled={entry.esBorrador} />
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => setSelectedHistoricoEntry(entry)}
+                        className="flex-1 py-1.5 text-xs font-bold rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors border border-indigo-200 dark:border-indigo-500/30"
+                      >
+                        Ver detalle
+                      </button>
+                      <button
+                        onClick={() => loadFromHistorico(entry)}
+                        title="Cargar datos en el formulario"
+                        className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors border border-slate-200 dark:border-slate-600"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </FormCard>
 
-        {/* ── Histórico previo (datos estáticos) ── */}
-        {HISTORICO_CERTIFICACIONES.length > 0 && (
-          <>
-            <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest px-1">Histórico previo (importado)</h3>
-            <FormCard className="p-0 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Estado</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Fecha Emisión</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Centro</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Empresa</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Sistema</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Cap. Extr.</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Cap. Desn.</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Alm.</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Certificador</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {HISTORICO_CERTIFICACIONES.map((entry, idx) => (
-                      <tr key={idx} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 transition-colors">
-                        <td className="px-6 py-4">
-                          <span className={cn(
-                            "px-2 py-1 text-[10px] font-bold rounded-md uppercase",
-                            entry.estado === 'VIGENTE'
-                              ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
-                              : entry.estado === 'VENCIDO' || entry.estado === 'RECHAZADO'
-                                ? "bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400"
-                                : "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400"
-                          )}>
-                            {entry.estado}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 font-medium tabular-nums">{entry.fechaEmision}</td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-bold text-slate-900 dark:text-white">{entry.nombreCentro}</span>
-                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{entry.codigoCentro}</span>
+        {/* ── Drawer lateral ── */}
+        {selectedHistoricoEntry && (() => {
+          const entry = selectedHistoricoEntry;
+          const docs = entry.documentosGenerados ?? [];
+          const urls = entry.documentUrls ?? {};
+          const snap = entry.snapshot;
+          const calcExt = calculateExtraction(snap.extraction.parametros);
+          const calcDen = calculateDenaturation(
+            snap.denaturation.equipos,
+            snap.denaturation.parametros_batch,
+            snap.denaturation.parametros_incineracion,
+            snap.denaturation.incinerador
+          );
+          const calcSto = calculateStorage(snap.storage.parametros);
+          const m = entry.metricas ?? {
+            capExtraccion: calcExt.capacidad_diaria_ton,
+            capDesnaturalizacion: calcDen.capacidad_diaria_ton,
+            capAlmacenamiento: calcSto.capacidad_almacenaje_ton,
+            cumpleExtraccion: calcExt.cumple_norma,
+            cumpleDesnaturalizacion: calcDen.cumple_norma,
+            cumpleAlmacenamiento: calcSto.cumple_norma,
+            sistemaExtraccion: snap.extraction.parametros.sistema_principal,
+            sistemaDesnaturalizacion: snap.denaturation.equipos.tipo_sistema,
+            modoOperacionMinima: snap.general.modo_operacion_minima ?? false,
+            numJaulas: snap.extraction.parametros.numero_total_jaulas,
+            jaulas_simultaneas: snap.extraction.parametros.jaulas_simultaneas,
+            profundidad_m: snap.extraction.parametros.profundidad_operacion_m,
+          };
+          const ALL_DOC_TYPES = ['certificado', 'informe', 'acta', 'registro_visita'] as const;
+          return (
+            <>
+              <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setSelectedHistoricoEntry(null)} />
+              <div className="fixed right-0 top-0 h-full w-[420px] max-w-full bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-700 z-50 overflow-y-auto shadow-2xl flex flex-col">
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-900 z-10">
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-900 dark:text-white text-base truncate">{entry.nombreCentro || '—'}</p>
+                    <p className="text-xs font-mono text-slate-400">{entry.codigoCentro} · {entry.registroId}</p>
+                  </div>
+                  <button onClick={() => setSelectedHistoricoEntry(null)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 shrink-0">
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-6 px-6 py-5 flex-1">
+                  {/* Info */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Centro</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-semibold">Titular:</span> {entry.titular || '—'}</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-semibold">Fecha inspección:</span> {entry.fechaInspeccion || '—'}</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-semibold">Certificador:</span> {snap.general?.certificador?.nombre || '—'}</p>
+                    {m.modoOperacionMinima && (
+                      <span className="inline-block text-[10px] px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold uppercase">Modo Operación Mínima</span>
+                    )}
+                  </div>
+
+                  {/* Métricas técnicas */}
+                  <div className="space-y-3">
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Métricas técnicas</p>
+                    <div className="flex flex-col gap-2">
+                      {([
+                        { label: 'Cap. Extracción',       val: m.capExtraccion,       cumple: m.cumpleExtraccion,       unit: 'TN/día' },
+                        { label: 'Cap. Desnaturalización', val: m.capDesnaturalizacion, cumple: m.cumpleDesnaturalizacion, unit: 'TN/día' },
+                        { label: 'Cap. Almacenamiento',    val: m.capAlmacenamiento,    cumple: m.cumpleAlmacenamiento,   unit: 'TN'     },
+                      ]).map(({ label, val, cumple, unit }) => (
+                        <div key={label} className="flex items-center justify-between py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-800">
+                          <span className="text-xs text-slate-600 dark:text-slate-400">{label}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-sm text-slate-900 dark:text-white">{typeof val === 'number' ? val.toFixed(2) : '—'} {unit}</span>
+                            <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded', cumple ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400')}>
+                              {cumple ? 'CUMPLE' : 'NO CUMPLE'}
+                            </span>
                           </div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{entry.empresa}</td>
-                        <td className="px-6 py-4">
-                          <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-semibold rounded-md whitespace-nowrap">
-                            {entry.tipoSistema || '—'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold tabular-nums">{entry.capExtraccion}</td>
-                        <td className="px-6 py-4 text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold tabular-nums">{entry.capDesnaturalizacion}</td>
-                        <td className="px-6 py-4 text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold tabular-nums">{entry.capAlmacenamiento}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">{entry.nombreCertificador || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-600 dark:text-slate-400">
+                      <p><span className="font-semibold">Sist. extracción:</span> {m.sistemaExtraccion}</p>
+                      <p><span className="font-semibold">Sist. desnat.:</span> {m.sistemaDesnaturalizacion}</p>
+                      <p><span className="font-semibold">N° jaulas:</span> {m.numJaulas} (simul.: {m.jaulas_simultaneas})</p>
+                      <p><span className="font-semibold">Profundidad:</span> {m.profundidad_m} m</p>
+                    </div>
+                  </div>
+
+                  {/* Documentos */}
+                  <div className="space-y-3">
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Documentos</p>
+                    <div className="flex flex-col gap-2">
+                      {ALL_DOC_TYPES.filter(d => docs.includes(d)).map(tipo => {
+                        const url = urls[tipo];
+                        return (
+                          <div key={tipo} className="flex items-center justify-between py-2.5 px-3 rounded-xl bg-slate-50 dark:bg-slate-800">
+                            <span className="text-xs font-semibold capitalize text-slate-700 dark:text-slate-300">
+                              {tipo === 'registro_visita' ? 'Registro de Visita' : tipo.charAt(0).toUpperCase() + tipo.slice(1)}
+                            </span>
+                            {url ? (
+                              <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5">
+                                <ExternalLink size={11} /> Abrir PDF
+                              </a>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setSelectedHistoricoEntry(null);
+                                  loadFromHistorico(entry);
+                                  setTimeout(() => alert('Registro cargado. Genera los documentos para subirlos a la nube.'), 300);
+                                }}
+                                className="text-xs text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors"
+                              >
+                                Regenerar →
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {docs.length === 0 && <p className="text-xs text-slate-400 italic">Sin documentos generados.</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 sticky bottom-0 bg-white dark:bg-slate-900">
+                  <button
+                    onClick={() => { setSelectedHistoricoEntry(null); loadFromHistorico(entry); }}
+                    className="w-full py-2.5 rounded-xl font-bold text-sm bg-indigo-600 hover:bg-indigo-700 text-white transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Pencil size={14} /> Cargar en formulario
+                  </button>
+                </div>
               </div>
-            </FormCard>
-          </>
-        )}
+            </>
+          );
+        })()}
       </div>
     );
   };
@@ -7309,10 +7697,14 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           {/* Botón Acta */}
           <button
             disabled={generating !== null || !isAdmin}
-            onClick={() => {
+            onClick={async () => {
               generateActaPdf(state);
               setShowEmailModal(true);
-              saveToHistorico('acta');
+              const actaDocId = state.registroId ?? `sin-reg_${state.general.centro_cultivo.codigo_centro || 'borrador'}`;
+              generateActaBlob()
+                .then(blob => uploadDocToStorage(blob, actaDocId, 'acta'))
+                .then(url => saveToHistorico('acta', url))
+                .catch(() => saveToHistorico('acta'));
               logEvento('generar_acta', { codigoCentro: state.general.centro_cultivo.codigo_centro, nombreCentro: state.general.centro_cultivo.nombre_centro, titular: state.general.centro_cultivo.titular });
             }}
             className={cn(
@@ -7409,7 +7801,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       <AnimatePresence>
         {showWelcome && <WelcomeScreen setUserRole={setUserRole} setShowWelcome={setShowWelcome} logoProvider={tema.logo} />}
       </AnimatePresence>
-      
+
+      {!showWelcome && (<>
       {/* Sidebar Navigation */}
       <aside className={cn(
         "bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col sticky top-0 h-screen transition-all duration-500 z-50 shadow-2xl shadow-slate-200/40 dark:shadow-none",
@@ -7469,6 +7862,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               className={cn("w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all", isAdmin ? "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer" : "text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-40", isSidebarCollapsed && "justify-center px-0")}
             >
               <input ref={importDraftRef} type="file" accept=".json" className="hidden" disabled={!isAdmin} onChange={importDraft} />
+              <input ref={resubirFileInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleResubirFileChange} />
               <ArrowRight size={18} className="rotate-180" />
               {!isSidebarCollapsed && <span className="text-sm font-medium">Cargar Borrador</span>}
             </label>
@@ -7643,6 +8037,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           onClose={() => setAnnotatingImageId(null)}
         />
       )}
+      </>)}
     </div>
   );
 }

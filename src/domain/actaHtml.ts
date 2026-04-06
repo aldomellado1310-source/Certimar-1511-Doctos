@@ -173,7 +173,7 @@ export function buildActaHtml(state: AppState): string {
     `<span class="c10">${ext.parametros.motocompresores_por_jaula}</span></p></td></tr><tr class="c20"><td class="c66 c39"`
   );
   html = rep(html, '{jaulas_simult}',   ext.parametros.jaulas_simultaneas.toString());
-  html = rep(html, '{cfm}',             ext.parametros.potencia_cfm.toString());
+  html = rep(html, '{cfm}',             g.modo_operacion_minima ? na : ext.parametros.potencia_cfm.toString());
   html = rep(html, '{nro_jaulas}',      ext.parametros.numero_total_jaulas.toString());
   html = rep(html, '{linea_extraccion}',
     ext.parametros.marca_equipo || ext.parametros.sistema_principal
