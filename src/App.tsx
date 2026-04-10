@@ -1,3 +1,4 @@
+declare const __APP_VERSION__: string;
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   LayoutDashboard,
@@ -1045,7 +1046,7 @@ const WelcomeScreen = ({
   setShowWelcome,
   logoProvider = 'certimar',
 }: {
-  setUserRole:    React.Dispatch<React.SetStateAction<'admin' | 'reader' | null>>;
+  setUserRole:    React.Dispatch<React.SetStateAction<'admin' | 'editor' | 'reader' | null>>;
   setShowWelcome: React.Dispatch<React.SetStateAction<boolean>>;
   logoProvider?:  'certimar' | 'engelbert';
 }) => {
@@ -1066,9 +1067,9 @@ const WelcomeScreen = ({
     return () => window.removeEventListener('resize', onResize);
   }, []);
   const isMobile = winW < 640;
-  const pendingRoleRef                = React.useRef<'admin' | 'reader' | null>(null);
+  const pendingRoleRef                = React.useRef<'admin' | 'editor' | 'reader' | null>(null);
 
-  const triggerAquaLogin = React.useCallback((role: 'admin' | 'reader') => {
+  const triggerAquaLogin = React.useCallback((role: 'admin' | 'editor' | 'reader') => {
     pendingRoleRef.current = role;
     setAquaPhase('in');
     setTimeout(() => setAquaPhase('hold'), 600);
@@ -1108,8 +1109,8 @@ const WelcomeScreen = ({
         setGoogleEmail(email);
         setStep('pin');
       } else {
-        localStorage.setItem('certimar-session', JSON.stringify({ role: 'reader', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
-        triggerAquaLogin('reader');
+        localStorage.setItem('certimar-session', JSON.stringify({ role: 'editor', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
+        triggerAquaLogin('editor');
       }
     } catch (e: any) {
       if (e?.code !== 'auth/popup-closed-by-user') {
@@ -2233,7 +2234,7 @@ export default function App() {
   const SESSION_KEY = 'certimar-session';
   const SESSION_TTL = 8 * 60 * 60 * 1000; // 8 horas
 
-  const readSession = (): { role: 'admin' | 'reader'; expiry: number } | null => {
+  const readSession = (): { role: 'admin' | 'editor' | 'reader'; expiry: number } | null => {
     try {
       const raw = localStorage.getItem(SESSION_KEY);
       if (!raw) return null;
@@ -2248,8 +2249,9 @@ export default function App() {
 
   const savedSession = readSession();
   const [showWelcome, setShowWelcome] = useState(!savedSession);
-  const [userRole, setUserRole] = useState<'admin' | 'reader' | null>(savedSession?.role ?? null);
-  const isAdmin = userRole === 'admin';
+  const [userRole, setUserRole] = useState<'admin' | 'editor' | 'reader' | null>(savedSession?.role ?? null);
+  const isAdmin  = userRole === 'admin';
+  const isEditor = userRole === 'editor';
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() =>
     typeof window !== 'undefined' && window.innerWidth < 768
   );
@@ -4191,22 +4193,22 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         startY: y14 + 5,
         margin: { top: 25 },
         body: [
-          [{ content: 'Equipo de Desnaturalización y capacidades', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold' } }],
+          [{ content: 'Equipo de Desnaturalización y capacidades', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold' as const } }],
           ...(den.incinerador.activo ? [['Número de plataformas de desnaturalización.', '2 (Ensilaje + Incinerador)']] : []),
           ['Número ollas trituradoras.', String(den.equipos.cantidad_sistemas)],
           ['Capacidad de procesamiento Nominal (kg/h).', `${den.equipos.velocidad_nominal_kg_hr} Kg/h`],
           ['Horas de funcionamiento al día.', `${den.equipos.horas_funcionamiento_dia} hrs.`],
           ['Marca.', den.equipos.marca_modelo],
-          [{ content: '(Por cada olla trituradora)', colSpan: 2, styles: { fontStyle: 'bold' } }],
+          [{ content: '(Por cada olla trituradora)', colSpan: 2, styles: { fontStyle: 'bold' as const } }],
           ['Material.', den.equipos.material_construccion],
           ['Estado (bien, mal, sin fugas).', 'Buen estado sin fugas y óxido nivel medio.'],
           ['Señalar si cuenta con prepicador y dosificación de ácido.', `${den.equipos.cuenta_con_recirculacion_acido ? 'Cuenta con sistema de Recirculación de ácido.' : '—'}`],
           ...(den.incinerador.activo ? [
-            [{ content: 'Sistema Secundario de Desnaturalización (Incinerador)', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold' } }],
+            [{ content: 'Sistema Secundario de Desnaturalización (Incinerador)', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold' as const } }],
             ['Marca/Modelo.', den.incinerador.marca_modelo],
             ['Observaciones.', den.incinerador.observaciones || '—'],
           ] : []),
-          [{ content: 'Almacenamiento.', colSpan: 2, styles: { fontStyle: 'bold' } }],
+          [{ content: 'Almacenamiento.', colSpan: 2, styles: { fontStyle: 'bold' as const } }],
           ['Capacidad.', `Estanque con capacidad para ${sto.parametros.capacidad_almacenaje_m3} m³ con recirculación.`],
         ],
         theme: 'striped',
@@ -5253,7 +5255,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         description="Información base del centro de cultivo y del certificador a cargo."
       />
 
-      {isAdmin && (
+      {(isAdmin || isEditor) && (
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             {state.registroId ? (
@@ -6478,7 +6480,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         </div>
       </div>
 
-      {isAdmin && (
+      {(isAdmin || isEditor) && (
         <div className="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
           <button
             onClick={() => handleGuardar('extraction')}
@@ -6875,7 +6877,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         </div>
       </div>
 
-      {isAdmin && (
+      {(isAdmin || isEditor) && (
         <div className="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
           <button
             onClick={() => handleGuardar('denaturation')}
@@ -7066,7 +7068,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         </div>
       </div>
 
-      {isAdmin && (
+      {(isAdmin || isEditor) && (
         <div className="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
           <button
             onClick={() => handleGuardar('storage')}
@@ -7243,7 +7245,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         </div>
 
         {/* Adjuntar Registro de Visita PDF */}
-        {isAdmin && (
+        {(isAdmin || isEditor) && (
           <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 overflow-hidden">
             <div className="flex items-center gap-4 p-4">
               <div className="flex-1 min-w-0">
@@ -7540,7 +7542,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           </AnimatePresence>
         </div>
 
-      {isAdmin && (
+      {(isAdmin || isEditor) && (
         <div className="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
           <button
             onClick={() => handleGuardar('report')}
@@ -7664,7 +7666,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
           {/* Botón Certificado */}
           <button
-            disabled={!canEmit || generating !== null || !isAdmin}
+            disabled={!canEmit || generating !== null || (!isAdmin && !isEditor)}
             onClick={generateCertificadoPDF}
             className={cn(
               "w-full py-3 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-3 shadow-lg",
@@ -7680,7 +7682,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
           {/* Botón Informe */}
           <button
-            disabled={!canEmit || generating !== null || !isAdmin}
+            disabled={!canEmit || generating !== null || (!isAdmin && !isEditor)}
             onClick={generateInformePDF}
             className={cn(
               "w-full py-3 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-3 shadow-lg",
@@ -7696,7 +7698,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
           {/* Botón Acta */}
           <button
-            disabled={generating !== null || !isAdmin}
+            disabled={generating !== null || (!isAdmin && !isEditor)}
             onClick={async () => {
               generateActaPdf(state);
               setShowEmailModal(true);
@@ -7870,7 +7872,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
           {/* ── Grupo 4: Sistema ── (al fondo, empuja hacia abajo) */}
           <div className="mt-auto space-y-1 border-t border-slate-100 dark:border-slate-800 pt-4">
-            <NavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={Settings2} label="Configuración" collapsed={isSidebarCollapsed} />
+            {isAdmin && <NavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={Settings2} label="Configuración" collapsed={isSidebarCollapsed} />}
             <button
               onClick={async () => {
                 try { const { signOut } = await import('firebase/auth'); const { auth } = await import('./firebase'); await signOut(auth); } catch {}
@@ -7941,6 +7943,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <p className={cn("text-[10px] font-bold text-slate-300 dark:text-slate-600 uppercase tracking-widest", isSidebarCollapsed ? "hidden" : "")}>
             © 2026 Certimar SpA
           </p>
+          {!isSidebarCollapsed && (
+            <p className="text-[9px] text-slate-300 dark:text-slate-600 tracking-wide">
+              Developed by Chucao Tech 2026 · v{__APP_VERSION__}
+            </p>
+          )}
           {isSidebarCollapsed && (
             <motion.div
               animate={saveAnim ? { scale: [1, 1.3, 1] } : {}}
@@ -7971,7 +7978,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               </motion.div>
             )}
           </AnimatePresence>
-          {!isAdmin && userRole === 'reader' && (
+          {userRole === 'reader' && (
             <div className="sticky top-0 z-40 bg-amber-500 text-amber-950 text-xs font-bold px-6 py-2 flex items-center gap-2">
               <ShieldCheck size={14} />
               MODO LECTURA — No puedes editar ni generar documentos en esta sesión.
