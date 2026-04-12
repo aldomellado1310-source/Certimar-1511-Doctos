@@ -12,7 +12,7 @@ PROJECT="/c/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos"
 INPUT=$(cat)
 
 # ── Filtro 1: solo comandos vitest ──────────────────────────────────────────
-COMMAND=$(python3 -c "
+COMMAND=$(python -c "
 import json, sys
 try:
     d = json.loads(sys.stdin.read())
@@ -24,7 +24,7 @@ except Exception:
 echo "$COMMAND" | grep -q "vitest" || exit 0
 
 # ── Filtro 2: solo si hay tests fallidos ────────────────────────────────────
-TOOL_RESPONSE=$(python3 -c "
+TOOL_RESPONSE=$(python -c "
 import json, sys
 try:
     d = json.loads(sys.stdin.read())
