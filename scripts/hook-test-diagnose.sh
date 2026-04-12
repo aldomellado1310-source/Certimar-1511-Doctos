@@ -15,11 +15,11 @@ INPUT=$(cat)
 COMMAND=$(python3 -c "
 import json, sys
 try:
-    d = json.loads(sys.argv[1])
+    d = json.loads(sys.stdin.read())
     print(d.get('tool_input', {}).get('command', ''))
 except Exception:
     print('')
-" "$INPUT" 2>/dev/null || echo "")
+" <<< "$INPUT" 2>/dev/null || echo "")
 
 echo "$COMMAND" | grep -q "vitest" || exit 0
 
@@ -27,7 +27,7 @@ echo "$COMMAND" | grep -q "vitest" || exit 0
 TOOL_RESPONSE=$(python3 -c "
 import json, sys
 try:
-    d = json.loads(sys.argv[1])
+    d = json.loads(sys.stdin.read())
     resp = d.get('tool_response', '')
     # tool_response puede ser string o dict con 'output'
     if isinstance(resp, dict):
@@ -36,7 +36,7 @@ try:
         print(str(resp))
 except Exception:
     print('')
-" "$INPUT" 2>/dev/null || echo "")
+" <<< "$INPUT" 2>/dev/null || echo "")
 
 # Vitest reporta fallos con "FAIL", "failed", o "× N tests"
 echo "$TOOL_RESPONSE" | grep -qE "(FAIL |× [0-9]+ test|tests failed|failed to run)" || exit 0
