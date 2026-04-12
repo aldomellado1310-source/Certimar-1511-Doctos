@@ -5,6 +5,23 @@ Marco normativo: Resolución Exenta N°1511/2021 — D.S. N°320 — Sernapesca 
 
 ---
 
+## [AUTOMATIZACIÓN] Agentes de Diagnóstico Post-Test y Post-Build
+
+**Fecha:** 2026-04-12
+
+**Archivos:** `scripts/hook-test-diagnose.sh`, `scripts/hook-build-diagnose.sh`, `~/.claude/settings.json`
+
+**Qué hace:** Dos hooks `PostToolUse` de Claude Code que detectan automáticamente
+fallos en `vitest` y `vite build`, y lanzan un agente que diagnostica la causa raíz
+y aplica el fix mínimo en `src/` (nunca toca `src/domain/`).
+
+**Zona protegida:** `src/domain/` (calculations.ts, documents.ts, constants.ts,
+actaHtml.ts y sus tests) — lógica normativa legal bajo Res. Exenta N°1511/2021.
+
+**Nota técnica:** En Windows/Git Bash usar `python` (no `python3`).
+
+---
+
 ## Cambios Aplicados (Fase 3)
 
 ### [CRÍTICO — F1] Corrección de División por Cero en Cálculo de Ensilaje
