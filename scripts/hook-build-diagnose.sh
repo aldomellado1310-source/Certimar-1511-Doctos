@@ -11,6 +11,9 @@ PROJECT="/c/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos"
 # Leer payload JSON del hook desde stdin
 INPUT=$(cat)
 
+# ── Filtro 0: solo actuar si el comando proviene del proyecto Certimar ───────
+echo "$INPUT" | grep -q "Certimar-1511-Doctos" || exit 0
+
 # ── Filtro 1: solo comandos vite build ──────────────────────────────────────
 COMMAND=$(python -c "
 import json, sys
@@ -38,7 +41,7 @@ except Exception:
 " <<< "$INPUT" 2>/dev/null || echo "")
 
 # Vite build reporta errores con "error TS", "Build failed", o "ERROR"
-echo "$TOOL_RESPONSE" | grep -qiE "(error TS[0-9]+|Build failed|✘ \[ERROR\]|error: )" || exit 0
+echo "$TOOL_RESPONSE" | grep -qiE "(error TS[0-9]+|Build failed|✘ \[ERROR\])" || exit 0
 
 # ── Invocar agente de diagnóstico ───────────────────────────────────────────
 PROMPT="Eres un agente de diagnóstico automático del proyecto CERTIMAR-1511-Doctos.

@@ -11,6 +11,9 @@ PROJECT="/c/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos"
 # Leer payload JSON del hook desde stdin
 INPUT=$(cat)
 
+# ── Filtro 0: solo actuar si el comando proviene del proyecto Certimar ───────
+echo "$INPUT" | grep -q "Certimar-1511-Doctos" || exit 0
+
 # ── Filtro 1: solo comandos vitest ──────────────────────────────────────────
 COMMAND=$(python -c "
 import json, sys
