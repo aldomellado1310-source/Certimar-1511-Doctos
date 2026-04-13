@@ -1109,7 +1109,7 @@ const WelcomeScreen = ({
         setGoogleEmail(email);
         setStep('pin');
       } else {
-        localStorage.setItem('certimar-session', JSON.stringify({ role: 'editor', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
+        localStorage.setItem('certimar-session', JSON.stringify({ role: 'editor', email, expiry: Date.now() + 8 * 60 * 60 * 1000 }));
         triggerAquaLogin('editor');
       }
     } catch (e: any) {
@@ -1123,10 +1123,10 @@ const WelcomeScreen = ({
 
   const handlePin = () => {
     if (ADMIN_PIN && pin === ADMIN_PIN) {
-      localStorage.setItem('certimar-session', JSON.stringify({ role: 'admin', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
+      localStorage.setItem('certimar-session', JSON.stringify({ role: 'admin', email: googleEmail, expiry: Date.now() + 8 * 60 * 60 * 1000 }));
       triggerAquaLogin('admin');
     } else if (pin === '') {
-      localStorage.setItem('certimar-session', JSON.stringify({ role: 'reader', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
+      localStorage.setItem('certimar-session', JSON.stringify({ role: 'reader', email: googleEmail, expiry: Date.now() + 8 * 60 * 60 * 1000 }));
       triggerAquaLogin('reader');
     } else {
       setError('PIN incorrecto.');
@@ -1934,7 +1934,9 @@ export default function App() {
       const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
       const { db, auth } = await import('./firebase');
       const user = (auth as any).currentUser;
-      const usuario = user?.email ?? (userRole === 'admin' ? 'admin-pin' : 'lector');
+      let sessionEmail: string | null = null;
+      try { const s = JSON.parse(localStorage.getItem('certimar-session') ?? '{}'); sessionEmail = s.email ?? null; } catch { /* */ }
+      const usuario = user?.email ?? sessionEmail ?? (userRole === 'admin' ? 'admin-pin' : 'lector');
       const payload: Record<string, any> = { tipo, usuario, fecha: serverTimestamp() };
       if (extras?.codigoCentro) payload.codigoCentro = extras.codigoCentro;
       if (extras?.nombreCentro) payload.nombreCentro = extras.nombreCentro;
@@ -2493,7 +2495,7 @@ export default function App() {
 
   // Cargar logos de empresas clientes desde Firebase Storage
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!userRole) return;
     import('firebase/storage').then(async ({ ref, listAll, getDownloadURL }) => {
       const { storage } = await import('./firebase');
       const listRef = ref(storage, 'logos-empresas/');
@@ -2510,7 +2512,7 @@ export default function App() {
       setLogosEmpresas(Object.fromEntries(valid.map(e => [e.name, e.url])));
       setLogosStoragePaths(Object.fromEntries(valid.map(e => [e.name, e.path])));
     }).catch(console.error);
-  }, [isAdmin]);
+  }, [userRole]);
 
   // Auto-seleccionar logo del cliente según el titular (solo si el usuario no ha elegido manualmente)
   useEffect(() => {
