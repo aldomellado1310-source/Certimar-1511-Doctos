@@ -2614,8 +2614,10 @@ export default function App() {
   // Res. Exenta N°1511/2021 — Umbrales: Extracción ≥15 TN/día, Desnaturalización ≥15 TN/día, Almacenamiento ≥20 TN.
 
   const calculatedExtraction = useMemo(
-    () => calculateExtraction(state.extraction.parametros),
-    [state.extraction.parametros]
+    () => state.general.modo_operacion_minima
+      ? { ciclos_por_dia: 0, capacidad_diaria_ton: 15, cumple_norma: true }
+      : calculateExtraction(state.extraction.parametros),
+    [state.extraction.parametros, state.general.modo_operacion_minima]
   );
 
   const calculatedDenaturation = useMemo(
@@ -2703,7 +2705,7 @@ export default function App() {
     // Parámetros técnicos mínimos
     if (state.extraction.parametros.numero_total_jaulas <= 0)
       issues.push('Falta: Número total de jaulas (Extracción)');
-    if (state.extraction.parametros.potencia_cfm <= 0)
+    if (!state.general.modo_operacion_minima && state.extraction.parametros.potencia_cfm <= 0)
       issues.push('Falta: Potencia del compresor en CFM (Extracción)');
     if (state.denaturation.equipos.velocidad_nominal_kg_hr <= 0)
       issues.push('Falta: Velocidad nominal de la olla (Desnaturalización)');
@@ -6402,38 +6404,41 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 </select>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Equipo de Aire (Catálogo)</label>
-                <select
-                  value={state.extraction.parametros.id_catalogo_compresor}
-                  onChange={(e) => handleSelectCompressor(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
-                >
-                  <option value="">Seleccionar compresor...</option>
-                  {CATALOGO_EXTRACCION.compresores.map(c => (
-                    <option key={c.id} value={c.id}>{c.marca} {c.modelo}</option>
-                  ))}
-                </select>
-              </div>
-
               <InputField label="Marca Equipo" value={state.extraction.parametros.marca_equipo} onChange={(v) => updateExtraction('parametros.marca_equipo', v)} />
-              <div className="grid grid-cols-2 gap-4">
-                <InputField label="Tipo Compresor" value={state.extraction.parametros.tipo_compresor} onChange={(v) => updateExtraction('parametros.tipo_compresor', v)} />
-                <InputField label="Potencia (CFM)" type="number" value={state.extraction.parametros.potencia_cfm} onChange={(v) => updateExtraction('parametros.potencia_cfm', v)} suffix="CFM" />
-              </div>
-              <InputField
-                label="Ubicación del Compresor"
-                value={state.extraction.parametros.ubicacion_compresor}
-                onChange={(v) => updateExtraction('parametros.ubicacion_compresor', v)}
-                placeholder="Ej. A/N Pontón, cubierta popa"
-              />
+              {!state.general.modo_operacion_minima && (<>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Equipo de Aire (Catálogo)</label>
+                  <select
+                    value={state.extraction.parametros.id_catalogo_compresor}
+                    onChange={(e) => handleSelectCompressor(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                  >
+                    <option value="">Seleccionar compresor...</option>
+                    {CATALOGO_EXTRACCION.compresores.map(c => (
+                      <option key={c.id} value={c.id}>{c.marca} {c.modelo}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <InputField label="Tipo Compresor" value={state.extraction.parametros.tipo_compresor} onChange={(v) => updateExtraction('parametros.tipo_compresor', v)} />
+                  <InputField label="Potencia (CFM)" type="number" value={state.extraction.parametros.potencia_cfm} onChange={(v) => updateExtraction('parametros.potencia_cfm', v)} suffix="CFM" />
+                </div>
+                <InputField
+                  label="Ubicación del Compresor"
+                  value={state.extraction.parametros.ubicacion_compresor}
+                  onChange={(v) => updateExtraction('parametros.ubicacion_compresor', v)}
+                  placeholder="Ej. A/N Pontón, cubierta popa"
+                />
+              </>)}
             </div>
 
             <div className="space-y-4">
               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Parámetros Técnicos</h4>
-              <div className="grid grid-cols-2 gap-4">
+              <div className={`grid gap-4 ${state.general.modo_operacion_minima ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <InputField label="Total Jaulas" type="number" value={state.extraction.parametros.numero_total_jaulas} onChange={(v) => updateExtraction('parametros.numero_total_jaulas', v)} />
-                <InputField label="Jaulas Simult." type="number" value={state.extraction.parametros.jaulas_simultaneas} onChange={(v) => updateExtraction('parametros.jaulas_simultaneas', v)} />
+                {!state.general.modo_operacion_minima && (
+                  <InputField label="Jaulas Simult." type="number" value={state.extraction.parametros.jaulas_simultaneas} onChange={(v) => updateExtraction('parametros.jaulas_simultaneas', v)} />
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <InputField label="Personal Op." type="number" value={state.extraction.parametros.personal_operativo} onChange={(v) => updateExtraction('parametros.personal_operativo', v)} />
@@ -6442,7 +6447,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <InputField label="Horas Trabajo" type="number" value={state.extraction.parametros.horas_efectivas_trabajo} onChange={(v) => updateExtraction('parametros.horas_efectivas_trabajo', v)} suffix="Hrs" min={0.5} max={24} />
               <InputField label="Ajuste Biomasa" type="number" value={state.extraction.parametros.factor_ajuste_biomasa} onChange={(v) => updateExtraction('parametros.factor_ajuste_biomasa', v)} min={0.1} max={2.0} />
               <InputField label="Disponibilidad fd₀" type="number" value={state.extraction.parametros.disponibilidad_base_fd} onChange={(v) => updateExtraction('parametros.disponibilidad_base_fd', v)} min={0.1} max={1.0} />
-              <InputField label="Motocompresores/Jaula" type="number" value={state.extraction.parametros.motocompresores_por_jaula} onChange={(v) => updateExtraction('parametros.motocompresores_por_jaula', v)} />
+              {!state.general.modo_operacion_minima && (
+                <InputField label="Motocompresores/Jaula" type="number" value={state.extraction.parametros.motocompresores_por_jaula} onChange={(v) => updateExtraction('parametros.motocompresores_por_jaula', v)} />
+              )}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Observación Sistema</label>
                 <textarea
@@ -6459,14 +6466,18 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         <div className="space-y-6">
           <FormCard title="Resultados" className="bg-indigo-900 border-indigo-800">
             <div className="space-y-6 text-white">
-              <div>
-                <p className="text-indigo-300 text-xs font-bold uppercase tracking-widest mb-1">Ciclos por Día</p>
-                <p className="text-4xl font-mono font-bold tracking-tighter">{state.extraction.resultados.ciclos_por_dia}</p>
-              </div>
-              <div className="pt-6 border-t border-indigo-800">
+              {!state.general.modo_operacion_minima && (
+                <div>
+                  <p className="text-indigo-300 text-xs font-bold uppercase tracking-widest mb-1">Ciclos por Día</p>
+                  <p className="text-4xl font-mono font-bold tracking-tighter">{state.extraction.resultados.ciclos_por_dia}</p>
+                </div>
+              )}
+              <div className={state.general.modo_operacion_minima ? '' : 'pt-6 border-t border-indigo-800'}>
                 <p className="text-indigo-300 text-xs font-bold uppercase tracking-widest mb-1">Capacidad Diaria</p>
                 <div className="flex items-baseline gap-2">
-                  <p className="text-5xl font-mono font-bold tracking-tighter text-emerald-400">{state.extraction.resultados.capacidad_diaria_ton}</p>
+                  <p className="text-5xl font-mono font-bold tracking-tighter text-emerald-400">
+                    {state.general.modo_operacion_minima ? 15 : state.extraction.resultados.capacidad_diaria_ton}
+                  </p>
                   <p className="text-indigo-300 font-medium">TN/DÍA</p>
                 </div>
               </div>

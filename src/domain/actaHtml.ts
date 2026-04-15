@@ -165,15 +165,20 @@ export function buildActaHtml(state: AppState): string {
   html = rep(html, '{fecha_inspeccion_terreno}', g.fechas.inspeccion_terreno);
 
   // ── E. Extracción ─────────────────────────────────────────────────────────
-  // Capacidad calculada ton/día — reemplaza el texto literal "TON/DIA" del template
+  // Capacidad calculada ton/día (AUTOMÁTICA row) — aplica para todos los modos
   html = rep(html, 'TON/DIA', calcExt.capacidad_diaria_ton.toFixed(2) + ' ton/día');
-  // N° motocompresores/jaula — hardcodeado como "1" en el template; contexto único
+  // N° motocompresores/jaula
   html = rep(html,
     '<span class="c10">1</span></p></td></tr><tr class="c20"><td class="c66 c39"',
     `<span class="c10">${ext.parametros.motocompresores_por_jaula}</span></p></td></tr><tr class="c20"><td class="c66 c39"`
   );
-  html = rep(html, '{jaulas_simult}',   ext.parametros.jaulas_simultaneas.toString());
-  html = rep(html, '{cfm}',             g.modo_operacion_minima ? na : ext.parametros.potencia_cfm.toString());
+  html = rep(html, '{jaulas_simult}', ext.parametros.jaulas_simultaneas.toString());
+  html = rep(html, '{cfm}',           ext.parametros.potencia_cfm > 0 ? ext.parametros.potencia_cfm.toString() : na);
+  // Observaciones de extracción — texto libre (reemplazar ANTES de {nro_jaulas}/{linea_extraccion})
+  html = rep(html,
+    'Sistema Autom&aacute;tico; Consta de {nro_jaulas} &nbsp;Lift-up/ {linea_extraccion}, 1 por Jaula , con cono extractor el cual est&aacute; amarrado al fondo de la malla.',
+    ext.parametros.observacion_sistema || na
+  );
   html = rep(html, '{nro_jaulas}',      ext.parametros.numero_total_jaulas.toString());
   html = rep(html, '{linea_extraccion}',
     ext.parametros.marca_equipo || ext.parametros.sistema_principal

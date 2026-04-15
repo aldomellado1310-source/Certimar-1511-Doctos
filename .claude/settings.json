@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "c:\\Users\\aldon\\Documents\\Proyectos\\Certimar-1511-Doctos\\docs\\superpowers\\plans"
+    ],
+    "allow": [
+      "Bash(npm test *)"
+    ]
+  }
+}
