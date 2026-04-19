@@ -166,6 +166,7 @@ export interface ReportImage {
   estado: 'Verde' | 'Amarillo' | 'Rojo';
   observacion: string;
   enPortada?: boolean;
+  slotUbicacion?: 'top' | 'left' | 'right';
 }
 
 export interface AppState {

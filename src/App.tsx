@@ -4453,9 +4453,20 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         const kw = (img: typeof imgs[0], ...words: string[]) =>
           words.some(w => img.leyenda?.toLowerCase().includes(w.toLowerCase()));
 
-        const imgEstructura = imgs.find(i => kw(i,'estructura','módulo')) ?? imgs[0];
-        const imgDiagonal   = imgs.find(i => kw(i,'diagonal','arreglo'))  ?? imgs[1];
-        const imgAerea      = imgs.find(i => kw(i,'aérea','general','contexto')) ?? imgs[2];
+        const bySlot = (slot: 'top' | 'left' | 'right') => imgs.find(i => i.slotUbicacion === slot);
+        const noSlot = imgs.filter(i => !i.slotUbicacion);
+
+        const imgEstructura = bySlot('top')
+          ?? noSlot.find(i => kw(i, 'estructura', 'módulo'))
+          ?? noSlot[0];
+
+        const imgDiagonal = bySlot('left')
+          ?? noSlot.find(i => kw(i, 'diagonal', 'arreglo') && i !== imgEstructura)
+          ?? noSlot.find(i => i !== imgEstructura);
+
+        const imgAerea = bySlot('right')
+          ?? noSlot.find(i => kw(i, 'aérea', 'general', 'contexto') && i !== imgEstructura && i !== imgDiagonal)
+          ?? noSlot.find(i => i !== imgEstructura && i !== imgDiagonal);
 
         const FULL_W = 182, FULL_H = 65;  // reducido para dejar espacio a las tablas de datos
         const HALF_W = FULL_W / 2;  // 91mm — igual que la mitad de la fila superior
@@ -7571,6 +7582,26 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         </select>
                       </div>
                     </div>
+                    {isUbicacion && (
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">
+                          Posición en tabla
+                        </label>
+                        <select
+                          value={img.slotUbicacion ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            updateImage(img.id, { slotUbicacion: (v || undefined) as 'top' | 'left' | 'right' | undefined });
+                          }}
+                          className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-sky-500/20 dark:[color-scheme:dark]"
+                        >
+                          <option value="">— Auto (por leyenda) —</option>
+                          <option value="top">Arriba (ancho completo)</option>
+                          <option value="left">Abajo izquierda</option>
+                          <option value="right">Abajo derecha</option>
+                        </select>
+                      </div>
+                    )}
                     {isTecnica && (
                       <button
                         onClick={() => updateImage(img.id, { enPortada: !img.enPortada })}
