@@ -21,6 +21,7 @@ export interface GeneralData {
     emision_certificado: string;
   };
   modo_operacion_minima?: boolean;
+  observaciones_acta: string;
 }
 
 export type FishSize = 'Pequeño (<1.5kg)' | 'Mediano (1.5-4.5kg)' | 'Grande (>=4.5kg)';
@@ -53,6 +54,9 @@ export interface ExtractionData {
     motocompresores_por_jaula: number;  // N° motocompresores por jaula
     ubicacion_compresor: string;        // Ubicación física del compresor de aire
     observacion_sistema: string;        // Observación libre del sistema automático
+    n_teams_buceo?: number;              // N° teams de buceo
+    n_buzos_por_team?: number;          // N° buzos por team
+    periodicidad_buceo?: string;        // Periodicidad buceo (ej. "DIARIA")
   };
   resultados: {
     ciclos_por_dia: number;

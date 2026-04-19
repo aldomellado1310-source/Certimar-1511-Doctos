@@ -45,6 +45,7 @@ const FIXTURE_STATE: AppState = {
       inspeccion_terreno: '2026-01-08',
       emision_certificado: '2026-02-10',
     },
+    observaciones_acta: '',
   },
   extraction: {
     sistemas_apoyo: { buceo: false, rov: false, succion_yoma: false, automatica: false },
@@ -67,6 +68,9 @@ const FIXTURE_STATE: AppState = {
       motocompresores_por_jaula: 1,
       ubicacion_compresor: 'A/N Pontón',
       observacion_sistema: '',
+      n_teams_buceo: 1,
+      n_buzos_por_team: 4,
+      periodicidad_buceo: 'DIARIA',
     },
     resultados: {
       ciclos_por_dia: 21,

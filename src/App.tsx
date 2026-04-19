@@ -181,7 +181,8 @@ const DEFAULT_STATE: AppState = {
       evaluacion_documental: new Date().toISOString().split('T')[0],
       inspeccion_terreno: new Date().toISOString().split('T')[0],
       emision_certificado: new Date().toISOString().split('T')[0]
-    }
+    },
+    observaciones_acta: ""
   },
   extraction: {
     sistemas_apoyo: { buceo: false, rov: false, succion_yoma: false, automatica: false },
@@ -203,7 +204,10 @@ const DEFAULT_STATE: AppState = {
       disponibilidad_base_fd: 0.90,
       motocompresores_por_jaula: 1,
       ubicacion_compresor: "",
-      observacion_sistema: ""
+      observacion_sistema: "",
+      n_teams_buceo: 1,
+      n_buzos_por_team: 4,
+      periodicidad_buceo: "DIARIA"
     },
     resultados: { ciclos_por_dia: 0, capacidad_diaria_ton: 0, cumple_norma: false }
   },
@@ -1044,10 +1048,12 @@ const CheckboxField = ({ label, checked, onChange }: { label: string, checked: b
 const WelcomeScreen = ({
   setUserRole,
   setShowWelcome,
+  setAquaPhase,
   logoProvider = 'certimar',
 }: {
   setUserRole:    React.Dispatch<React.SetStateAction<'admin' | 'editor' | 'reader' | null>>;
   setShowWelcome: React.Dispatch<React.SetStateAction<boolean>>;
+  setAquaPhase:   React.Dispatch<React.SetStateAction<'idle' | 'in' | 'hold' | 'out'>>;
   logoProvider?:  'certimar' | 'engelbert';
 }) => {
   const [phase, setPhase]             = React.useState<'splash' | 'login'>('splash');
@@ -1057,7 +1063,6 @@ const WelcomeScreen = ({
   const [pin, setPin]                 = React.useState('');
   const [error, setError]             = React.useState('');
   const [loading, setLoading]         = React.useState(false);
-  const [aquaPhase, setAquaPhase]     = React.useState<'idle' | 'in' | 'hold' | 'out'>('idle');
 
   // ── responsive ──
   const [winW, setWinW] = React.useState(() => window.innerWidth);
@@ -1073,12 +1078,14 @@ const WelcomeScreen = ({
     pendingRoleRef.current = role;
     setAquaPhase('in');
     setTimeout(() => setAquaPhase('hold'), 600);
-    setTimeout(() => setAquaPhase('out'),  1100);
+    // Transicionar a la app principal mientras el overlay aún cubre la pantalla
     setTimeout(() => {
       setUserRole(pendingRoleRef.current);
       setShowWelcome(false);
-    }, 1700);
-  }, [setUserRole, setShowWelcome]);
+    }, 1100);
+    // Desvanecer el overlay DESPUÉS de que la app principal ya esté renderizada
+    setTimeout(() => setAquaPhase('out'), 1700);
+  }, [setUserRole, setShowWelcome, setAquaPhase]);
 
   const logoSrc = logoProvider === 'engelbert' ? '/engelbert-logo.png' : '/certimar-logo.png';
   const logoAlt = logoProvider === 'engelbert' ? 'Engelbert Aquastructures' : 'CERTIMAR';
@@ -1257,97 +1264,6 @@ const WelcomeScreen = ({
               />
               <p style={{ color: '#475569', fontSize: 11, fontWeight: 600, letterSpacing: '0.22em', textTransform: 'uppercase', marginTop: 4 }}>
                 Norma 1511 · Puerto Aysén
-              </p>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ══ TRANSICIÓN ACUÁTICA LOGIN ══ */}
-      <AnimatePresence>
-        {aquaPhase !== 'idle' && (
-          <motion.div
-            key="aqua-transition"
-            style={{ position: 'absolute', inset: 0, zIndex: 200, overflow: 'hidden', pointerEvents: 'none' }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: aquaPhase === 'out' ? 0 : 1 }}
-            transition={{ duration: aquaPhase === 'out' ? 0.6 : 0.45, ease: 'easeInOut' }}
-          >
-            {/* Fondo principal — profundidad marina */}
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #020d1a 0%, #051929 40%, #072840 70%, #0a3354 100%)' }} />
-
-            {/* Cáusticas — destellos de luz bajo el agua */}
-            {[...Array(8)].map((_, i) => (
-              <motion.div key={`caustic-${i}`}
-                style={{ position: 'absolute', borderRadius: '50%', background: 'rgba(56,189,248,0.06)', filter: 'blur(30px)',
-                  width: 120 + i * 40, height: 80 + i * 25,
-                  left: `${(i * 17 + 5) % 90}%`, top: `${(i * 13 + 10) % 80}%` }}
-                animate={{ scale: [1, 1.3, 0.9, 1.2, 1], opacity: [0.4, 0.8, 0.5, 0.9, 0.4], x: [0, 20, -15, 10, 0], y: [0, -12, 8, -5, 0] }}
-                transition={{ duration: 2 + i * 0.3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.15 }}
-              />
-            ))}
-
-            {/* Rayos de luz desde la superficie */}
-            <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0.12 }} viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
-              {[180, 360, 540, 720, 900, 1080, 1260].map((x, i) => (
-                <motion.polygon key={i}
-                  points={`${x - 30},0 ${x + 30},0 ${x + 80 + i * 10},900 ${x - 80 - i * 10},900`}
-                  fill="rgba(125,211,252,0.9)"
-                  animate={{ opacity: [0.3, 0.8, 0.3], scaleX: [1, 1.1, 0.95, 1] }}
-                  transition={{ duration: 2.5 + i * 0.2, repeat: Infinity, ease: 'easeInOut', delay: i * 0.18 }}
-                />
-              ))}
-            </svg>
-
-            {/* Olas (3 capas) */}
-            {[
-              { bottom: 0,   dur: 6,  fill: 'rgba(7,40,64,0.95)',   dx: [0, -720] },
-              { bottom: 30,  dur: 9,  fill: 'rgba(5,25,41,0.7)',    dx: [-360, -1080] },
-              { bottom: 60,  dur: 12, fill: 'rgba(10,51,84,0.5)',   dx: [0, -1440] },
-            ].map((w, i) => (
-              <motion.svg key={`wave-${i}`}
-                style={{ position: 'absolute', bottom: w.bottom, left: 0, width: '200%', height: 80 }}
-                viewBox="0 0 2880 80" preserveAspectRatio="none"
-                animate={{ x: w.dx }} transition={{ duration: w.dur, repeat: Infinity, ease: 'linear' }}>
-                <path d={`M0,40 Q90,10 180,40 Q270,70 360,40 Q450,10 540,40 Q630,70 720,40 Q810,10 900,40 Q990,70 1080,40 Q1170,10 1260,40 Q1350,70 1440,40 Q1530,10 1620,40 Q1710,70 1800,40 Q1890,10 1980,40 Q2070,70 2160,40 Q2250,10 2340,40 Q2430,70 2520,40 Q2610,10 2700,40 Q2790,70 2880,40 L2880,80 L0,80Z`} fill={w.fill} />
-              </motion.svg>
-            ))}
-
-            {/* Cardumen de peces cruzando */}
-            {[...Array(14)].map((_, i) => {
-              const dir = i % 2 === 0 ? 1 : -1;
-              return (
-                <motion.div key={`at-fish-${i}`}
-                  style={{ position: 'absolute', top: `${15 + (i * 6) % 70}%`, color: '#7dd3fc', opacity: 0.7 }}
-                  initial={{ x: dir > 0 ? '-5vw' : '105vw' }}
-                  animate={{ x: dir > 0 ? '110vw' : '-10vw', y: [0, Math.sin(i) * 14, -Math.sin(i) * 9, 0] }}
-                  transition={{ duration: 0.9 + (i % 4) * 0.15, ease: 'easeInOut', delay: i * 0.06 }}>
-                  <Fish size={10 + (i % 5) * 4} style={{ transform: dir < 0 ? 'scaleX(-1)' : 'none' }} />
-                </motion.div>
-              );
-            })}
-
-            {/* Burbujas ascendentes */}
-            {[...Array(18)].map((_, i) => (
-              <motion.div key={`at-bub-${i}`}
-                style={{ position: 'absolute', bottom: '-5%', left: `${(i * 19 + 3) % 97}%`,
-                  width: 3 + (i % 4) * 2, height: 3 + (i % 4) * 2, borderRadius: '50%',
-                  background: 'rgba(125,211,252,0.5)', border: '1px solid rgba(125,211,252,0.3)' }}
-                animate={{ y: [0, '-110vh'], opacity: [0, 0.9, 0.9, 0], x: [0, Math.sin(i) * 22, 0] }}
-                transition={{ duration: 1.0 + (i % 5) * 0.12, ease: 'easeOut', delay: i * 0.05 }}
-              />
-            ))}
-
-            {/* Texto central */}
-            <motion.div
-              style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: aquaPhase === 'hold' ? 1 : 0, y: aquaPhase === 'hold' ? 0 : 20 }}
-              transition={{ duration: 0.4 }}
-            >
-              <Fish size={36} style={{ color: '#7dd3fc', opacity: 0.9 }} />
-              <p style={{ color: 'rgba(125,211,252,0.8)', fontSize: 12, fontWeight: 600, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
-                Cargando sistema
               </p>
             </motion.div>
           </motion.div>
@@ -1611,6 +1527,10 @@ export default function App() {
         if (parsed.__version === SCHEMA_VERSION) {
           // Preservar URLs de Firebase (http); limpiar blob:/base64 (el guardado ya solo escribe http o '')
           parsed.images = (parsed.images ?? []).map((img: any) => ({ ...img, url: img.url?.startsWith('http') ? img.url : '' }));
+          // Rellenar campos añadidos después del primer guardado con valor 'v3'
+          if (parsed.general && parsed.general.observaciones_acta === undefined) {
+            parsed.general.observaciones_acta = '';
+          }
           return parsed;
         }
         localStorage.removeItem('certimar-draft-state');
@@ -2148,6 +2068,7 @@ export default function App() {
           inspeccion_terreno: '2026-01-08',
           emision_certificado: '2026-02-10',
         },
+        observaciones_acta: '',
       },
       extraction: {
         sistemas_apoyo: { buceo: false, rov: false, succion_yoma: false, automatica: false },
@@ -2252,6 +2173,16 @@ export default function App() {
   const savedSession = readSession();
   const [showWelcome, setShowWelcome] = useState(!savedSession);
   const [userRole, setUserRole] = useState<'admin' | 'editor' | 'reader' | null>(savedSession?.role ?? null);
+  const [loginAquaPhase, setLoginAquaPhase] = useState<'idle' | 'in' | 'hold' | 'out'>('idle');
+
+  const CHANGELOG_VERSION = '2026-04-19-v3';
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [changelogStep, setChangelogStep] = useState(0);
+  useEffect(() => {
+    if (!savedSession) return;
+    const seen = localStorage.getItem('certimar-changelog-seen');
+    if (seen !== CHANGELOG_VERSION) { setShowChangelog(true); setChangelogStep(0); }
+  }, []);
   const isAdmin  = userRole === 'admin';
   const isEditor = userRole === 'editor';
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() =>
@@ -2316,6 +2247,7 @@ export default function App() {
         inspeccion_terreno: new Date().toISOString().split('T')[0],
         emision_certificado: new Date().toISOString().split('T')[0],
       },
+      observaciones_acta: '',
     },
   };
 
@@ -2565,11 +2497,14 @@ export default function App() {
     [state.general.centro_cultivo.codigo_centro]
   );
 
-  // Auto-genera la observación del sistema de extracción al cambiar nº jaulas o sistema
+  // Auto-genera la observación del sistema de extracción al cambiar nombre centro o sistema
   useEffect(() => {
-    const { numero_total_jaulas, sistema_principal, observacion_sistema } = state.extraction.parametros;
-    const autoObs = `Sistema Automático; Consta de ${numero_total_jaulas} ${sistema_principal} / 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla.`;
-    const isDefault = !observacion_sistema || /^Sistema Automático; Consta de \d+/.test(observacion_sistema);
+    const { observacion_sistema } = state.extraction.parametros;
+    const nombreCentro = state.general.centro_cultivo.nombre_centro;
+    const autoObs = `Extracción por R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipo de robótica submarina, apoyada directamente con embarcación y equipos de buceo semiautónomo.`;
+    const isDefault = !observacion_sistema
+      || /^Sistema Automático; Consta de \d+/.test(observacion_sistema)
+      || /^Extracción por R\.O\.V\.; Extracción del centro/.test(observacion_sistema);
     if (isDefault) {
       setState(prev => ({
         ...prev,
@@ -2580,7 +2515,7 @@ export default function App() {
       }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.extraction.parametros.numero_total_jaulas, state.extraction.parametros.sistema_principal]);
+  }, [state.general.centro_cultivo.nombre_centro, state.extraction.parametros.sistema_principal]);
 
   const handleCenterCodeChange = (code: string, center?: ConcesionCentro) => {
     if (center) {
@@ -2940,6 +2875,10 @@ Se despide atentamente`;
   };
 
   const updateGeneral = (field: string, value: any) => {
+    if (!field.includes('.')) {
+      setState(prev => ({ ...prev, general: { ...prev.general, [field]: value } }));
+      return;
+    }
     const [section, key] = field.split('.');
     setState(prev => ({
       ...prev,
@@ -3028,6 +2967,7 @@ Se despide atentamente`;
   const [historicoLoading, setHistoricoLoading] = useState(false);
   const [selectedHistoricoEntry, setSelectedHistoricoEntry] = useState<RegistroHistorico | null>(null);
   const [resubirLoadingId, setResubirLoadingId] = useState<string | null>(null); // "docId-tipo"
+  const [confirmDownload, setConfirmDownload] = useState<{ entry: RegistroHistorico; tipo: string; url?: string } | null>(null);
   const resubirPendienteRef = useRef<{ entry: RegistroHistorico; tipo: string } | null>(null);
   const resubirFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -5474,10 +5414,22 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               value={state.general.certificador.rut} 
               onChange={(v) => updateGeneral('certificador.rut', v)} 
             />
-            <InputField 
-              label="N° Registro" 
-              value={state.general.certificador.numero_registro} 
-              onChange={(v) => updateGeneral('certificador.numero_registro', v)} 
+            <InputField
+              label="N° Registro"
+              value={state.general.certificador.numero_registro}
+              onChange={(v) => updateGeneral('certificador.numero_registro', v)}
+            />
+          </div>
+        </FormCard>
+        <FormCard title="Observaciones Acta (Sección H)">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Observaciones</label>
+            <textarea
+              value={state.general.observaciones_acta}
+              onChange={(e) => updateGeneral('observaciones_acta', e.target.value)}
+              rows={4}
+              placeholder="Observaciones para la sección H del acta (dejar vacío para N/A)"
+              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium resize-none"
             />
           </div>
         </FormCard>
@@ -6129,23 +6081,23 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       </div>
                     )}
 
-                    {/* Doc badges — green if URL exists, grey with re-upload button otherwise */}
+                    {/* Doc badges — clickeable para descargar con confirmación de Inspector */}
                     <div className="flex gap-1 flex-wrap">
                       {docs.map(d => {
-                        const hasUrl = !!urls[d as keyof typeof urls];
-                        const loadingKey = `${entry.id}-${d}`;
-                        const isUploading = resubirLoadingId === loadingKey;
-                        return hasUrl ? (
-                          <span key={d} className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400">{d}</span>
-                        ) : (
+                        const url = urls[d as keyof typeof urls];
+                        return (
                           <button
                             key={d}
-                            onClick={() => handleResubirDocumento(entry, d)}
-                            disabled={isUploading}
-                            title={`Re-subir ${d} (selecciona el PDF ya generado)`}
-                            className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-amber-500/20 dark:hover:text-amber-400 border border-dashed border-slate-300 dark:border-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={() => setConfirmDownload({ entry, tipo: d, url: url || undefined })}
+                            title={url ? `Descargar ${d}` : `${d} — sin versión guardada`}
+                            className={cn(
+                              'flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase transition-colors',
+                              url
+                                ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-500/30'
+                                : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-indigo-100 hover:text-indigo-700 dark:hover:bg-indigo-500/20 dark:hover:text-indigo-400 border border-dashed border-slate-300 dark:border-slate-600'
+                            )}
                           >
-                            {isUploading ? '…' : '↑'} {d}
+                            ↓ {d}
                           </button>
                         );
                       })}
@@ -6181,6 +6133,51 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             </div>
           )}
         </FormCard>
+
+        {/* ── Modal confirmación descarga Inspector ── */}
+        {confirmDownload && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md p-6 flex flex-col gap-5">
+              <div className="flex flex-col gap-1.5">
+                <p className="font-bold text-slate-900 dark:text-white text-base">Confirmación de revisión — Inspector</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">{confirmDownload.tipo} · {confirmDownload.entry.codigoCentro}</p>
+              </div>
+              <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl px-4 py-3">
+                <p className="text-sm text-amber-800 dark:text-amber-300 leading-relaxed">
+                  Como Inspector certificado, confirmo que he revisado la estructura del documento y que los datos son correctos antes de descargarlo.
+                </p>
+              </div>
+              <p className="text-sm text-slate-700 dark:text-slate-300">
+                <span className="font-semibold">Centro:</span> {confirmDownload.entry.nombreCentro}<br />
+                <span className="font-semibold">Documento:</span> {confirmDownload.tipo.toUpperCase()}
+              </p>
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => setConfirmDownload(null)}
+                  className="flex-1 py-2 text-sm font-bold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    const { entry, tipo, url } = confirmDownload;
+                    setConfirmDownload(null);
+                    if (url) {
+                      window.open(url, '_blank');
+                    } else if (tipo === 'acta') {
+                      generateActaPdf(entry.snapshot);
+                    } else {
+                      alert(`No hay versión guardada para ${tipo}. Carga el registro en el formulario para regenerarlo.`);
+                    }
+                  }}
+                  className="flex-1 py-2 text-sm font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+                >
+                  Confirmar y descargar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Drawer lateral ── */}
         {selectedHistoricoEntry && (() => {
@@ -6449,6 +6446,16 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <InputField label="Disponibilidad fd₀" type="number" value={state.extraction.parametros.disponibilidad_base_fd} onChange={(v) => updateExtraction('parametros.disponibilidad_base_fd', v)} min={0.1} max={1.0} />
               {!state.general.modo_operacion_minima && (
                 <InputField label="Motocompresores/Jaula" type="number" value={state.extraction.parametros.motocompresores_por_jaula} onChange={(v) => updateExtraction('parametros.motocompresores_por_jaula', v)} />
+              )}
+              {state.extraction.sistemas_apoyo.buceo && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Equipo de Buceo</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <InputField label="N° Teams" type="number" value={state.extraction.parametros.n_teams_buceo} onChange={(v) => updateExtraction('parametros.n_teams_buceo', v)} />
+                    <InputField label="N° Buzos/Team" type="number" value={state.extraction.parametros.n_buzos_por_team} onChange={(v) => updateExtraction('parametros.n_buzos_por_team', v)} />
+                  </div>
+                  <InputField label="Periodicidad Buceo" value={state.extraction.parametros.periodicidad_buceo} onChange={(v) => updateExtraction('parametros.periodicidad_buceo', v)} placeholder="Ej: DIARIA" />
+                </div>
               )}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Observación Sistema</label>
@@ -7814,7 +7821,86 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex font-sans text-slate-900 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900 selection:text-indigo-900 dark:selection:text-indigo-100 transition-colors duration-500">
       <MarineBackground />
       <AnimatePresence>
-        {showWelcome && <WelcomeScreen setUserRole={setUserRole} setShowWelcome={setShowWelcome} logoProvider={tema.logo} />}
+        {showWelcome && <WelcomeScreen setUserRole={setUserRole} setShowWelcome={setShowWelcome} setAquaPhase={setLoginAquaPhase} logoProvider={tema.logo} />}
+      </AnimatePresence>
+
+      {/* ══ OVERLAY DE TRANSICIÓN LOGIN ══ — vive en App para sobrevivir al desmontaje de WelcomeScreen */}
+      <AnimatePresence onExitComplete={() => setLoginAquaPhase('idle')}>
+        {loginAquaPhase !== 'idle' && (
+          <motion.div
+            key="aqua-transition"
+            style={{ position: 'fixed', inset: 0, zIndex: 9999, overflow: 'hidden', pointerEvents: 'none' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: loginAquaPhase === 'out' ? 0 : 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: loginAquaPhase === 'out' ? 0.6 : 0.45, ease: 'easeInOut' }}
+          >
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #020d1a 0%, #051929 40%, #072840 70%, #0a3354 100%)' }} />
+            {[...Array(8)].map((_, i) => (
+              <motion.div key={`caustic-${i}`}
+                style={{ position: 'absolute', borderRadius: '50%', background: 'rgba(56,189,248,0.06)', filter: 'blur(30px)',
+                  width: 120 + i * 40, height: 80 + i * 25,
+                  left: `${(i * 17 + 5) % 90}%`, top: `${(i * 13 + 10) % 80}%` }}
+                animate={{ scale: [1, 1.3, 0.9, 1.2, 1], opacity: [0.4, 0.8, 0.5, 0.9, 0.4], x: [0, 20, -15, 10, 0], y: [0, -12, 8, -5, 0] }}
+                transition={{ duration: 2 + i * 0.3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.15 }}
+              />
+            ))}
+            <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0.12 }} viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+              {[180, 360, 540, 720, 900, 1080, 1260].map((x, i) => (
+                <motion.polygon key={i}
+                  points={`${x - 30},0 ${x + 30},0 ${x + 80 + i * 10},900 ${x - 80 - i * 10},900`}
+                  fill="rgba(125,211,252,0.9)"
+                  animate={{ opacity: [0.3, 0.8, 0.3], scaleX: [1, 1.1, 0.95, 1] }}
+                  transition={{ duration: 2.5 + i * 0.2, repeat: Infinity, ease: 'easeInOut', delay: i * 0.18 }}
+                />
+              ))}
+            </svg>
+            {[
+              { bottom: 0,  dur: 6,  fill: 'rgba(7,40,64,0.95)',  dx: [0, -720] as [number,number] },
+              { bottom: 30, dur: 9,  fill: 'rgba(5,25,41,0.7)',   dx: [-360, -1080] as [number,number] },
+              { bottom: 60, dur: 12, fill: 'rgba(10,51,84,0.5)',  dx: [0, -1440] as [number,number] },
+            ].map((w, i) => (
+              <motion.svg key={`wave-${i}`}
+                style={{ position: 'absolute', bottom: w.bottom, left: 0, width: '200%', height: 80 }}
+                viewBox="0 0 2880 80" preserveAspectRatio="none"
+                animate={{ x: w.dx }} transition={{ duration: w.dur, repeat: Infinity, ease: 'linear' }}>
+                <path d="M0,40 Q90,10 180,40 Q270,70 360,40 Q450,10 540,40 Q630,70 720,40 Q810,10 900,40 Q990,70 1080,40 Q1170,10 1260,40 Q1350,70 1440,40 Q1530,10 1620,40 Q1710,70 1800,40 Q1890,10 1980,40 Q2070,70 2160,40 Q2250,10 2340,40 Q2430,70 2520,40 Q2610,10 2700,40 Q2790,70 2880,40 L2880,80 L0,80Z" fill={w.fill} />
+              </motion.svg>
+            ))}
+            {[...Array(14)].map((_, i) => {
+              const dir = i % 2 === 0 ? 1 : -1;
+              return (
+                <motion.div key={`at-fish-${i}`}
+                  style={{ position: 'absolute', top: `${15 + (i * 6) % 70}%`, color: '#7dd3fc', opacity: 0.7 }}
+                  initial={{ x: dir > 0 ? '-5vw' : '105vw' }}
+                  animate={{ x: dir > 0 ? '110vw' : '-10vw', y: [0, Math.sin(i) * 14, -Math.sin(i) * 9, 0] }}
+                  transition={{ duration: 0.9 + (i % 4) * 0.15, ease: 'easeInOut', delay: i * 0.06 }}>
+                  <Fish size={10 + (i % 5) * 4} style={{ transform: dir < 0 ? 'scaleX(-1)' : 'none' }} />
+                </motion.div>
+              );
+            })}
+            {[...Array(18)].map((_, i) => (
+              <motion.div key={`at-bub-${i}`}
+                style={{ position: 'absolute', bottom: '-5%', left: `${(i * 19 + 3) % 97}%`,
+                  width: 3 + (i % 4) * 2, height: 3 + (i % 4) * 2, borderRadius: '50%',
+                  background: 'rgba(125,211,252,0.5)', border: '1px solid rgba(125,211,252,0.3)' }}
+                animate={{ y: [0, '-110vh'], opacity: [0, 0.9, 0.9, 0], x: [0, Math.sin(i) * 22, 0] }}
+                transition={{ duration: 1.0 + (i % 5) * 0.12, ease: 'easeOut', delay: i * 0.05 }}
+              />
+            ))}
+            <motion.div
+              style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: loginAquaPhase === 'hold' ? 1 : 0, y: loginAquaPhase === 'hold' ? 0 : 20 }}
+              transition={{ duration: 0.4 }}
+            >
+              <Fish size={36} style={{ color: '#7dd3fc', opacity: 0.9 }} />
+              <p style={{ color: 'rgba(125,211,252,0.8)', fontSize: 12, fontWeight: 600, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
+                Cargando sistema
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {!showWelcome && (<>
@@ -8057,6 +8143,114 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           onClose={() => setAnnotatingImageId(null)}
         />
       )}
+      {/* ── Modal "Novedades" paso a paso ── */}
+      {showChangelog && !showWelcome && (() => {
+        const closeChangelog = () => { setShowChangelog(false); localStorage.setItem('certimar-changelog-seen', CHANGELOG_VERSION); };
+        const steps = [
+          {
+            icon: '📋',
+            titulo: 'Glosa del acta según sistema de extracción',
+            descripcion: 'El texto de observaciones en la Sección E del acta ahora se genera automáticamente según los sistemas marcados en el formulario.',
+            detalle: [
+              '• Solo Automática → glosa estándar con N° jaulas y equipo.',
+              '• Automática + ROV → glosa estándar más mención del apoyo con ROV.',
+              '• Op.Mínima activa → glosa específica con el nombre del centro.',
+            ],
+          },
+          {
+            icon: '⚙️',
+            titulo: 'Formulario simplificado en Operación Mínima',
+            descripcion: 'Al activar el modo Operación Mínima, el formulario de Extracción oculta los campos que no aplican a este modo regulatorio.',
+            detalle: [
+              '• Se ocultan: CFM, Jaulas Simultáneas y Motocompresores/Jaula.',
+              '• La capacidad diaria se fija en 15 TON/DÍA (valor regulatorio).',
+              '• El panel de resultados muestra el valor fijo en lugar del calculado.',
+            ],
+          },
+          {
+            icon: '⬇️',
+            titulo: 'Descarga directa desde el Histórico',
+            descripcion: 'Los badges de documentos en las tarjetas del histórico ahora son botones de descarga.',
+            detalle: [
+              '• Verde → tiene versión guardada → click abre el PDF.',
+              '• Gris → sin versión guardada → genera el Acta directamente, o indica cargar el formulario para Certificado e Informe.',
+              '• Siempre aparece un modal de confirmación de revisión del Inspector antes de descargar.',
+            ],
+          },
+          {
+            icon: '🔧',
+            titulo: 'Corrección: glosa estándar del acta',
+            descripcion: 'Se corrigió un error donde la glosa de Observaciones de la sección E desaparecía en centros sin texto personalizado.',
+            detalle: [
+              '• Antes: si "Observación Sistema" estaba vacío, el acta mostraba "N/A".',
+              '• Ahora: si está vacío, se usa la glosa estándar del template con N° jaulas y equipo.',
+              '• Si tiene texto personalizado, ese texto sigue teniendo prioridad.',
+            ],
+          },
+        ];
+        const step = steps[changelogStep];
+        const isLast = changelogStep === steps.length - 1;
+        return (
+          <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300">
+              {/* Header */}
+              <div className="bg-indigo-600 px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-bold text-white uppercase tracking-widest">Novedades</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-500 text-indigo-100 font-mono">{CHANGELOG_VERSION}</span>
+                </div>
+                <button onClick={closeChangelog} className="text-indigo-200 hover:text-white transition-colors text-xl leading-none">×</button>
+              </div>
+
+              {/* Paso actual */}
+              <div className="px-8 py-7 flex flex-col gap-5 min-h-[300px]">
+                <div className="flex items-center gap-3">
+                  <span className="text-4xl">{step.icon}</span>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-snug">{step.titulo}</h3>
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{step.descripcion}</p>
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl px-5 py-4 space-y-2">
+                  {step.detalle.map(d => (
+                    <p key={d} className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{d}</p>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-8 pb-7 flex items-center justify-between gap-4">
+                {/* Indicador de pasos */}
+                <div className="flex gap-1.5">
+                  {steps.map((_, i) => (
+                    <button key={i} onClick={() => setChangelogStep(i)}
+                      className={cn('w-2 h-2 rounded-full transition-colors', i === changelogStep ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600')}
+                    />
+                  ))}
+                </div>
+                <div className="flex gap-3">
+                  {changelogStep > 0 && (
+                    <button onClick={() => setChangelogStep(s => s - 1)}
+                      className="px-5 py-2.5 text-sm font-bold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                      Anterior
+                    </button>
+                  )}
+                  {isLast ? (
+                    <button onClick={closeChangelog}
+                      className="px-6 py-2.5 text-sm font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors">
+                      Entendido ✓
+                    </button>
+                  ) : (
+                    <button onClick={() => setChangelogStep(s => s + 1)}
+                      className="px-6 py-2.5 text-sm font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors">
+                      Siguiente →
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       </>)}
     </div>
   );

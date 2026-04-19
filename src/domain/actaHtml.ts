@@ -164,25 +164,76 @@ export function buildActaHtml(state: AppState): string {
   // ── D. Verificación en terreno ────────────────────────────────────────────
   html = rep(html, '{fecha_inspeccion_terreno}', g.fechas.inspeccion_terreno);
 
-  // ── E. Extracción ─────────────────────────────────────────────────────────
-  // Capacidad calculada ton/día (AUTOMÁTICA row) — aplica para todos los modos
-  html = rep(html, 'TON/DIA', calcExt.capacidad_diaria_ton.toFixed(2) + ' ton/día');
+  // ── E. Extracción — sistemas de apoyo ────────────────────────────────────
+  const isAuto  = ext.sistemas_apoyo?.automatica ?? true;
+  const isBuceo = ext.sistemas_apoyo?.buceo       ?? false;
+  const isYoma  = ext.sistemas_apoyo?.succion_yoma ?? false;
+  const isRov   = ext.sistemas_apoyo?.rov          ?? false;
+  const capacity = calcExt.capacidad_diaria_ton.toFixed(2) + ' ton/día';
+
+  // AUTOMÁTICA: SI/NO + ton/día
+  if (isAuto) {
+    html = rep(html, 'TON/DIA', capacity);
+  } else {
+    html = rep(html,
+      '<p class="c139"><span class="c12 c10">SI</span></p>',
+      '<p class="c139"><span class="c12 c10">NO</span></p>'
+    );
+    html = rep(html, 'TON/DIA', '');
+  }
+
+  // BUCEO: NO→SI + ton/día + datos equipo
+  if (isBuceo) {
+    html = rep(html,
+      '<p class="c149"><span class="c12 c10">NO</span></p></td><td class="c85" colspan="1" rowspan="2"><p class="c13"><span class="c12 c10"></span></p>',
+      `<p class="c149"><span class="c12 c10">SI</span></p></td><td class="c85" colspan="1" rowspan="2"><p class="c13"><span class="c12 c10">${capacity}</span></p>`
+    );
+    html = rep(html, '<p class="c169"><span class="c12 c10">N/A</span>', `<p class="c169"><span class="c12 c10">${ext.parametros.n_teams_buceo ?? 1}</span>`);
+    html = rep(html, '<p class="c200"><span class="c12 c10">N/A</span>', `<p class="c200"><span class="c12 c10">${ext.parametros.n_buzos_por_team ?? 4}</span>`);
+    html = rep(html, '<p class="c157"><span class="c12 c10">N/A</span>', `<p class="c157"><span class="c12 c10">${ext.parametros.periodicidad_buceo || 'DIARIA'}</span>`);
+  }
+
+  // YOMA: NO→SI
+  if (isYoma) {
+    html = rep(html,
+      '<p class="c128"><span class="c12 c10">NO</span>',
+      '<p class="c128"><span class="c12 c10">SI</span>'
+    );
+  }
+
+  // ROV: NO→SI
+  if (isRov) {
+    html = rep(html,
+      '<p class="c158"><span class="c10">NO</span>',
+      '<p class="c158"><span class="c10">SI</span>'
+    );
+  }
+
   // N° motocompresores/jaula
   html = rep(html,
     '<span class="c10">1</span></p></td></tr><tr class="c20"><td class="c66 c39"',
-    `<span class="c10">${ext.parametros.motocompresores_por_jaula}</span></p></td></tr><tr class="c20"><td class="c66 c39"`
+    `<span class="c10">${isAuto ? ext.parametros.motocompresores_por_jaula : na}</span></p></td></tr><tr class="c20"><td class="c66 c39"`
   );
   html = rep(html, '{jaulas_simult}', ext.parametros.jaulas_simultaneas.toString());
-  html = rep(html, '{cfm}',           ext.parametros.potencia_cfm > 0 ? ext.parametros.potencia_cfm.toString() : na);
-  // Observaciones de extracción — texto libre (reemplazar ANTES de {nro_jaulas}/{linea_extraccion})
+  html = rep(html, '{cfm}',           isAuto && ext.parametros.potencia_cfm > 0 ? ext.parametros.potencia_cfm.toString() : na);
+  // Observaciones de extracción — glosa determinada por sistema activo
+  const nroJaulas = ext.parametros.numero_total_jaulas.toString();
+  const lineaExt  = ext.parametros.marca_equipo || ext.parametros.sistema_principal;
+  let glosa: string;
+  if (g.modo_operacion_minima) {
+    glosa = `Extracción por R.O.V.; Extracción del centro ${cc.nombre_centro} se realiza mediante equipo de robótica submarina, apoyada directamente con embarcación y equipos de buceo semiautónomo.`;
+  } else if (isAuto && isRov) {
+    glosa = `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipo de robótica submarina semiautónoma ROV.`;
+  } else {
+    glosa = `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla.`;
+  }
   html = rep(html,
     'Sistema Autom&aacute;tico; Consta de {nro_jaulas} &nbsp;Lift-up/ {linea_extraccion}, 1 por Jaula , con cono extractor el cual est&aacute; amarrado al fondo de la malla.',
-    ext.parametros.observacion_sistema || na
+    glosa
   );
-  html = rep(html, '{nro_jaulas}',      ext.parametros.numero_total_jaulas.toString());
-  html = rep(html, '{linea_extraccion}',
-    ext.parametros.marca_equipo || ext.parametros.sistema_principal
-  );
+  // fallback por si {nro_jaulas}/{linea_extraccion} aparecen en otro lugar del template
+  html = rep(html, '{nro_jaulas}',       nroJaulas);
+  html = rep(html, '{linea_extraccion}', lineaExt);
 
   // ── F. Desnaturalización — ensilaje ───────────────────────────────────────
   html = rep(html, '{modelo_prepicador}',     den.equipos.marca_modelo || na);
@@ -246,6 +297,12 @@ export function buildActaHtml(state: AppState): string {
   // ── G. Almacenamiento (placeholders directos de un solo span) ─────────────
   html = rep(html, '{capacidad_almacenamiento*1.2}', calcSto.capacidad_almacenaje_ton.toFixed(2));
   html = rep(html, '{capacidad_almacenamiento}',     sto.parametros.capacidad_almacenaje_m3.toString());
+
+  // ── H. Certificación — Observaciones ─────────────────────────────────────
+  html = rep(html,
+    '<p class="c172"><span class="c12 c10">NO</span></p>',
+    `<p class="c172"><span class="c12 c10">${g.observaciones_acta?.trim() || 'N/A'}</span></p>`
+  );
 
   // ── A. Certificador (sección encabezado + firma) ──────────────────────────
   html = rep(html, 'ENGELBERT FLORES CARRIO',         cert.nombre.toUpperCase());
@@ -349,11 +406,13 @@ export function generateActaPdf(
   const print = () => {
     iframeDoc.title = filename;
     onProgress?.('Abriendo diálogo PDF…');
-    iframe.contentWindow!.focus();
     iframe.contentWindow!.print();
     // Limpiar después de que el diálogo cierre (no hay evento, usamos timeout)
+    // window.focus() restaura el foco al documento principal para que los
+    // selectores del formulario vuelvan a responder tras cerrar el diálogo.
     setTimeout(() => {
       document.body.removeChild(iframe);
+      window.focus();
       onProgress?.('Listo');
     }, 3000);
   };

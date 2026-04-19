@@ -1,10 +1,15 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(npm test *)",
+      "Bash(grep -o '.\\\\{0,100\\\\}H\\\\. \\\\|SECCI.*H\\\\|Secci.*H\\\\|tabla.*H\\\\|ALMACEN\\\\|almacen\\\\|observ' c:/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos/src/assets/acta-template.html)",
+      "Bash(grep -o '.\\\\{0,400\\\\}H\\\\. IDENTIF.\\\\{0,400\\\\}' c:/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos/src/assets/acta-template.html)",
+      "Bash(grep -o '.\\\\{0,300\\\\}><span class=\"c1\">H\\\\.</span>.\\\\{0,300\\\\}\\\\|.\\\\{0,100\\\\}H\\\\..\\\\{0,200\\\\}' c:/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos/src/assets/acta-template.html)",
+      "Bash(grep -o '.\\\\{0,800\\\\}H\\\\. CERTIFIC.\\\\{0,800\\\\}' c:/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos/src/assets/acta-template.html)",
+      "Bash(python -c ' *)"
+    ],
     "additionalDirectories": [
       "c:\\Users\\aldon\\Documents\\Proyectos\\Certimar-1511-Doctos\\docs\\superpowers\\plans"
-    ],
-    "allow": [
-      "Bash(npm test *)"
     ]
   }
 }
