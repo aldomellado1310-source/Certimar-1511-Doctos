@@ -1925,17 +1925,35 @@ export default function App() {
     }
   };
 
-  const loadFromHistorico = (entry: RegistroHistorico) => {
+  const loadFromHistorico = async (entry: RegistroHistorico) => {
     if (!window.confirm(
       `¿Cargar los datos de ${entry.nombreCentro} (${entry.codigoCentro}) en el formulario?\n` +
       'Los cambios no guardados del formulario actual se perderán.'
     )) return;
     logEvento('abrir_registro', { codigoCentro: entry.codigoCentro, nombreCentro: entry.nombreCentro, titular: entry.titular });
+
+    // Primera pasada: cargar snapshot tal como viene (puede tener url vacía en registros antiguos)
     setState({
       ...entry.snapshot,
       images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: img.url ?? '' })),
       registroId: entry.registroId,
     });
+
+    // Segunda pasada: fusionar URLs del IDB local (cubre registros creados en este dispositivo
+    // antes del fix que guarda URLs en Firestore)
+    try {
+      const urlMap = await idbGetAll();
+      if (Object.keys(urlMap).length > 0) {
+        setState(prev => ({
+          ...prev,
+          images: prev.images.map(img => ({
+            ...img,
+            url: urlMap[img.id] ?? img.url,
+          })),
+        }));
+      }
+    } catch { /* IDB no crítico */ }
+
     setActiveTab('general');
   };
 
