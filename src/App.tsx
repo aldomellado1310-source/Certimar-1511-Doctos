@@ -1681,9 +1681,9 @@ export default function App() {
       const { db } = await import('./firebase');
       const cc = state.general.centro_cultivo;
       const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
-      // Excluir blob URLs de las imágenes — no son portátiles ni aceptadas por Firestore
-      const imagesMetadata = state.images.map(({ id, seccion, leyenda, estado, observacion }) =>
-        ({ id, seccion, leyenda, estado, observacion })
+      // Excluir base64/blob — solo se guarda la URL de Storage (https://) para que otros usuarios puedan cargarlas
+      const imagesMetadata = state.images.map(({ id, seccion, leyenda, estado, observacion, url }) =>
+        ({ id, seccion, leyenda, estado, observacion, ...(url?.startsWith('https://') ? { url } : {}) })
       );
       await setDoc(doc(db, 'registros', docId), {
         ...state,
@@ -2175,7 +2175,7 @@ export default function App() {
   const [userRole, setUserRole] = useState<'admin' | 'editor' | 'reader' | null>(savedSession?.role ?? null);
   const [loginAquaPhase, setLoginAquaPhase] = useState<'idle' | 'in' | 'hold' | 'out'>('idle');
 
-  const CHANGELOG_VERSION = '2026-04-19-v3';
+  const CHANGELOG_VERSION = '2026-04-19-v5';
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelogStep, setChangelogStep] = useState(0);
   useEffect(() => {
@@ -2497,13 +2497,26 @@ export default function App() {
     [state.general.centro_cultivo.codigo_centro]
   );
 
-  // Auto-genera la observación del sistema de extracción al cambiar nombre centro o sistema
+  // Auto-genera la observación del sistema de extracción al cambiar nombre centro, sistema o sistemas de apoyo
   useEffect(() => {
-    const { observacion_sistema } = state.extraction.parametros;
+    const { observacion_sistema, numero_total_jaulas, marca_equipo, sistema_principal } = state.extraction.parametros;
+    const { automatica, rov } = state.extraction.sistemas_apoyo;
     const nombreCentro = state.general.centro_cultivo.nombre_centro;
-    const autoObs = `Extracción por R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipo de robótica submarina, apoyada directamente con embarcación y equipos de buceo semiautónomo.`;
+    const modoMinima = state.general.modo_operacion_minima ?? false;
+    const nroJaulas = numero_total_jaulas.toString();
+    const lineaExt = marca_equipo || sistema_principal;
+
+    let autoObs: string;
+    if (modoMinima || (!automatica && !rov)) {
+      autoObs = `Extracción por R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipo de robótica submarina, apoyada directamente con embarcación y equipos de buceo semiautónomo.`;
+    } else if (automatica && rov) {
+      autoObs = `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipo de robótica submarina semiautónoma ROV.`;
+    } else {
+      autoObs = `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla.`;
+    }
+
     const isDefault = !observacion_sistema
-      || /^Sistema Automático; Consta de \d+/.test(observacion_sistema)
+      || /^Sistema Automático; Consta de/.test(observacion_sistema)
       || /^Extracción por R\.O\.V\.; Extracción del centro/.test(observacion_sistema);
     if (isDefault) {
       setState(prev => ({
@@ -2515,7 +2528,15 @@ export default function App() {
       }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.general.centro_cultivo.nombre_centro, state.extraction.parametros.sistema_principal]);
+  }, [
+    state.general.centro_cultivo.nombre_centro,
+    state.extraction.parametros.sistema_principal,
+    state.extraction.parametros.marca_equipo,
+    state.extraction.parametros.numero_total_jaulas,
+    state.extraction.sistemas_apoyo.automatica,
+    state.extraction.sistemas_apoyo.rov,
+    state.general.modo_operacion_minima,
+  ]);
 
   const handleCenterCodeChange = (code: string, center?: ConcesionCentro) => {
     if (center) {
@@ -8185,6 +8206,26 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               '• Antes: si "Observación Sistema" estaba vacío, el acta mostraba "N/A".',
               '• Ahora: si está vacío, se usa la glosa estándar del template con N° jaulas y equipo.',
               '• Si tiene texto personalizado, ese texto sigue teniendo prioridad.',
+            ],
+          },
+          {
+            icon: '🖼️',
+            titulo: 'Corrección: imágenes visibles entre usuarios',
+            descripcion: 'Las imágenes subidas por un usuario ahora son visibles para otros usuarios que carguen el mismo registro desde el historial.',
+            detalle: [
+              '• Antes: las imágenes solo aparecían en el dispositivo de quien las subió.',
+              '• Ahora: la URL de almacenamiento se guarda junto al registro y es accesible para todos los usuarios de Certimar.',
+              '• Registros anteriores requieren ser guardados nuevamente para activar la mejora.',
+            ],
+          },
+          {
+            icon: '✅',
+            titulo: 'Corrección: glosa se actualiza al marcar ROV / Automática',
+            descripcion: 'Se corrigió un error donde marcar o desmarcar los checkboxes ROV y Automática no actualizaba el campo "Observación Sistema".',
+            detalle: [
+              '• Antes: la glosa no cambiaba al activar/desactivar ROV o Automática.',
+              '• Ahora: el campo se regenera automáticamente al cambiar cualquier sistema de apoyo.',
+              '• Solo Automática → glosa estándar. Automática + ROV → glosa con mención ROV.',
             ],
           },
         ];
