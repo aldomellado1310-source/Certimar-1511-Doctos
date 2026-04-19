@@ -1768,9 +1768,10 @@ export default function App() {
       const { db } = await import('./firebase');
       const cc = state.general.centro_cultivo;
       const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
-      const snapshotImgs = state.images.map(({ id, seccion, leyenda, estado, observacion, url }) =>
-        ({ id, seccion, leyenda, estado, observacion, url: url.startsWith('http') ? url : '' })
-      );
+      const snapshotImgs = state.images.map(img => ({
+        ...img,
+        url: img.url?.startsWith('https://') ? img.url : '',
+      }));
       const payload: Record<string, any> = {
         registroId: docId,
         codigoCentro: cc.codigo_centro,
