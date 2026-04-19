@@ -53,6 +53,10 @@ import {
   ClipboardList,
   BarChart3,
   ExternalLink,
+  Crop,
+  Move,
+  LayoutGrid,
+  MousePointer2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 // ── WelcomeScreen constants (outside component to avoid re-renders) ──
@@ -1517,6 +1521,8 @@ async function idbDeleteRegistroVisita() {
 }
 
 // ── Recortador manual de imagen para slots Ubicación Espacial ──
+const CROP_TUTORIAL_KEY = 'certimar-crop-tutorial-seen';
+
 const CropModal: React.FC<{
   img: { url: string; leyenda: string; slotUbicacion?: string };
   targetAr: number;
@@ -1530,6 +1536,37 @@ const CropModal: React.FC<{
   // crop in [0..1] relative to rendered image bounds
   const [crop, setCrop] = useState({ x: 0.05, y: 0.05, w: 0.9 });
   const dragging = useRef<{ mx: number; my: number; c0: typeof crop; mode: 'move' | 'resize' } | null>(null);
+  // Tutorial: mostrar la primera vez, o si el usuario lo abre manualmente
+  const [tutStep, setTutStep] = useState<number | null>(() =>
+    localStorage.getItem(CROP_TUTORIAL_KEY) ? null : 0
+  );
+  const closeTutorial = () => { localStorage.setItem(CROP_TUTORIAL_KEY, '1'); setTutStep(null); };
+  const tutSteps = [
+    {
+      icon: LayoutGrid,
+      title: 'El recuadro define el área',
+      desc: 'El recuadro blanco delimita la zona de la imagen que aparecerá en el informe PDF. Lo que quede fuera se recortará.',
+      highlight: 'crop',
+    },
+    {
+      icon: Move,
+      title: 'Arrastra para reposicionar',
+      desc: 'Haz clic y arrastra dentro del recuadro para moverlo sobre la imagen. La proporción del slot se mantiene fija.',
+      highlight: 'move',
+    },
+    {
+      icon: MousePointer2,
+      title: 'Esquina inferior derecha para redimensionar',
+      desc: 'Arrastra el handle blanco en la esquina inferior derecha para cambiar el tamaño del recorte, conservando siempre la relación de aspecto.',
+      highlight: 'resize',
+    },
+    {
+      icon: Crop,
+      title: 'Aplica el recorte',
+      desc: 'Pulsa "Aplicar recorte" para confirmar. El recorte se guarda en este dispositivo y se usa en el PDF. Puedes editarlo cuantas veces quieras.',
+      highlight: 'apply',
+    },
+  ];
 
   const updateBounds = () => {
     if (!wrapRef.current || !imgRef.current) return;
@@ -1594,9 +1631,102 @@ const CropModal: React.FC<{
   const rw = crop.w * imgBounds.w;
   const rh = cropH  * imgBounds.h;
 
+  const tut = tutStep !== null ? tutSteps[tutStep] : null;
+  const TutIcon = tut ? tut.icon : null;
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col gap-4 p-5 w-full max-w-2xl">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col gap-4 p-5 w-full max-w-2xl relative">
+
+        {/* Tutorial overlay (shown on first use) */}
+        {tut && TutIcon && (
+          <div className="absolute inset-0 z-10 rounded-2xl bg-white/97 dark:bg-slate-900/97 backdrop-blur-sm flex flex-col items-center justify-center gap-6 p-8">
+            {/* Diagram SVG illustration per step */}
+            <div className="w-full max-w-xs">
+              {tut.highlight === 'crop' && (
+                <svg viewBox="0 0 240 120" className="w-full rounded-xl border border-slate-200 dark:border-slate-700">
+                  <rect width="240" height="120" fill="#0f172a" />
+                  <image href={img.url} x="0" y="0" width="240" height="120" preserveAspectRatio="xMidYMid slice" style={{ opacity: 0.5 }} />
+                  <rect x="20" y="15" width="200" height="90" fill="none" stroke="white" strokeWidth="2" strokeDasharray="6 3" />
+                  <rect x="0" y="0" width="20" height="120" fill="rgba(0,0,0,0.55)" />
+                  <rect x="220" y="0" width="20" height="120" fill="rgba(0,0,0,0.55)" />
+                  <rect x="20" y="0" width="200" height="15" fill="rgba(0,0,0,0.55)" />
+                  <rect x="20" y="105" width="200" height="15" fill="rgba(0,0,0,0.55)" />
+                  <text x="120" y="65" textAnchor="middle" fill="white" fontSize="10" fontFamily="sans-serif">Área visible en PDF</text>
+                </svg>
+              )}
+              {tut.highlight === 'move' && (
+                <svg viewBox="0 0 240 120" className="w-full rounded-xl border border-slate-200 dark:border-slate-700">
+                  <rect width="240" height="120" fill="#0f172a" />
+                  <image href={img.url} x="0" y="0" width="240" height="120" preserveAspectRatio="xMidYMid slice" style={{ opacity: 0.5 }} />
+                  <rect x="40" y="20" width="160" height="72" fill="rgba(255,255,255,0.08)" stroke="white" strokeWidth="2" />
+                  <line x1="80" y1="56" x2="120" y2="56" stroke="#38bdf8" strokeWidth="2" markerEnd="url(#arr)" />
+                  <line x1="120" y1="56" x2="120" y2="30" stroke="#38bdf8" strokeWidth="2" />
+                  <circle cx="80" cy="56" r="5" fill="#38bdf8" />
+                  <text x="130" y="52" fill="#38bdf8" fontSize="9" fontFamily="sans-serif">Arrastra</text>
+                </svg>
+              )}
+              {tut.highlight === 'resize' && (
+                <svg viewBox="0 0 240 120" className="w-full rounded-xl border border-slate-200 dark:border-slate-700">
+                  <rect width="240" height="120" fill="#0f172a" />
+                  <image href={img.url} x="0" y="0" width="240" height="120" preserveAspectRatio="xMidYMid slice" style={{ opacity: 0.5 }} />
+                  <rect x="30" y="15" width="160" height="72" fill="rgba(255,255,255,0.08)" stroke="white" strokeWidth="2" />
+                  <rect x="178" y="75" width="14" height="14" fill="white" rx="2" />
+                  <line x1="192" y1="89" x2="212" y2="109" stroke="#38bdf8" strokeWidth="2.5" />
+                  <circle cx="212" cy="109" r="5" fill="#38bdf8" />
+                  <text x="170" y="113" fill="#38bdf8" fontSize="9" fontFamily="sans-serif">Redimensiona</text>
+                </svg>
+              )}
+              {tut.highlight === 'apply' && (
+                <svg viewBox="0 0 240 80" className="w-full rounded-xl border border-slate-200 dark:border-slate-700">
+                  <rect width="240" height="80" fill="#f0f9ff" />
+                  <rect x="60" y="20" width="120" height="40" rx="8" fill="#0284c7" />
+                  <text x="120" y="45" textAnchor="middle" fill="white" fontSize="13" fontFamily="sans-serif" fontWeight="bold">Aplicar recorte</text>
+                  <path d="M 45 40 L 58 40" stroke="#0284c7" strokeWidth="2" markerEnd="url(#arr2)" />
+                </svg>
+              )}
+            </div>
+
+            {/* Step indicator */}
+            <div className="flex gap-1.5">
+              {tutSteps.map((_, i) => (
+                <div key={i} className="rounded-full transition-all" style={{ width: i === tutStep ? 20 : 8, height: 8, background: i === tutStep ? '#0284c7' : '#cbd5e1' }} />
+              ))}
+            </div>
+
+            {/* Icon + text */}
+            <div className="text-center space-y-2">
+              <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-sky-100 dark:bg-sky-900/40 mx-auto">
+                <TutIcon size={24} className="text-sky-600 dark:text-sky-400" strokeWidth={1.75} />
+              </div>
+              <h4 className="font-bold text-slate-800 dark:text-slate-100 text-base">{tut.title}</h4>
+              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs leading-relaxed">{tut.desc}</p>
+            </div>
+
+            {/* Navigation */}
+            <div className="flex gap-3">
+              {tutStep > 0 && (
+                <button onClick={() => setTutStep(s => (s ?? 1) - 1)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1">
+                  <ChevronLeft size={14} /> Anterior
+                </button>
+              )}
+              {tutStep < tutSteps.length - 1 ? (
+                <button onClick={() => setTutStep(s => (s ?? 0) + 1)}
+                  className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold flex items-center gap-1.5">
+                  Siguiente <ChevronRight size={14} />
+                </button>
+              ) : (
+                <button onClick={closeTutorial}
+                  className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold flex items-center gap-2">
+                  <CheckCircle2 size={15} /> Empezar a recortar
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-bold text-slate-800 dark:text-slate-100">Recorte manual</h3>
@@ -1604,16 +1734,25 @@ const CropModal: React.FC<{
               Slot: <span className="font-semibold text-sky-600">{slotLabel}</span> · Relación {targetAr.toFixed(2)}:1 · Arrastra el recuadro
             </p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setTutStep(0)}
+              title="Ver tutorial"
+              className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-sky-600 transition-colors"
+            >
+              <Info size={16} />
+            </button>
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Image + crop overlay */}
         <div
           ref={wrapRef}
           className="relative rounded-xl bg-slate-900 select-none overflow-hidden"
-          style={{ maxHeight: '60vh' }}
+          style={{ maxHeight: '55vh' }}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerLeave={onPointerUp}
@@ -1622,38 +1761,42 @@ const CropModal: React.FC<{
             ref={imgRef}
             src={img.url}
             alt=""
-            className="block mx-auto max-w-full max-h-[60vh] object-contain"
+            className="block mx-auto max-w-full max-h-[55vh] object-contain"
             draggable={false}
             onLoad={updateBounds}
           />
-          {/* dark overlay — covers entire wrap */}
+          {/* dark overlay */}
           <div className="absolute inset-0 pointer-events-none" style={{ background: 'rgba(0,0,0,0.5)' }} />
-          {/* crop rect — cut-out via box-shadow */}
+          {/* crop rect */}
           <div
             className="absolute cursor-move"
-            style={{
-              left: rx, top: ry, width: rw, height: rh,
-              outline: '2px solid white',
-              boxShadow: '0 0 0 9999px rgba(0,0,0,0)',
-              background: 'rgba(255,255,255,0.05)',
-            }}
+            style={{ left: rx, top: ry, width: rw, height: rh, outline: '2px solid white', background: 'rgba(255,255,255,0.05)' }}
             onPointerDown={(e) => onPointerDown(e, 'move')}
           >
-            {/* rule of thirds grid */}
             {[33.3, 66.6].map(p => (
               <React.Fragment key={p}>
-                <div className="absolute border-white/30 border-r" style={{ left: `${p}%`, top: 0, bottom: 0, width: 0 }} />
-                <div className="absolute border-white/30 border-b" style={{ top: `${p}%`, left: 0, right: 0, height: 0 }} />
+                <div className="absolute border-white/25 border-r" style={{ left: `${p}%`, top: 0, bottom: 0, width: 0 }} />
+                <div className="absolute border-white/25 border-b" style={{ top: `${p}%`, left: 0, right: 0, height: 0 }} />
               </React.Fragment>
             ))}
-            {/* resize handle */}
             <div
-              className="absolute bottom-0 right-0 w-6 h-6 bg-white/90 cursor-se-resize flex items-center justify-center rounded-tl"
+              className="absolute bottom-0 right-0 w-7 h-7 bg-white/90 cursor-se-resize flex items-center justify-center rounded-tl-lg shadow"
               onPointerDown={(e) => onPointerDown(e, 'resize')}
             >
-              <SlidersHorizontal size={10} className="text-slate-700" />
+              <SlidersHorizontal size={11} className="text-slate-700" />
             </div>
           </div>
+        </div>
+
+        {/* Quick tips bar */}
+        <div className="flex items-center gap-4 px-1 text-[11px] text-slate-400 dark:text-slate-500">
+          <span className="flex items-center gap-1"><Move size={11} /> Arrastra el recuadro</span>
+          <span className="text-slate-200 dark:text-slate-700">·</span>
+          <span className="flex items-center gap-1"><MousePointer2 size={11} /> Esquina para redimensionar</span>
+          <span className="text-slate-200 dark:text-slate-700">·</span>
+          <button onClick={() => setTutStep(0)} className="flex items-center gap-1 underline underline-offset-2 hover:text-sky-500 transition-colors">
+            <Info size={10} /> Tutorial
+          </button>
         </div>
 
         <div className="flex gap-3 justify-end">
@@ -1665,9 +1808,9 @@ const CropModal: React.FC<{
           </button>
           <button
             onClick={applyCrop}
-            className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold shadow"
+            className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold shadow flex items-center gap-2"
           >
-            Aplicar recorte
+            <Crop size={14} /> Aplicar recorte
           </button>
         </div>
       </div>
@@ -2428,7 +2571,7 @@ export default function App() {
   const [loginAquaPhase, setLoginAquaPhase] = useState<'idle' | 'in' | 'hold' | 'out'>('idle');
   const [wasLoggedOut, setWasLoggedOut] = useState(false);
 
-  const CHANGELOG_VERSION = '2026-04-19-v6';
+  const CHANGELOG_VERSION = '2026-04-19-v7';
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelogStep, setChangelogStep] = useState(0);
   const [pendingGenerate, setPendingGenerate] = useState<'certificado' | 'informe' | null>(null);
@@ -8676,6 +8819,18 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               'Antes: la glosa no cambiaba al activar/desactivar ROV o Automática.',
               'Ahora: el campo se regenera automáticamente al cambiar cualquier sistema de apoyo.',
               'Solo Automática → glosa estándar. Automática + ROV → glosa con mención ROV.',
+            ],
+          },
+          {
+            Icon: Crop,
+            color: '#0369a1',
+            titulo: 'Recorte manual + vista previa de tabla aérea',
+            descripcion: 'Las imágenes de Ubicación Espacial ahora se pueden recortar manualmente para cada slot del informe, y el resultado se previsualiza antes de generar el PDF.',
+            detalle: [
+              'Cada card de Ubicación Espacial tiene un botón "Recortar para PDF" que abre el editor de recorte.',
+              'El recuadro se arrastra y redimensiona libremente, con relación de aspecto fija al slot asignado.',
+              'Vista previa en 4 celdas (arriba / centro-izq / centro-der / abajo) se muestra encima de las cards.',
+              'Sin recorte manual, el PDF aplica un recorte central automático sin deformar la imagen.',
             ],
           },
         ];
