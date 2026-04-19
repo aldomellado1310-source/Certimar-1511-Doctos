@@ -1050,13 +1050,15 @@ const WelcomeScreen = ({
   setShowWelcome,
   setAquaPhase,
   logoProvider = 'certimar',
+  skipSplash = false,
 }: {
   setUserRole:    React.Dispatch<React.SetStateAction<'admin' | 'editor' | 'reader' | null>>;
   setShowWelcome: React.Dispatch<React.SetStateAction<boolean>>;
   setAquaPhase:   React.Dispatch<React.SetStateAction<'idle' | 'in' | 'hold' | 'out'>>;
   logoProvider?:  'certimar' | 'engelbert';
+  skipSplash?:    boolean;
 }) => {
-  const [phase, setPhase]             = React.useState<'splash' | 'login'>('splash');
+  const [phase, setPhase]             = React.useState<'splash' | 'login'>(skipSplash ? 'login' : 'splash');
   const [splashPhase, setSplashPhase] = React.useState<'school' | 'logo' | 'out'>('school');
   const [step, setStep]               = React.useState<'google' | 'pin'>('google');
   const [googleEmail, setGoogleEmail] = React.useState('');
@@ -1514,6 +1516,214 @@ async function idbDeleteRegistroVisita() {
   });
 }
 
+// ── Recortador manual de imagen para slots Ubicación Espacial ──
+const CropModal: React.FC<{
+  img: { url: string; leyenda: string; slotUbicacion?: string };
+  targetAr: number;
+  onSave: (croppedUrl: string) => void;
+  onClose: () => void;
+}> = ({ img, targetAr, onSave, onClose }) => {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const imgRef  = useRef<HTMLImageElement>(null);
+  // imgBounds: rendered image position (px) relative to wrapRef
+  const [imgBounds, setImgBounds] = useState({ left: 0, top: 0, w: 1, h: 1 });
+  // crop in [0..1] relative to rendered image bounds
+  const [crop, setCrop] = useState({ x: 0.05, y: 0.05, w: 0.9 });
+  const dragging = useRef<{ mx: number; my: number; c0: typeof crop; mode: 'move' | 'resize' } | null>(null);
+
+  const updateBounds = () => {
+    if (!wrapRef.current || !imgRef.current) return;
+    const wr = wrapRef.current.getBoundingClientRect();
+    const ir = imgRef.current.getBoundingClientRect();
+    setImgBounds({ left: ir.left - wr.left, top: ir.top - wr.top, w: ir.width || 1, h: ir.height || 1 });
+  };
+
+  const clamp = (c: typeof crop): typeof crop => {
+    const h = c.w / targetAr;
+    const x = Math.max(0, Math.min(1 - c.w, c.x));
+    const y = Math.max(0, Math.min(1 - h, c.y));
+    const w = Math.max(0.05, Math.min(1 - x, c.w));
+    return { x, y, w };
+  };
+
+  const onPointerDown = (e: React.PointerEvent, mode: 'move' | 'resize') => {
+    e.preventDefault(); e.stopPropagation();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    dragging.current = { mx: e.clientX, my: e.clientY, c0: { ...crop }, mode };
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    const dx = (e.clientX - dragging.current.mx) / imgBounds.w;
+    const dy = (e.clientY - dragging.current.my) / imgBounds.h;
+    const c0 = dragging.current.c0;
+    if (dragging.current.mode === 'move') {
+      setCrop(clamp({ ...c0, x: c0.x + dx, y: c0.y + dy }));
+    } else {
+      setCrop(clamp({ ...c0, w: Math.max(0.05, c0.w + dx) }));
+    }
+  };
+
+  const onPointerUp = () => { dragging.current = null; };
+
+  const applyCrop = () => {
+    const el = new Image();
+    el.crossOrigin = 'anonymous';
+    el.onload = () => {
+      const nw = el.naturalWidth, nh = el.naturalHeight;
+      const ch = crop.w / targetAr;
+      const sx = Math.round(crop.x * nw), sy = Math.round(crop.y * nh);
+      const sw = Math.round(crop.w * nw), sh = Math.round(ch * nh);
+      const OUT_W = 1200, OUT_H = Math.round(OUT_W / targetAr);
+      const canvas = document.createElement('canvas');
+      canvas.width = OUT_W; canvas.height = OUT_H;
+      canvas.getContext('2d')!.drawImage(el, sx, sy, sw, sh, 0, 0, OUT_W, OUT_H);
+      onSave(canvas.toDataURL('image/jpeg', 0.92));
+    };
+    el.onerror = () => onClose();
+    el.src = img.url;
+  };
+
+  const cropH = crop.w / targetAr;
+  const slotLabel = img.slotUbicacion === 'top' ? 'Arriba' : img.slotUbicacion === 'bottom' ? 'Abajo'
+    : img.slotUbicacion === 'left' ? 'Centro izq.' : img.slotUbicacion === 'right' ? 'Centro der.' : '—';
+
+  // Crop rect in px relative to wrap (accounts for image letterbox inside wrap)
+  const rx = imgBounds.left + crop.x * imgBounds.w;
+  const ry = imgBounds.top  + crop.y * imgBounds.h;
+  const rw = crop.w * imgBounds.w;
+  const rh = cropH  * imgBounds.h;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col gap-4 p-5 w-full max-w-2xl">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-slate-800 dark:text-slate-100">Recorte manual</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Slot: <span className="font-semibold text-sky-600">{slotLabel}</span> · Relación {targetAr.toFixed(2)}:1 · Arrastra el recuadro
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Image + crop overlay */}
+        <div
+          ref={wrapRef}
+          className="relative rounded-xl bg-slate-900 select-none overflow-hidden"
+          style={{ maxHeight: '60vh' }}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerLeave={onPointerUp}
+        >
+          <img
+            ref={imgRef}
+            src={img.url}
+            alt=""
+            className="block mx-auto max-w-full max-h-[60vh] object-contain"
+            draggable={false}
+            onLoad={updateBounds}
+          />
+          {/* dark overlay — covers entire wrap */}
+          <div className="absolute inset-0 pointer-events-none" style={{ background: 'rgba(0,0,0,0.5)' }} />
+          {/* crop rect — cut-out via box-shadow */}
+          <div
+            className="absolute cursor-move"
+            style={{
+              left: rx, top: ry, width: rw, height: rh,
+              outline: '2px solid white',
+              boxShadow: '0 0 0 9999px rgba(0,0,0,0)',
+              background: 'rgba(255,255,255,0.05)',
+            }}
+            onPointerDown={(e) => onPointerDown(e, 'move')}
+          >
+            {/* rule of thirds grid */}
+            {[33.3, 66.6].map(p => (
+              <React.Fragment key={p}>
+                <div className="absolute border-white/30 border-r" style={{ left: `${p}%`, top: 0, bottom: 0, width: 0 }} />
+                <div className="absolute border-white/30 border-b" style={{ top: `${p}%`, left: 0, right: 0, height: 0 }} />
+              </React.Fragment>
+            ))}
+            {/* resize handle */}
+            <div
+              className="absolute bottom-0 right-0 w-6 h-6 bg-white/90 cursor-se-resize flex items-center justify-center rounded-tl"
+              onPointerDown={(e) => onPointerDown(e, 'resize')}
+            >
+              <SlidersHorizontal size={10} className="text-slate-700" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={applyCrop}
+            className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold shadow"
+          >
+            Aplicar recorte
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Vista previa 4-slot de Ubicación Espacial ──
+const AerialPreview: React.FC<{
+  images: import('./types').ReportImage[];
+}> = ({ images }) => {
+  const ubicacion = images.filter(i => i.seccion === 'Ubicación Espacial');
+  if (ubicacion.length === 0) return null;
+
+  const kw = (img: import('./types').ReportImage, ...words: string[]) =>
+    words.some(w => img.leyenda?.toLowerCase().includes(w.toLowerCase()));
+  const bySlot = (slot: string) => ubicacion.find(i => i.slotUbicacion === slot);
+  const noSlot = ubicacion.filter(i => !i.slotUbicacion);
+
+  const top    = bySlot('top')    ?? noSlot.find(i => kw(i,'estructura','módulo')) ?? noSlot[0];
+  const left   = bySlot('left')   ?? noSlot.find(i => kw(i,'diagonal','arreglo') && i !== top) ?? noSlot.find(i => i !== top);
+  const right  = bySlot('right')  ?? noSlot.find(i => kw(i,'aérea','general','contexto') && i !== top && i !== left) ?? noSlot.find(i => i !== top && i !== left);
+  const bottom = bySlot('bottom') ?? noSlot.find(i => i !== top && i !== left && i !== right);
+
+  const Slot: React.FC<{ img?: import('./types').ReportImage; label: string }> = ({ img, label }) => (
+    <div className="relative rounded overflow-hidden bg-slate-200 dark:bg-slate-700 flex items-center justify-center" style={{ minHeight: 56 }}>
+      {img?.croppedUrl || img?.url ? (
+        <img src={img.croppedUrl ?? img.url} alt={img.leyenda} className="w-full h-full object-cover absolute inset-0" />
+      ) : (
+        <span className="text-[9px] text-slate-400 dark:text-slate-500 z-10 px-1 text-center">{label}</span>
+      )}
+      {img && (
+        <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-1 py-0.5 truncate text-[9px] text-white text-center">
+          {img.leyenda || '(sin leyenda)'}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="rounded-xl border border-sky-200 dark:border-sky-800 overflow-hidden bg-white dark:bg-slate-900 shadow-sm">
+      <div className="px-3 py-2 bg-sky-50 dark:bg-sky-900/30 border-b border-sky-100 dark:border-sky-800">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-sky-700 dark:text-sky-400">Vista previa tabla Ubicación Espacial</p>
+      </div>
+      <div className="p-3 flex flex-col gap-1.5">
+        <Slot img={top} label="Arriba (ancho completo)" />
+        <div className="grid grid-cols-2 gap-1.5">
+          <Slot img={left} label="Centro izquierda" />
+          <Slot img={right} label="Centro derecha" />
+        </div>
+        <Slot img={bottom} label="Abajo (ancho completo)" />
+      </div>
+    </div>
+  );
+};
+
 // --- Main App ---
 
 export default function App() {
@@ -1557,7 +1767,8 @@ export default function App() {
           ...prev,
           images: prev.images.map(img => ({
             ...img,
-            url: urlMap[img.id] ?? img.url
+            url: urlMap[img.id] ?? img.url,
+            croppedUrl: urlMap[`crop_${img.id}`] ?? img.croppedUrl,
           }))
         }));
       }
@@ -1577,6 +1788,23 @@ export default function App() {
       }
     }).finally(() => setImagesRestoring(false));
   }, []); // solo al montar
+
+  // Recuperar URLs desde Firebase Storage para imágenes sin URL (registros antiguos sin URL en Firestore)
+  const storageRecoveredIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const emptyImgs = state.images.filter(img => !img.url && img.id && !storageRecoveredIds.current.has(img.id));
+    if (emptyImgs.length === 0) return;
+    emptyImgs.forEach(async img => {
+      storageRecoveredIds.current.add(img.id);
+      try {
+        const { ref, getDownloadURL } = await import('firebase/storage');
+        const { storage } = await import('./firebase');
+        const url = await getDownloadURL(ref(storage, `images/${img.id}.jpg`));
+        setState(prev => ({ ...prev, images: prev.images.map(i => i.id === img.id ? { ...i, url } : i) }));
+        idbSave(img.id, url).catch(() => {});
+      } catch { /* imagen no disponible en Storage */ }
+    });
+  }, [state.images]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-guardado en localStorage — SIN URLs (van en IndexedDB)
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -1768,10 +1996,11 @@ export default function App() {
       const { db } = await import('./firebase');
       const cc = state.general.centro_cultivo;
       const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
-      const snapshotImgs = state.images.map(img => ({
-        ...img,
-        url: img.url?.startsWith('https://') ? img.url : '',
-      }));
+      const snapshotImgs = state.images.map(img => {
+        const { croppedUrl: _crop, ...imgRest } = img as any;
+        void _crop; // croppedUrl se almacena solo en IDB, no en Firestore
+        return { ...imgRest, url: img.url?.startsWith('https://') ? img.url : '' };
+      });
       const payload: Record<string, any> = {
         registroId: docId,
         codigoCentro: cc.codigo_centro,
@@ -1953,6 +2182,7 @@ export default function App() {
           images: prev.images.map(img => ({
             ...img,
             url: urlMap[img.id] ?? img.url,
+            croppedUrl: urlMap[`crop_${img.id}`] ?? img.croppedUrl,
           })),
         }));
       }
@@ -2196,10 +2426,19 @@ export default function App() {
   const [showWelcome, setShowWelcome] = useState(!savedSession);
   const [userRole, setUserRole] = useState<'admin' | 'editor' | 'reader' | null>(savedSession?.role ?? null);
   const [loginAquaPhase, setLoginAquaPhase] = useState<'idle' | 'in' | 'hold' | 'out'>('idle');
+  const [wasLoggedOut, setWasLoggedOut] = useState(false);
 
-  const CHANGELOG_VERSION = '2026-04-19-v5';
+  const CHANGELOG_VERSION = '2026-04-19-v6';
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelogStep, setChangelogStep] = useState(0);
+  const [pendingGenerate, setPendingGenerate] = useState<'certificado' | 'informe' | null>(null);
+  useEffect(() => {
+    if (!pendingGenerate) return;
+    const tipo = pendingGenerate;
+    setPendingGenerate(null);
+    if (tipo === 'certificado') generateCertificadoPDF();
+    else if (tipo === 'informe') generateInformePDF();
+  }, [pendingGenerate]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!savedSession) return;
     const seen = localStorage.getItem('certimar-changelog-seen');
@@ -3005,6 +3244,8 @@ Se despide atentamente`;
   const [aiMeta, setAiMeta] = useState<Record<string, { confianza: number; justificacion: string }>>({});
   const [annotatingImageId, setAnnotatingImageId] = useState<string | null>(null);
   const annotatingImg = annotatingImageId ? (state.images.find(i => i.id === annotatingImageId) ?? null) : null;
+  const [cropModalId, setCropModalId] = useState<string | null>(null);
+  const cropModalImg = cropModalId ? (state.images.find(i => i.id === cropModalId) ?? null) : null;
 
   const [historicoEntries, setHistoricoEntries] = useState<RegistroHistorico[]>([]);
   const [historicoLoading, setHistoricoLoading] = useState(false);
@@ -3772,14 +4013,75 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // 'Portada' y 'Ubicación Espacial' siempre se incluyen (no requieren leyenda).
       // El resto requiere leyenda para aparecer en el informe.
       // 'Ubicación Espacial' NO se excluye aquí — addAerialSection las filtra por sección.
+      // Para imágenes de Ubicación Espacial: se pre-recortan al AR del slot para evitar letterbox.
+
+      // AR por slot (basados en FULL_W/H y HALF_W/H definidos en addAerialSection)
+      const AERIAL_AR: Record<string, number> = {
+        top:    182 / 54,   // FULL_W / (FULL_H - CAPTION_H - 2)
+        bottom: 182 / 54,
+        left:   91  / 39,   // HALF_W / (HALF_H - CAPTION_H - 2)
+        right:  91  / 39,
+      };
+
+      // Recorta imagen al centro llenando el box (object-fit: cover) usando canvas
+      const coverCropDataUrl = (srcUrl: string, ar: number): Promise<string> =>
+        new Promise<string>(res => {
+          const im = new Image();
+          im.crossOrigin = 'anonymous';
+          im.onload = () => {
+            const nw = im.naturalWidth, nh = im.naturalHeight;
+            // crop to target AR from center
+            let sx = 0, sy = 0, sw = nw, sh = nh;
+            const naturalAr = nw / nh;
+            if (naturalAr > ar) { sw = Math.round(nh * ar); sx = Math.round((nw - sw) / 2); }
+            else                { sh = Math.round(nw / ar); sy = Math.round((nh - sh) / 2); }
+            const OUT_W = Math.min(sw, 1600);
+            const OUT_H = Math.round(OUT_W / ar);
+            const canvas = document.createElement('canvas');
+            canvas.width = OUT_W; canvas.height = OUT_H;
+            const ctx = canvas.getContext('2d')!;
+            ctx.drawImage(im, sx, sy, sw, sh, 0, 0, OUT_W, OUT_H);
+            res(canvas.toDataURL('image/jpeg', 0.9));
+          };
+          im.onerror = () => res(srcUrl);
+          im.src = srcUrl;
+        });
+
       const correctedImgs = await Promise.all(
         state.images
           .filter(img =>
             img.url &&
             (img.seccion === 'Portada' || img.seccion === 'Paisaje' || img.seccion === 'Ubicación Espacial' || img.leyenda.trim() !== '' || img.enPortada)
           )
-          .map(async img => ({ ...img, url: await fixImageOrientation(img.url) }))
+          .map(async img => {
+            let srcUrl = img.url;
+            if (img.seccion === 'Ubicación Espacial') {
+              if (img.croppedUrl) {
+                // Manual crop: use as-is, already correct AR
+                srcUrl = img.croppedUrl;
+              } else {
+                // Auto cover-crop to slot AR
+                const ar = AERIAL_AR[img.slotUbicacion ?? 'top'] ?? AERIAL_AR['top'];
+                srcUrl = await coverCropDataUrl(img.url, ar);
+              }
+            }
+            const url = await fixImageOrientation(srcUrl);
+            const dims = await new Promise<{w:number;h:number}>(res => {
+              const el = new Image();
+              el.onload  = () => res({ w: el.naturalWidth  || 4, h: el.naturalHeight || 3 });
+              el.onerror = () => res({ w: 4, h: 3 });
+              el.src = url;
+            });
+            return { ...img, url, _w: dims.w, _h: dims.h };
+          })
       ).then(imgs => imgs.filter(img => img.url));
+
+      // Ajusta imagen al box preservando aspect ratio (object-fit: contain) — usado fuera de Ubicación Espacial
+      const fitContain = (nw: number, nh: number, boxW: number, boxH: number) => {
+        const scale = Math.min(boxW / nw, boxH / nh);
+        const w = nw * scale, h = nh * scale;
+        return { w, h, dx: (boxW - w) / 2, dy: (boxH - h) / 2 };
+      };
 
       // Paleta según tema
       const isEngelbert = tema.palette === 'engelbert';
@@ -4456,7 +4758,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         const kw = (img: typeof imgs[0], ...words: string[]) =>
           words.some(w => img.leyenda?.toLowerCase().includes(w.toLowerCase()));
 
-        const bySlot = (slot: 'top' | 'left' | 'right') => imgs.find(i => i.slotUbicacion === slot);
+        const bySlot = (slot: 'top' | 'left' | 'right' | 'bottom') => imgs.find(i => i.slotUbicacion === slot);
         const noSlot = imgs.filter(i => !i.slotUbicacion);
 
         const imgEstructura = bySlot('top')
@@ -4470,6 +4772,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         const imgAerea = bySlot('right')
           ?? noSlot.find(i => kw(i, 'aérea', 'general', 'contexto') && i !== imgEstructura && i !== imgDiagonal)
           ?? noSlot.find(i => i !== imgEstructura && i !== imgDiagonal);
+
+        const imgBottom = bySlot('bottom')
+          ?? noSlot.find(i => i !== imgEstructura && i !== imgDiagonal && i !== imgAerea);
 
         const FULL_W = 182, FULL_H = 65;  // reducido para dejar espacio a las tablas de datos
         const HALF_W = FULL_W / 2;  // 91mm — igual que la mitad de la fila superior
@@ -4497,8 +4802,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             didDrawCell: (data: any) => {
               if (data.section !== 'body') return;
               try {
-                const iH = data.cell.height - CAPTION_H;
-                doc.addImage(imgEstructura.url, 'JPEG', data.cell.x + 2, data.cell.y + 2, data.cell.width - 4, Math.max(iH - 2, 2));
+                // Images are pre-cropped to cover the slot AR — fill the box directly
+                const boxW = data.cell.width - 4, boxH = Math.max(data.cell.height - CAPTION_H - 2, 2);
+                doc.addImage(imgEstructura.url, 'JPEG', data.cell.x + 2, data.cell.y + 2, boxW, boxH);
                 drawCaption(imgEstructura, data.cell.x, data.cell.y, data.cell.width, data.cell.height);
               } catch { /* skip */ }
             },
@@ -4523,12 +4829,32 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             const img = pair[data.column.index];
             if (!img?.url) return;
             try {
-              const iH = data.cell.height - CAPTION_H;
-              doc.addImage(img.url, 'JPEG', data.cell.x + 2, data.cell.y + 2, data.cell.width - 4, Math.max(iH - 2, 2));
+              const boxW = data.cell.width - 4, boxH = Math.max(data.cell.height - CAPTION_H - 2, 2);
+              doc.addImage(img.url, 'JPEG', data.cell.x + 2, data.cell.y + 2, boxW, boxH);
               drawCaption(img, data.cell.x, data.cell.y, data.cell.width, data.cell.height);
             } catch { /* skip */ }
           },
         });
+
+        // Fila 2: foto ancha inferior — ancho completo (igual que fila 0)
+        if (imgBottom?.url) {
+          ensureSpace(FULL_H + 14);
+          autoTable(doc, {
+            startY: lastY() + 4,
+            margin: { top: 25, left: mLeft },
+            rowPageBreak: 'avoid',
+            body: [[{ content: '', styles: { cellWidth: FULL_W, minCellHeight: FULL_H, cellPadding: 0 } }]],
+            theme: 'plain', styles: { fontSize: 0 }, tableWidth: FULL_W,
+            didDrawCell: (data: any) => {
+              if (data.section !== 'body') return;
+              try {
+                const boxW = data.cell.width - 4, boxH = Math.max(data.cell.height - CAPTION_H - 2, 2);
+                doc.addImage(imgBottom.url, 'JPEG', data.cell.x + 2, data.cell.y + 2, boxW, boxH);
+                drawCaption(imgBottom, data.cell.x, data.cell.y, data.cell.width, data.cell.height);
+              } catch { /* skip */ }
+            },
+          });
+        }
       }
 
       doc.addPage();
@@ -6221,7 +6547,20 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     } else if (tipo === 'acta') {
                       generateActaPdf(entry.snapshot);
                     } else {
-                      alert(`No hay versión guardada para ${tipo}. Carga el registro en el formulario para regenerarlo.`);
+                      // Sin PDF guardado: cargar snapshot y regenerar automáticamente
+                      setState({
+                        ...entry.snapshot,
+                        images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: img.url ?? '' })),
+                        registroId: entry.registroId,
+                      });
+                      idbGetAll().then(urlMap => {
+                        if (Object.keys(urlMap).length > 0) {
+                          setState(prev => ({ ...prev, images: prev.images.map(img => ({ ...img, url: urlMap[img.id] ?? img.url, croppedUrl: urlMap[`crop_${img.id}`] ?? img.croppedUrl })) }));
+                        }
+                      }).catch(() => {}).finally(() => {
+                        setPendingGenerate(tipo as 'certificado' | 'informe');
+                      });
+                      setActiveTab('general');
                     }
                   }}
                   className="flex-1 py-2 text-sm font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
@@ -7457,6 +7796,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           </div>
         )}
 
+        {/* Vista previa tabla Ubicación Espacial */}
+        {(!activeFilter || activeFilter === 'Ubicación Espacial') && (
+          <AerialPreview images={state.images} />
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           <AnimatePresence mode="popLayout">
             {filteredImages.map((img) => {
@@ -7598,7 +7942,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                               value={img.slotUbicacion ?? ''}
                               onChange={(e) => {
                                 const v = e.target.value;
-                                updateImage(img.id, { slotUbicacion: (v || undefined) as 'top' | 'left' | 'right' | undefined });
+                                updateImage(img.id, { slotUbicacion: (v || undefined) as 'top' | 'left' | 'right' | 'bottom' | undefined });
                               }}
                               className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-sky-500/20 dark:[color-scheme:dark]"
                             >
@@ -7607,15 +7951,32 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                                 Arriba (ancho completo){slotOcupado('top') ? ' (ocupado)' : ''}
                               </option>
                               <option value="left" disabled={slotOcupado('left')}>
-                                Abajo izquierda{slotOcupado('left') ? ' (ocupado)' : ''}
+                                Centro izquierda{slotOcupado('left') ? ' (ocupado)' : ''}
                               </option>
                               <option value="right" disabled={slotOcupado('right')}>
-                                Abajo derecha{slotOcupado('right') ? ' (ocupado)' : ''}
+                                Centro derecha{slotOcupado('right') ? ' (ocupado)' : ''}
+                              </option>
+                              <option value="bottom" disabled={slotOcupado('bottom')}>
+                                Abajo (ancho completo){slotOcupado('bottom') ? ' (ocupado)' : ''}
                               </option>
                             </select>
                           );
                         })()}
                       </div>
+                    )}
+                    {isUbicacion && (
+                      <button
+                        onClick={() => setCropModalId(img.id)}
+                        className={cn(
+                          "w-full flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold border transition-all",
+                          img.croppedUrl
+                            ? "bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-500/40"
+                            : "bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-sky-50 dark:hover:bg-sky-500/10 hover:text-sky-600 hover:border-sky-200"
+                        )}
+                      >
+                        <SlidersHorizontal size={11} />
+                        {img.croppedUrl ? 'Recortada · Editar' : 'Recortar para PDF'}
+                      </button>
                     )}
                     {isTecnica && (
                       <button
@@ -7907,7 +8268,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex font-sans text-slate-900 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900 selection:text-indigo-900 dark:selection:text-indigo-100 transition-colors duration-500">
       <MarineBackground />
       <AnimatePresence>
-        {showWelcome && <WelcomeScreen setUserRole={setUserRole} setShowWelcome={setShowWelcome} setAquaPhase={setLoginAquaPhase} logoProvider={tema.logo} />}
+        {showWelcome && <WelcomeScreen setUserRole={setUserRole} setShowWelcome={setShowWelcome} setAquaPhase={setLoginAquaPhase} logoProvider={tema.logo} skipSplash={wasLoggedOut} />}
       </AnimatePresence>
 
       {/* ══ OVERLAY DE TRANSICIÓN LOGIN ══ — vive en App para sobrevivir al desmontaje de WelcomeScreen */}
@@ -8062,7 +8423,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               onClick={async () => {
                 try { const { signOut } = await import('firebase/auth'); const { auth } = await import('./firebase'); await signOut(auth); } catch {}
                 localStorage.removeItem('certimar-session');
-                setUserRole(null); setShowWelcome(true);
+                setWasLoggedOut(true); setUserRole(null); setShowWelcome(true);
               }}
               className={cn("w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400", isSidebarCollapsed && "justify-center px-0")}
             >
@@ -8229,127 +8590,187 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           onClose={() => setAnnotatingImageId(null)}
         />
       )}
+      {/* ── Recortador manual para Ubicación Espacial ── */}
+      {cropModalImg && (
+        <CropModal
+          img={cropModalImg}
+          targetAr={
+            cropModalImg.slotUbicacion === 'left' || cropModalImg.slotUbicacion === 'right'
+              ? 91 / 50   // HALF_W / HALF_H
+              : 182 / 65  // FULL_W / FULL_H (top, bottom, o sin slot)
+          }
+          onSave={(croppedUrl) => {
+            updateImage(cropModalImg.id, { croppedUrl });
+            idbSave(`crop_${cropModalImg.id}`, croppedUrl).catch(() => {});
+            setCropModalId(null);
+          }}
+          onClose={() => setCropModalId(null)}
+        />
+      )}
       {/* ── Modal "Novedades" paso a paso ── */}
       {showChangelog && !showWelcome && (() => {
         const closeChangelog = () => { setShowChangelog(false); localStorage.setItem('certimar-changelog-seen', CHANGELOG_VERSION); };
-        const steps = [
+        const neverShowChangelog = () => closeChangelog();
+        const steps: { Icon: React.ElementType; color: string; titulo: string; descripcion: string; detalle: string[] }[] = [
           {
-            icon: '📋',
+            Icon: ClipboardList,
+            color: '#1f497d',
             titulo: 'Glosa del acta según sistema de extracción',
             descripcion: 'El texto de observaciones en la Sección E del acta ahora se genera automáticamente según los sistemas marcados en el formulario.',
             detalle: [
-              '• Solo Automática → glosa estándar con N° jaulas y equipo.',
-              '• Automática + ROV → glosa estándar más mención del apoyo con ROV.',
-              '• Op.Mínima activa → glosa específica con el nombre del centro.',
+              'Solo Automática → glosa estándar con N° jaulas y equipo.',
+              'Automática + ROV → glosa estándar más mención del apoyo con ROV.',
+              'Op.Mínima activa → glosa específica con el nombre del centro.',
             ],
           },
           {
-            icon: '⚙️',
+            Icon: Settings2,
+            color: '#1f3864',
             titulo: 'Formulario simplificado en Operación Mínima',
             descripcion: 'Al activar el modo Operación Mínima, el formulario de Extracción oculta los campos que no aplican a este modo regulatorio.',
             detalle: [
-              '• Se ocultan: CFM, Jaulas Simultáneas y Motocompresores/Jaula.',
-              '• La capacidad diaria se fija en 15 TON/DÍA (valor regulatorio).',
-              '• El panel de resultados muestra el valor fijo en lugar del calculado.',
+              'Se ocultan: CFM, Jaulas Simultáneas y Motocompresores/Jaula.',
+              'La capacidad diaria se fija en 15 TON/DÍA (valor regulatorio).',
+              'El panel de resultados muestra el valor fijo en lugar del calculado.',
             ],
           },
           {
-            icon: '⬇️',
+            Icon: Download,
+            color: '#1a3a5c',
             titulo: 'Descarga directa desde el Histórico',
             descripcion: 'Los badges de documentos en las tarjetas del histórico ahora son botones de descarga.',
             detalle: [
-              '• Verde → tiene versión guardada → click abre el PDF.',
-              '• Gris → sin versión guardada → genera el Acta directamente, o indica cargar el formulario para Certificado e Informe.',
-              '• Siempre aparece un modal de confirmación de revisión del Inspector antes de descargar.',
+              'Verde → tiene versión guardada → click abre el PDF.',
+              'Gris → sin versión guardada → genera el Acta directamente, o indica cargar el formulario para Certificado e Informe.',
+              'Siempre aparece un modal de confirmación de revisión del Inspector antes de descargar.',
             ],
           },
           {
-            icon: '🔧',
+            Icon: AlertTriangle,
+            color: '#2d5a8e',
             titulo: 'Corrección: glosa estándar del acta',
             descripcion: 'Se corrigió un error donde la glosa de Observaciones de la sección E desaparecía en centros sin texto personalizado.',
             detalle: [
-              '• Antes: si "Observación Sistema" estaba vacío, el acta mostraba "N/A".',
-              '• Ahora: si está vacío, se usa la glosa estándar del template con N° jaulas y equipo.',
-              '• Si tiene texto personalizado, ese texto sigue teniendo prioridad.',
+              'Antes: si "Observación Sistema" estaba vacío, el acta mostraba "N/A".',
+              'Ahora: si está vacío, se usa la glosa estándar del template con N° jaulas y equipo.',
+              'Si tiene texto personalizado, ese texto sigue teniendo prioridad.',
             ],
           },
           {
-            icon: '🖼️',
+            Icon: Camera,
+            color: '#1f497d',
             titulo: 'Corrección: imágenes visibles entre usuarios',
             descripcion: 'Las imágenes subidas por un usuario ahora son visibles para otros usuarios que carguen el mismo registro desde el historial.',
             detalle: [
-              '• Antes: las imágenes solo aparecían en el dispositivo de quien las subió.',
-              '• Ahora: la URL de almacenamiento se guarda junto al registro y es accesible para todos los usuarios de Certimar.',
-              '• Registros anteriores requieren ser guardados nuevamente para activar la mejora.',
+              'Antes: las imágenes solo aparecían en el dispositivo de quien las subió.',
+              'Ahora: la URL de almacenamiento se guarda junto al registro y es accesible para todos los usuarios de Certimar.',
+              'Registros anteriores requieren ser guardados nuevamente para activar la mejora.',
             ],
           },
           {
-            icon: '✅',
+            Icon: CheckCircle2,
+            color: '#1f3864',
             titulo: 'Corrección: glosa se actualiza al marcar ROV / Automática',
             descripcion: 'Se corrigió un error donde marcar o desmarcar los checkboxes ROV y Automática no actualizaba el campo "Observación Sistema".',
             detalle: [
-              '• Antes: la glosa no cambiaba al activar/desactivar ROV o Automática.',
-              '• Ahora: el campo se regenera automáticamente al cambiar cualquier sistema de apoyo.',
-              '• Solo Automática → glosa estándar. Automática + ROV → glosa con mención ROV.',
+              'Antes: la glosa no cambiaba al activar/desactivar ROV o Automática.',
+              'Ahora: el campo se regenera automáticamente al cambiar cualquier sistema de apoyo.',
+              'Solo Automática → glosa estándar. Automática + ROV → glosa con mención ROV.',
             ],
           },
         ];
         const step = steps[changelogStep];
         const isLast = changelogStep === steps.length - 1;
+        const StepIcon = step.Icon;
         return (
-          <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300">
-              {/* Header */}
-              <div className="bg-indigo-600 px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold text-white uppercase tracking-widest">Novedades</span>
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-500 text-indigo-100 font-mono">{CHANGELOG_VERSION}</span>
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-300 border border-white/10">
+
+              {/* Header — Certimar navy gradient */}
+              <div className="relative overflow-hidden px-8 pt-7 pb-8" style={{ background: `linear-gradient(135deg, #1a3a5c 0%, ${step.color} 55%, #4a76a8 100%)` }}>
+                {/* Ola decorativa */}
+                <svg className="absolute bottom-0 left-0 w-full opacity-10" viewBox="0 0 480 48" preserveAspectRatio="none">
+                  <path d="M0,32 C80,0 160,48 240,24 C320,0 400,48 480,24 L480,48 L0,48 Z" fill="white"/>
+                </svg>
+                {/* Top row */}
+                <div className="flex items-center justify-between mb-6 relative">
+                  <div className="flex items-center gap-2.5">
+                    <Anchor size={14} className="text-white/60" />
+                    <span className="text-xs font-bold text-white/80 uppercase tracking-[0.15em]">Novedades Certimar</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full border border-white/20 text-white/60 font-mono bg-white/5">{CHANGELOG_VERSION}</span>
+                  </div>
+                  <button onClick={closeChangelog} className="text-white/40 hover:text-white/90 transition-colors p-1 rounded-lg hover:bg-white/10">
+                    <X size={16} />
+                  </button>
                 </div>
-                <button onClick={closeChangelog} className="text-indigo-200 hover:text-white transition-colors text-xl leading-none">×</button>
+                {/* Icon + title */}
+                <div className="flex items-center gap-5 relative">
+                  <div className="flex-shrink-0 w-14 h-14 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center shadow-inner">
+                    <StepIcon size={26} className="text-white" strokeWidth={1.75} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white/50 text-[11px] font-semibold uppercase tracking-widest mb-1">
+                      {changelogStep + 1} de {steps.length}
+                    </p>
+                    <h3 className="text-[17px] font-bold text-white leading-snug">{step.titulo}</h3>
+                  </div>
+                </div>
               </div>
 
-              {/* Paso actual */}
-              <div className="px-8 py-7 flex flex-col gap-5 min-h-[300px]">
-                <div className="flex items-center gap-3">
-                  <span className="text-4xl">{step.icon}</span>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-snug">{step.titulo}</h3>
-                </div>
+              {/* Body */}
+              <div className="px-8 py-6 space-y-5">
                 <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{step.descripcion}</p>
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl px-5 py-4 space-y-2">
-                  {step.detalle.map(d => (
-                    <p key={d} className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{d}</p>
+                <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+                  {step.detalle.map((d, i) => (
+                    <div key={i} className="flex items-start gap-3 px-5 py-3.5">
+                      <ChevronRight size={13} className="flex-shrink-0 mt-0.5" style={{ color: step.color }} />
+                      <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{d}</p>
+                    </div>
                   ))}
                 </div>
               </div>
 
               {/* Footer */}
-              <div className="px-8 pb-7 flex items-center justify-between gap-4">
-                {/* Indicador de pasos */}
-                <div className="flex gap-1.5">
+              <div className="px-8 pb-7 pt-1 space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                {/* Step pills */}
+                <div className="flex gap-1.5 items-center">
                   {steps.map((_, i) => (
                     <button key={i} onClick={() => setChangelogStep(i)}
-                      className={cn('w-2 h-2 rounded-full transition-colors', i === changelogStep ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600')}
+                      className="transition-all duration-300 rounded-full h-2"
+                      style={{
+                        width: i === changelogStep ? '22px' : '8px',
+                        backgroundColor: i === changelogStep ? step.color : '#cbd5e1',
+                      }}
                     />
                   ))}
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-2.5">
                   {changelogStep > 0 && (
                     <button onClick={() => setChangelogStep(s => s - 1)}
-                      className="px-5 py-2.5 text-sm font-bold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-                      Anterior
+                      className="px-5 py-2.5 text-sm font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5">
+                      <ChevronLeft size={14} /> Anterior
                     </button>
                   )}
                   {isLast ? (
                     <button onClick={closeChangelog}
-                      className="px-6 py-2.5 text-sm font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors">
-                      Entendido ✓
+                      className="px-6 py-2.5 text-sm font-bold rounded-xl text-white transition-opacity hover:opacity-90 flex items-center gap-2 shadow-md"
+                      style={{ background: `linear-gradient(135deg, ${step.color}, #4a76a8)` }}>
+                      <CheckCircle2 size={15} /> Entendido
                     </button>
                   ) : (
                     <button onClick={() => setChangelogStep(s => s + 1)}
-                      className="px-6 py-2.5 text-sm font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors">
-                      Siguiente →
+                      className="px-6 py-2.5 text-sm font-bold rounded-xl text-white transition-opacity hover:opacity-90 flex items-center gap-2 shadow-md"
+                      style={{ background: `linear-gradient(135deg, ${step.color}, #4a76a8)` }}>
+                      Siguiente <ChevronRight size={15} />
                     </button>
                   )}
+                </div>
+                </div>
+                <div className="text-center">
+                  <button onClick={neverShowChangelog} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors underline underline-offset-2">
+                    No volver a mostrar novedades
+                  </button>
                 </div>
               </div>
             </div>

@@ -166,7 +166,8 @@ export interface ReportImage {
   estado: 'Verde' | 'Amarillo' | 'Rojo';
   observacion: string;
   enPortada?: boolean;
-  slotUbicacion?: 'top' | 'left' | 'right';
+  slotUbicacion?: 'top' | 'left' | 'right' | 'bottom';
+  croppedUrl?: string;  // data URL de recorte manual; si existe, se usa en PDF en lugar de url
 }
 
 export interface AppState {
