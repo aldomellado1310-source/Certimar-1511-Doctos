@@ -1588,9 +1588,10 @@ export default function App() {
   useEffect(() => {
     const stateForStorage = {
       ...state,
-      images: state.images.map(({ id, seccion, leyenda, estado, observacion, url }) =>
-        ({ id, seccion, leyenda, estado, observacion, url: url.startsWith('http') ? url : '' })
-      ),
+      images: state.images.map(img => ({
+        ...img,
+        url: img.url.startsWith('http') ? img.url : '',
+      })),
       __version: 'v3',
     };
     try {
@@ -1683,9 +1684,10 @@ export default function App() {
       const cc = state.general.centro_cultivo;
       const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
       // Excluir base64/blob — solo se guarda la URL de Storage (https://) para que otros usuarios puedan cargarlas
-      const imagesMetadata = state.images.map(({ id, seccion, leyenda, estado, observacion, url }) =>
-        ({ id, seccion, leyenda, estado, observacion, ...(url?.startsWith('https://') ? { url } : {}) })
-      );
+      const imagesMetadata = state.images.map(img => ({
+        ...img,
+        url: img.url?.startsWith('https://') ? img.url : '',
+      }));
       await setDoc(doc(db, 'registros', docId), {
         ...state,
         images: imagesMetadata,
@@ -7587,19 +7589,31 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">
                           Posición en tabla
                         </label>
-                        <select
-                          value={img.slotUbicacion ?? ''}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            updateImage(img.id, { slotUbicacion: (v || undefined) as 'top' | 'left' | 'right' | undefined });
-                          }}
-                          className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-sky-500/20 dark:[color-scheme:dark]"
-                        >
-                          <option value="">— Auto (por leyenda) —</option>
-                          <option value="top">Arriba (ancho completo)</option>
-                          <option value="left">Abajo izquierda</option>
-                          <option value="right">Abajo derecha</option>
-                        </select>
+                        {(() => {
+                          const slotOcupado = (slot: string) =>
+                            state.images.some(i => i.seccion === 'Ubicación Espacial' && i.id !== img.id && i.slotUbicacion === slot);
+                          return (
+                            <select
+                              value={img.slotUbicacion ?? ''}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                updateImage(img.id, { slotUbicacion: (v || undefined) as 'top' | 'left' | 'right' | undefined });
+                              }}
+                              className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-sky-500/20 dark:[color-scheme:dark]"
+                            >
+                              <option value="">— Auto (por leyenda) —</option>
+                              <option value="top" disabled={slotOcupado('top')}>
+                                Arriba (ancho completo){slotOcupado('top') ? ' (ocupado)' : ''}
+                              </option>
+                              <option value="left" disabled={slotOcupado('left')}>
+                                Abajo izquierda{slotOcupado('left') ? ' (ocupado)' : ''}
+                              </option>
+                              <option value="right" disabled={slotOcupado('right')}>
+                                Abajo derecha{slotOcupado('right') ? ' (ocupado)' : ''}
+                              </option>
+                            </select>
+                          );
+                        })()}
                       </div>
                     )}
                     {isTecnica && (
