@@ -1453,6 +1453,7 @@ async function idbGetAll(): Promise<Record<string, string>> {
       if (cursor) { result[cursor.key as string] = cursor.value; cursor.continue(); }
       else res(result);
     };
+    curReq.onerror = () => res(result);
   });
 }
 async function idbClear() {
