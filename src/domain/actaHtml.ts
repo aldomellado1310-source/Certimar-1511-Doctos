@@ -216,17 +216,10 @@ export function buildActaHtml(state: AppState): string {
   );
   html = rep(html, '{jaulas_simult}', ext.parametros.jaulas_simultaneas.toString());
   html = rep(html, '{cfm}',           isAuto && ext.parametros.potencia_cfm > 0 ? ext.parametros.potencia_cfm.toString() : na);
-  // Observaciones de extracción — glosa determinada por sistema activo
+  // Observaciones de extracción — usa el campo editable del estado (puede haber sido modificado por el usuario)
   const nroJaulas = ext.parametros.numero_total_jaulas.toString();
   const lineaExt  = ext.parametros.marca_equipo || ext.parametros.sistema_principal;
-  let glosa: string;
-  if (g.modo_operacion_minima) {
-    glosa = `Extracción por R.O.V.; Extracción del centro ${cc.nombre_centro} se realiza mediante equipo de robótica submarina, apoyada directamente con embarcación y equipos de buceo semiautónomo.`;
-  } else if (isAuto && isRov) {
-    glosa = `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipo de robótica submarina semiautónoma ROV.`;
-  } else {
-    glosa = `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla.`;
-  }
+  const glosa = ext.parametros.observacion_sistema || `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla.`;
   html = rep(html,
     'Sistema Autom&aacute;tico; Consta de {nro_jaulas} &nbsp;Lift-up/ {linea_extraccion}, 1 por Jaula , con cono extractor el cual est&aacute; amarrado al fondo de la malla.',
     glosa
