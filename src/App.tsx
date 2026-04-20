@@ -2059,8 +2059,9 @@ export default function App() {
         ...img,
         url: img.url?.startsWith('https://') ? img.url : '',
       }));
+      const stateClean = JSON.parse(JSON.stringify(state));
       await setDoc(doc(db, 'registros', docId), {
-        ...state,
+        ...stateClean,
         images: imagesMetadata,
         __version: 'v3',
         __savedAt: serverTimestamp(),
@@ -2081,7 +2082,7 @@ export default function App() {
           titular: cc.titular,
           fechaInspeccion: state.general.fechas.inspeccion_terreno,
           esBorrador: true,
-          snapshot: { ...state, images: imagesMetadata },
+          snapshot: JSON.parse(JSON.stringify({ ...state, images: imagesMetadata })),
           metricas: {
             capExtraccion: calcExt.capacidad_diaria_ton,
             capDesnaturalizacion: calcDen.capacidad_diaria_ton,
@@ -2920,8 +2921,8 @@ export default function App() {
     }
 
     const isDefault = !observacion_sistema
-      || /^Sistema Automático; Consta de/.test(observacion_sistema)
-      || /^Extracción por R\.O\.V\.; Extracción del centro/.test(observacion_sistema);
+      || /^Sistema Automático; Consta de \d+ Lift-up\/ .+, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla\./.test(observacion_sistema)
+      || /^Extracción por R\.O\.V\.; Extracción del centro .+ se realiza mediante equipo de robótica submarina, apoyada directamente con embarcación y equipos de buceo semiautónomo\.$/.test(observacion_sistema);
     if (isDefault) {
       setState(prev => ({
         ...prev,
