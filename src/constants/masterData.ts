@@ -112,6 +112,35 @@ export const CATALOGO_DESNATURALIZACION = {
         { label: '1.000 kg / 29 min  (28,6 + 0,4) — Estándar fabricante', kilos: 1000, t_proceso: 28.6, t_pausa: 0.4 },
       ],
     },
+    {
+      // TERMINATOR VRG 530 — Ydra (Noruega). Grinder pump continuo para ensilaje.
+      // Motor 22 kW | Caudal máx ~289 m³/h | Material AISI 316 | Cuchillos Vanax (16 uds)
+      // Tiempo molienda: pescado entero 2 t → 30-40 min; restos 2 t → 80-90 min.
+      id: 'ydra-vrg-530',
+      marca_modelo: 'TERMINATOR VRG 530 (Ydra)',
+      capacidad_nominal_kg_h: 3500,
+      almacenamiento_l: 5000,
+      material: 'AISI 316 / Vanax',
+      capacidad_prepicador_kg_h: 0,
+      configuraciones_batch: [
+        { label: '2.000 kg / 35 min — Pescado entero',   kilos: 2000, t_proceso: 30, t_pausa: 5 },
+        { label: '2.000 kg / 90 min — Restos / cabezas', kilos: 2000, t_proceso: 85, t_pausa: 5 },
+      ],
+    },
+    {
+      // TERMINATOR VRG 515 — Ydra (Noruega). Versión compacta 15 kW.
+      // Motor 15 kW | Caudal máx ~236 m³/h | Material AISI 316 | Cuchillos Vanax (16 uds)
+      id: 'ydra-vrg-515',
+      marca_modelo: 'TERMINATOR VRG 515 (Ydra)',
+      capacidad_nominal_kg_h: 2500,
+      almacenamiento_l: 2000,
+      material: 'AISI 316 / Vanax',
+      capacidad_prepicador_kg_h: 0,
+      configuraciones_batch: [
+        { label: '2.000 kg / 50 min — Pescado entero',    kilos: 2000, t_proceso: 45, t_pausa: 5 },
+        { label: '2.000 kg / 115 min — Restos / cabezas', kilos: 2000, t_proceso: 110, t_pausa: 5 },
+      ],
+    },
   ],
   incineradores: [
     {
@@ -150,7 +179,18 @@ export const CATALOGO_DESNATURALIZACION = {
       almacenamiento_gas: '4000L X 4 = 16.000L GAS GLP',
       observaciones: 'INCINERADOR ES EL SISTEMA SECUNDARIO DE DESNATURALIZACIÓN DEL CENTRO DE CULTIVO.',
     },
-  ]
+  ],
+  prepicadores: [
+    {
+      id: 'prepicador-doble-7-5kw',
+      marca_modelo: 'Prepicador Doble 7,5 kW',
+      rendimiento_kg_h: 5000,
+      potencia_kw: 5.5,
+      material: 'Acero Inoxidable 304',
+      numero_ejes: 2,
+      numero_cuchillos: 54,
+    },
+  ],
 };
 
 export const CATALOGO_GENERADORES = [
