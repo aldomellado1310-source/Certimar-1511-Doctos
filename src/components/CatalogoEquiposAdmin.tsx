@@ -159,8 +159,8 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
           <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Agregar equipo al catálogo</p>
 
           <div>
-            <label className={labelCls}>Tipo de equipo *</label>
-            <select value={form.tipo} onChange={e => set('tipo', e.target.value as TipoEquipoCatalogo)} className={inputCls}>
+            <label htmlFor="field-tipo" className={labelCls}>Tipo de equipo *</label>
+            <select id="field-tipo" value={form.tipo} onChange={e => set('tipo', e.target.value as TipoEquipoCatalogo)} className={inputCls}>
               {(Object.entries(TIPO_LABELS) as [TipoEquipoCatalogo, string][]).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
@@ -168,8 +168,9 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
           </div>
 
           <div>
-            <label className={labelCls}>Nombre / Marca-Modelo *</label>
+            <label htmlFor="field-marca-modelo" className={labelCls}>Nombre / Marca-Modelo *</label>
             <input
+              id="field-marca-modelo"
               type="text"
               placeholder="Ej. TERMINATOR VRG 530 (Ydra)"
               value={form.marca_modelo}
@@ -179,8 +180,9 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
           </div>
 
           <div>
-            <label className={labelCls}>Fabricante / Proveedor</label>
+            <label htmlFor="field-fabricante" className={labelCls}>Fabricante / Proveedor</label>
             <input
+              id="field-fabricante"
               type="text"
               placeholder="Ej. Ydra (Noruega)"
               value={form.fabricante}
@@ -192,45 +194,46 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
           <div className="grid grid-cols-2 gap-3">
             {showCapacity && (
               <div>
-                <label className={labelCls}>Capacidad nominal (kg/h)</label>
-                <input type="number" min={0} value={form.capacidad_nominal_kg_h} onChange={e => set('capacidad_nominal_kg_h', e.target.value)} className={inputCls} />
+                <label htmlFor="field-capacidad-nominal" className={labelCls}>Capacidad nominal (kg/h)</label>
+                <input id="field-capacidad-nominal" type="number" min={0} value={form.capacidad_nominal_kg_h} onChange={e => set('capacidad_nominal_kg_h', e.target.value)} className={inputCls} />
               </div>
             )}
             {showStorage && (
               <div>
-                <label className={labelCls}>Almacenamiento / Volumen (L)</label>
-                <input type="number" min={0} value={form.almacenamiento_l} onChange={e => set('almacenamiento_l', e.target.value)} className={inputCls} />
+                <label htmlFor="field-almacenamiento" className={labelCls}>Almacenamiento / Volumen (L)</label>
+                <input id="field-almacenamiento" type="number" min={0} value={form.almacenamiento_l} onChange={e => set('almacenamiento_l', e.target.value)} className={inputCls} />
               </div>
             )}
             {showKgH && (
               <div>
-                <label className={labelCls}>Capacidad carga (kg/h)</label>
-                <input type="number" min={0} value={form.capacidad_carga_kg_h} onChange={e => set('capacidad_carga_kg_h', e.target.value)} className={inputCls} />
+                <label htmlFor="field-capacidad-carga" className={labelCls}>Capacidad carga (kg/h)</label>
+                <input id="field-capacidad-carga" type="number" min={0} value={form.capacidad_carga_kg_h} onChange={e => set('capacidad_carga_kg_h', e.target.value)} className={inputCls} />
               </div>
             )}
             {showRendimiento && (
               <div>
-                <label className={labelCls}>Rendimiento (kg/h)</label>
-                <input type="number" min={0} value={form.rendimiento_kg_h} onChange={e => set('rendimiento_kg_h', e.target.value)} className={inputCls} />
+                <label htmlFor="field-rendimiento" className={labelCls}>Rendimiento (kg/h)</label>
+                <input id="field-rendimiento" type="number" min={0} value={form.rendimiento_kg_h} onChange={e => set('rendimiento_kg_h', e.target.value)} className={inputCls} />
               </div>
             )}
             {showPotencia && (
               <div>
-                <label className={labelCls}>Potencia (kW)</label>
-                <input type="number" min={0} step="0.1" value={form.potencia_kw} onChange={e => set('potencia_kw', e.target.value)} className={inputCls} />
+                <label htmlFor="field-potencia" className={labelCls}>Potencia (kW)</label>
+                <input id="field-potencia" type="number" min={0} step="0.1" value={form.potencia_kw} onChange={e => set('potencia_kw', e.target.value)} className={inputCls} />
               </div>
             )}
             {showCfm && (
               <div>
-                <label className={labelCls}>Caudal (CFM)</label>
-                <input type="number" min={0} value={form.cfm} onChange={e => set('cfm', e.target.value)} className={inputCls} />
+                <label htmlFor="field-cfm" className={labelCls}>Caudal (CFM)</label>
+                <input id="field-cfm" type="number" min={0} value={form.cfm} onChange={e => set('cfm', e.target.value)} className={inputCls} />
               </div>
             )}
           </div>
 
           <div>
-            <label className={labelCls}>Material</label>
+            <label htmlFor="field-material" className={labelCls}>Material</label>
             <input
+              id="field-material"
               type="text"
               placeholder="Ej. Acero Inoxidable AISI 316"
               value={form.material}
@@ -240,8 +243,9 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
           </div>
 
           <div>
-            <label className={labelCls}>Notas / Especificaciones adicionales</label>
+            <label htmlFor="field-notas" className={labelCls}>Notas / Especificaciones adicionales</label>
             <textarea
+              id="field-notas"
               rows={3}
               placeholder="Ej. Motor 22 kW, 400V/50Hz. Cuchillos Vanax. Brida entrada 10 pulgadas."
               value={form.notas}
@@ -273,12 +277,12 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                <th className="text-left px-3 py-2">Tipo</th>
-                <th className="text-left px-3 py-2">Nombre / Modelo</th>
-                <th className="text-left px-3 py-2">Fabricante</th>
-                <th className="text-left px-3 py-2">Capacidad</th>
-                <th className="text-left px-3 py-2">Material</th>
-                <th className="px-3 py-2"></th>
+                <th className="text-left px-3 py-2" scope="col">Tipo</th>
+                <th className="text-left px-3 py-2" scope="col">Nombre / Modelo</th>
+                <th className="text-left px-3 py-2" scope="col">Fabricante</th>
+                <th className="text-left px-3 py-2" scope="col">Capacidad</th>
+                <th className="text-left px-3 py-2" scope="col">Material</th>
+                <th scope="col" className="px-3 py-2"><span className="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -321,6 +325,7 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
                           disabled={deletingId === entry.id}
                           className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-40"
                           title="Eliminar"
+                          aria-label={`Eliminar ${entry.marca_modelo}`}
                         >
                           {deletingId === entry.id
                             ? <Loader2 size={14} className="animate-spin" />
