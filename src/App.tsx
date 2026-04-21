@@ -157,6 +157,7 @@ import {
   OPERACION_MINIMA_AQUAINOX_PREPICADOR,
 } from './domain/constants';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { CatalogoEquiposAdmin } from './components/CatalogoEquiposAdmin';
 
 // ─── Credenciales desde variables de entorno (.env — no subir a git) ────────
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
@@ -1897,6 +1898,14 @@ export default function App() {
   const [catalogoCustom, setCatalogoCustom] = useState<CatalogoCustomEntry[]>([]);
   const [pendingCustomEquipo, setPendingCustomEquipo] = useState<{ marca_modelo: string; tipo: TipoEquipoCatalogo } | null>(null);
 
+  const handleAddEquipo = (entry: CatalogoCustomEntry) => {
+    setCatalogoCustom(prev => [...prev, entry]);
+  };
+
+  const handleDeleteEquipo = (id: string) => {
+    setCatalogoCustom(prev => prev.filter(e => e.id !== id));
+  };
+
   // Restaurar imágenes y Registro de Visita desde IndexedDB al montar.
   // IDB tiene prioridad sobre la URL de Firebase: garantiza que las anotaciones
   // sean siempre visibles y que las imágenes carguen aunque Firebase no esté disponible.
@@ -2825,7 +2834,7 @@ export default function App() {
     import('firebase/firestore').then(async ({ collection, getDocs }) => {
       const { db } = await import('./firebase');
       const snap = await getDocs(collection(db, 'catalogo_custom'));
-      setCatalogoCustom(snap.docs.map(d => d.data() as CatalogoCustomEntry));
+      setCatalogoCustom(snap.docs.map(d => ({ id: d.id, ...d.data() } as CatalogoCustomEntry)));
     }).catch(console.error);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
@@ -7135,21 +7144,13 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       )}
                     </select>
                   </div>
-                  {pendingCustomEquipo && (
-                    <div className="md:col-span-2 flex items-center gap-3 px-4 py-3 bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-500/30 rounded-xl text-xs">
-                      <Info size={14} className="text-sky-500 shrink-0" />
-                      <span className="text-sky-700 dark:text-sky-300 flex-1">
-                        <span className="font-bold">"{pendingCustomEquipo.marca_modelo}"</span> no está en el catálogo del sistema.
-                        ¿Guardarlo para que todos los usuarios lo vean en el futuro?
-                      </span>
-                      <button onClick={saveCustomEquipo}
-                        className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg transition-colors"
-                      >Guardar</button>
-                      <button onClick={() => setPendingCustomEquipo(null)}
-                        className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-600 dark:text-slate-300 font-bold rounded-lg transition-colors"
-                      >Omitir</button>
-                    </div>
-                  )}
+                  <div className="md:col-span-2">
+                    <CatalogoEquiposAdmin
+                      catalogoCustom={catalogoCustom}
+                      onAdd={handleAddEquipo}
+                      onDelete={handleDeleteEquipo}
+                    />
+                  </div>
                   <InputField label="Marca/Modelo Olla" value={state.denaturation.equipos.marca_modelo}
                     onChange={(v) => updateDenaturation('equipos.marca_modelo', v)}
                     onBlur={() => checkNuevoEquipo(state.denaturation.equipos.marca_modelo, 'trituradora')}
