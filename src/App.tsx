@@ -3179,7 +3179,7 @@ Se despide atentamente`;
   };
 
   // Detecta si una marca/modelo no existe en el catálogo estático ni en el custom
-  const checkNuevoEquipo = (marca_modelo: string, tipo: 'trituradora' | 'incinerador') => {
+  const checkNuevoEquipo = (marca_modelo: string, tipo: TipoEquipoCatalogo) => {
     if (!marca_modelo.trim()) return;
     const enEstatico = tipo === 'trituradora'
       ? CATALOGO_DESNATURALIZACION.trituradoras.some(t => t.marca_modelo.toLowerCase() === marca_modelo.toLowerCase())
