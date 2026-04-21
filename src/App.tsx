@@ -2828,16 +2828,16 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  // Cargar catálogo personalizado desde Firestore (solo admin)
+  // Cargar catálogo personalizado desde Firestore (todos los usuarios autenticados)
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!userRole) return;
     import('firebase/firestore').then(async ({ collection, getDocs }) => {
       const { db } = await import('./firebase');
       const snap = await getDocs(collection(db, 'catalogo_custom'));
       setCatalogoCustom(snap.docs.map(d => ({ id: d.id, ...d.data() } as CatalogoCustomEntry)));
     }).catch(console.error);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
+  }, [userRole]);
 
   // Cargar logos de empresas clientes desde Firebase Storage
   useEffect(() => {
