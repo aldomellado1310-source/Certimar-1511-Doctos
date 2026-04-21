@@ -6499,6 +6499,18 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         </section>
       )}
 
+      {/* ── Catálogo de Equipos ── */}
+      {isAdmin && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Catálogo de Equipos</h3>
+          <CatalogoEquiposAdmin
+            catalogoCustom={catalogoCustom}
+            onAdd={handleAddEquipo}
+            onDelete={handleDeleteEquipo}
+          />
+        </div>
+      )}
+
       {/* ── Sistema ── */}
       <section className="space-y-3">
         <div className="flex items-center gap-2 mb-1">
@@ -7143,13 +7155,6 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         </optgroup>
                       )}
                     </select>
-                  </div>
-                  <div className="md:col-span-2">
-                    <CatalogoEquiposAdmin
-                      catalogoCustom={catalogoCustom}
-                      onAdd={handleAddEquipo}
-                      onDelete={handleDeleteEquipo}
-                    />
                   </div>
                   <InputField label="Marca/Modelo Olla" value={state.denaturation.equipos.marca_modelo}
                     onChange={(v) => updateDenaturation('equipos.marca_modelo', v)}
