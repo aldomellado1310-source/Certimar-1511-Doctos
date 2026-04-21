@@ -197,15 +197,36 @@ export interface EventoUso {
   fecha: any; // Firestore Timestamp
 }
 
+export type TipoEquipoCatalogo =
+  | 'trituradora'
+  | 'incinerador'
+  | 'prepicador'
+  | 'grinder_pump'
+  | 'ensilador'
+  | 'bomba_centrifuga'
+  | 'dosificador'
+  | 'linea_extraccion'
+  | 'compresor';
+
 export interface CatalogoCustomEntry {
-  tipo: 'trituradora' | 'incinerador';
+  id?: string;                          // Firestore document ID (para eliminación)
+  tipo: TipoEquipoCatalogo;
   marca_modelo: string;
+  fabricante?: string;
+  // Campos trituradora / grinder_pump
   capacidad_nominal_kg_h?: number;
   almacenamiento_l?: number;
   material?: string;
   capacidad_prepicador_kg_h?: number;
   configuraciones_batch?: Array<{ label: string; kilos: number; t_proceso: number; t_pausa: number }>;
+  // Campos incinerador
   capacidad_carga_kg_h?: number;
+  // Campos prepicador / linea_extraccion / compresor
+  rendimiento_kg_h?: number;
+  potencia_kw?: number;
+  cfm?: number;
+  // Notas libres (todos los tipos)
+  notas?: string;
   creadoPor: string;
   __createdAt: any;
 }

@@ -121,7 +121,7 @@ import { useDropzone } from 'react-dropzone';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { cn } from './lib/utils';
-import { AppState, ReportImage, RegistroHistorico, EventoUso, CatalogoCustomEntry } from './types';
+import { AppState, ReportImage, RegistroHistorico, EventoUso, CatalogoCustomEntry, TipoEquipoCatalogo } from './types';
 import {
   CATALOGO_EXTRACCION,
   CATALOGO_DESNATURALIZACION,
@@ -1895,7 +1895,7 @@ export default function App() {
 
   // Catálogo de equipos personalizados (persiste en Firestore, visible para admin)
   const [catalogoCustom, setCatalogoCustom] = useState<CatalogoCustomEntry[]>([]);
-  const [pendingCustomEquipo, setPendingCustomEquipo] = useState<{ marca_modelo: string; tipo: 'trituradora' | 'incinerador' } | null>(null);
+  const [pendingCustomEquipo, setPendingCustomEquipo] = useState<{ marca_modelo: string; tipo: TipoEquipoCatalogo } | null>(null);
 
   // Restaurar imágenes y Registro de Visita desde IndexedDB al montar.
   // IDB tiene prioridad sobre la URL de Firebase: garantiza que las anotaciones
@@ -2905,24 +2905,35 @@ export default function App() {
   // Auto-genera la observación del sistema de extracción al cambiar nombre centro, sistema o sistemas de apoyo
   useEffect(() => {
     const { observacion_sistema, numero_total_jaulas, marca_equipo, sistema_principal } = state.extraction.parametros;
-    const { automatica, rov } = state.extraction.sistemas_apoyo;
+    const { automatica, rov, buceo } = state.extraction.sistemas_apoyo;
     const nombreCentro = state.general.centro_cultivo.nombre_centro;
     const modoMinima = state.general.modo_operacion_minima ?? false;
     const nroJaulas = numero_total_jaulas.toString();
     const lineaExt = marca_equipo || sistema_principal;
 
     let autoObs: string;
-    if (modoMinima || (!automatica && !rov)) {
-      autoObs = `Extracción por R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipo de robótica submarina, apoyada directamente con embarcación y equipos de buceo semiautónomo.`;
-    } else if (automatica && rov) {
-      autoObs = `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipo de robótica submarina semiautónoma ROV.`;
-    } else {
+    if (modoMinima) {
+      autoObs = `Extracción por R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipo de robótica submarina (ROV), apoyado directamente con embarcación de apoyo.`;
+    } else if (buceo && rov && automatica) {
+      autoObs = `Sistema Automático con apoyo de Buceo y R.O.V.; Extracción del centro ${nombreCentro} consta de ${nroJaulas} Lift-up/${lineaExt}, 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipos de buceo semiautónomo y equipo de robótica submarina (ROV).`;
+    } else if (rov && automatica) {
+      autoObs = `Sistema Automático con apoyo R.O.V.; Extracción del centro ${nombreCentro} consta de ${nroJaulas} Lift-up/${lineaExt}, 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipo de robótica submarina semiautónoma (ROV).`;
+    } else if (buceo && rov) {
+      autoObs = `Extracción por Buceo y R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipos de buceo semiautónomo y equipo de robótica submarina (ROV), apoyados directamente con embarcación de apoyo.`;
+    } else if (buceo && automatica) {
+      autoObs = `Sistema Automático con apoyo de Buceo; Extracción del centro ${nombreCentro} consta de ${nroJaulas} Lift-up/${lineaExt}, 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipos de buceo semiautónomo.`;
+    } else if (automatica) {
       autoObs = `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla.`;
+    } else if (buceo) {
+      autoObs = `Extracción por Buceo; Extracción del centro ${nombreCentro} se realiza mediante equipos de buceo semiautónomo, apoyados directamente con embarcación de apoyo.`;
+    } else {
+      // solo ROV o ninguno seleccionado
+      autoObs = `Extracción por R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipo de robótica submarina (ROV), apoyado directamente con embarcación de apoyo.`;
     }
 
     const isDefault = !observacion_sistema
-      || /^Sistema Automático; Consta de \d+ Lift-up\/ .+, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla\./.test(observacion_sistema)
-      || /^Extracción por R\.O\.V\.; Extracción del centro .+ se realiza mediante equipo de robótica submarina, apoyada directamente con embarcación y equipos de buceo semiautónomo\.$/.test(observacion_sistema);
+      || /^Sistema Automático/.test(observacion_sistema)
+      || /^Extracción por (R\.O\.V\.|Buceo)/.test(observacion_sistema);
     if (isDefault) {
       setState(prev => ({
         ...prev,
@@ -2940,6 +2951,7 @@ export default function App() {
     state.extraction.parametros.numero_total_jaulas,
     state.extraction.sistemas_apoyo.automatica,
     state.extraction.sistemas_apoyo.rov,
+    state.extraction.sistemas_apoyo.buceo,
     state.general.modo_operacion_minima,
   ]);
 
