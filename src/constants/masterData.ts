@@ -185,7 +185,7 @@ export const CATALOGO_DESNATURALIZACION = {
       id: 'prepicador-doble-7-5kw',
       marca_modelo: 'Prepicador Doble 7,5 kW',
       rendimiento_kg_h: 5000,
-      potencia_kw: 5.5,
+      potencia_kw: 7.5,
       material: 'Acero Inoxidable 304',
       numero_ejes: 2,
       numero_cuchillos: 54,
