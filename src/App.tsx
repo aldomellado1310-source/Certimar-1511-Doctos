@@ -57,6 +57,7 @@ import {
   Move,
   LayoutGrid,
   MousePointer2,
+  RefreshCw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 // ── WelcomeScreen constants (outside component to avoid re-renders) ──
@@ -2995,48 +2996,32 @@ export default function App() {
     [state.general.centro_cultivo.codigo_centro]
   );
 
-  // Auto-genera la observación del sistema de extracción al cambiar nombre centro, sistema o sistemas de apoyo
-  useEffect(() => {
-    const { observacion_sistema, numero_total_jaulas, marca_equipo, sistema_principal } = state.extraction.parametros;
+  // Construye la glosa de observación de sistema según los sistemas de apoyo actuales
+  const buildObservacionSistema = useCallback(() => {
+    const { numero_total_jaulas, marca_equipo, sistema_principal } = state.extraction.parametros;
     const { automatica, rov, buceo } = state.extraction.sistemas_apoyo;
     const nombreCentro = state.general.centro_cultivo.nombre_centro;
     const modoMinima = state.general.modo_operacion_minima ?? false;
     const nroJaulas = numero_total_jaulas.toString();
     const lineaExt = marca_equipo || sistema_principal;
 
-    let autoObs: string;
     if (modoMinima) {
-      autoObs = `Extracción por R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipo de robótica submarina (ROV), apoyado directamente con embarcación de apoyo.`;
+      return `Extracción por R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipo de robótica submarina (ROV), apoyado directamente con embarcación de apoyo.`;
     } else if (buceo && rov && automatica) {
-      autoObs = `Sistema Automático con apoyo de Buceo y R.O.V.; Extracción del centro ${nombreCentro} consta de ${nroJaulas} Lift-up/${lineaExt}, 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipos de buceo semiautónomo y equipo de robótica submarina (ROV).`;
+      return `Sistema Automático con apoyo de Buceo y R.O.V.; Extracción del centro ${nombreCentro} consta de ${nroJaulas} Lift-up/${lineaExt}, 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipos de buceo semiautónomo y equipo de robótica submarina (ROV).`;
     } else if (rov && automatica) {
-      autoObs = `Sistema Automático con apoyo R.O.V.; Extracción del centro ${nombreCentro} consta de ${nroJaulas} Lift-up/${lineaExt}, 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipo de robótica submarina semiautónoma (ROV).`;
+      return `Sistema Automático con apoyo R.O.V.; Extracción del centro ${nombreCentro} consta de ${nroJaulas} Lift-up/${lineaExt}, 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipo de robótica submarina semiautónoma (ROV).`;
     } else if (buceo && rov) {
-      autoObs = `Extracción por Buceo y R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipos de buceo semiautónomo y equipo de robótica submarina (ROV), apoyados directamente con embarcación de apoyo.`;
+      return `Extracción por Buceo y R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipos de buceo semiautónomo y equipo de robótica submarina (ROV), apoyados directamente con embarcación de apoyo.`;
     } else if (buceo && automatica) {
-      autoObs = `Sistema Automático con apoyo de Buceo; Extracción del centro ${nombreCentro} consta de ${nroJaulas} Lift-up/${lineaExt}, 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipos de buceo semiautónomo.`;
+      return `Sistema Automático con apoyo de Buceo; Extracción del centro ${nombreCentro} consta de ${nroJaulas} Lift-up/${lineaExt}, 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla. La extracción submarina es apoyada con equipos de buceo semiautónomo.`;
     } else if (automatica) {
-      autoObs = `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla.`;
+      return `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla.`;
     } else if (buceo) {
-      autoObs = `Extracción por Buceo; Extracción del centro ${nombreCentro} se realiza mediante equipos de buceo semiautónomo, apoyados directamente con embarcación de apoyo.`;
+      return `Extracción por Buceo; Extracción del centro ${nombreCentro} se realiza mediante equipos de buceo semiautónomo, apoyados directamente con embarcación de apoyo.`;
     } else {
-      // solo ROV o ninguno seleccionado
-      autoObs = `Extracción por R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipo de robótica submarina (ROV), apoyado directamente con embarcación de apoyo.`;
+      return `Extracción por R.O.V.; Extracción del centro ${nombreCentro} se realiza mediante equipo de robótica submarina (ROV), apoyado directamente con embarcación de apoyo.`;
     }
-
-    const isDefault = !observacion_sistema
-      || /^Sistema Automático/.test(observacion_sistema)
-      || /^Extracción por (R\.O\.V\.|Buceo)/.test(observacion_sistema);
-    if (isDefault) {
-      setState(prev => ({
-        ...prev,
-        extraction: {
-          ...prev.extraction,
-          parametros: { ...prev.extraction.parametros, observacion_sistema: autoObs }
-        }
-      }));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     state.general.centro_cultivo.nombre_centro,
     state.extraction.parametros.sistema_principal,
@@ -3047,6 +3032,25 @@ export default function App() {
     state.extraction.sistemas_apoyo.buceo,
     state.general.modo_operacion_minima,
   ]);
+
+  // Auto-genera la observación cuando cambia sistema/apoyos, solo si el texto es auto-generado (no editado)
+  useEffect(() => {
+    const obs = state.extraction.parametros.observacion_sistema;
+    const isDefault = !obs
+      || /^Sistema Automático/.test(obs)
+      || /^Extracción por (R\.O\.V\.|Buceo)/.test(obs);
+    if (isDefault) {
+      const autoObs = buildObservacionSistema();
+      setState(prev => ({
+        ...prev,
+        extraction: {
+          ...prev.extraction,
+          parametros: { ...prev.extraction.parametros, observacion_sistema: autoObs }
+        }
+      }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildObservacionSistema]);
 
   const handleCenterCodeChange = (code: string, center?: ConcesionCentro) => {
     if (center) {
@@ -7130,7 +7134,18 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 </div>
               )}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Observación Sistema</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Observación Sistema</label>
+                  <button
+                    type="button"
+                    onClick={() => updateExtraction('parametros.observacion_sistema', buildObservacionSistema())}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-200 transition-colors"
+                    title="Regenerar glosa automática según sistemas de apoyo seleccionados"
+                  >
+                    <RefreshCw size={11} />
+                    Regenerar
+                  </button>
+                </div>
                 <textarea
                   value={state.extraction.parametros.observacion_sistema}
                   onChange={(e) => updateExtraction('parametros.observacion_sistema', e.target.value)}
