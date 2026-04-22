@@ -16,7 +16,8 @@
       "Bash(npx vite:*)",
       "Bash(grep -o '.\\\\{0,200\\\\}Observaciones.\\\\{0,200\\\\}' c:/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos/src/assets/acta-template.html)",
       "Bash(grep -o '.\\\\{0,500\\\\}Observaciones.\\\\{0,500\\\\}' c:/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos/src/assets/acta-template.html)",
-      "Bash(awk 'NR>=6010 && NR<=7080 {print NR\": \"$0}' src/App.tsx)"
+      "Bash(awk 'NR>=6010 && NR<=7080 {print NR\": \"$0}' src/App.tsx)",
+      "Bash(python3 *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\aldon\\Documents\\Proyectos\\Certimar-1511-Doctos",
