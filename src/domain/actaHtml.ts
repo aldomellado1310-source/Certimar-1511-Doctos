@@ -229,12 +229,18 @@ export function buildActaHtml(state: AppState): string {
   html = rep(html, '{linea_extraccion}', lineaExt);
 
   // ── F. Desnaturalización — ensilaje ───────────────────────────────────────
-  html = rep(html, '{modelo_prepicador}',
-    den.equipos.cuenta_con_prepicador ? (den.equipos.marca_modelo_prepicador || na) : na);
+  // {modelo_prepicador} = "Identificar proveedor (modelo)" → modelo de la trituradora/sistema ensilaje
+  html = rep(html, '{modelo_prepicador}', den.equipos.marca_modelo || na);
   html = rep(html, '{cuenta_con_prepicador}', siNo(den.equipos.cuenta_con_prepicador));
   html = rep(html, '{capacidad_prepicador}',
     den.equipos.cuenta_con_prepicador
       ? den.equipos.capacidad_prepicador_kg_hr.toString()
+      : na
+  );
+  // {cantidad_prepicador} = fila "Cantidad prepicador (N° que cuenta el centro)"
+  html = rep(html, '{cantidad_prepicador}',
+    den.equipos.cuenta_con_prepicador
+      ? den.equipos.cantidad_prepicador.toString()
       : na
   );
   html = rep(html, '{velocidad_olla_trituradora}', den.equipos.velocidad_nominal_kg_hr.toString());
