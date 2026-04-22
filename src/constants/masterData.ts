@@ -537,7 +537,7 @@ export const CATALOGO_PLATAFORMAS: PlataformaEntry[] = [
 ];
 
 export const OPCIONES_INFRAESTRUCTURA = {
-  pretil_material: ['Acero Inoxidable', 'Hormigón', 'Hormigón Armado'],
+  pretil_material: ['Acero Inoxidable', 'Acero Naval', 'Hormigón', 'Hormigón Armado'],
   piping_material: ['HDPE PN10 PE100 armado por electrofusión', 'HDPE'],
   piping_diametro: ['90mm / 4"', '90mm / 8"'],
   piping_valvulas: ['Válvulas Tipo Mariposa', 'Válvulas Tipo Bola'],
