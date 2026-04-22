@@ -1898,12 +1898,64 @@ export default function App() {
   const [catalogoCustom, setCatalogoCustom] = useState<CatalogoCustomEntry[]>([]);
   const [pendingCustomEquipo, setPendingCustomEquipo] = useState<{ marca_modelo: string; tipo: TipoEquipoCatalogo } | null>(null);
 
+  // Bloqueo optimista de registros
+  const [bloqueoActivo, setBloqueoActivo] = useState<{ email: string; nombre: string; desde: Date } | null>(null);
+
   const handleAddEquipo = (entry: CatalogoCustomEntry) => {
     setCatalogoCustom(prev => [...prev, entry]);
   };
 
   const handleDeleteEquipo = (id: string) => {
     setCatalogoCustom(prev => prev.filter(e => e.id !== id));
+  };
+
+  const LOCK_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas
+
+  const acquireLock = async (registroId: string) => {
+    try {
+      const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db, auth } = await import('./firebase');
+      const user = (auth as any).currentUser;
+      if (!user) return;
+      await setDoc(doc(db, 'bloqueos', registroId), {
+        email: user.email ?? '',
+        nombre: state.general.certificador.nombre || user.email,
+        desde: serverTimestamp(),
+        expira: new Date(Date.now() + LOCK_TTL_MS),
+      });
+    } catch { /* no crítico */ }
+  };
+
+  const releaseLock = async (registroId: string) => {
+    try {
+      const { doc, deleteDoc } = await import('firebase/firestore');
+      const { db, auth } = await import('./firebase');
+      const user = (auth as any).currentUser;
+      if (!user) return;
+      // Solo libera si el bloqueo le pertenece
+      const { getDoc } = await import('firebase/firestore');
+      const snap = await getDoc(doc(db, 'bloqueos', registroId));
+      if (snap.exists() && snap.data().email === user.email) {
+        await deleteDoc(doc(db, 'bloqueos', registroId));
+      }
+    } catch { /* no crítico */ }
+    setBloqueoActivo(null);
+  };
+
+  const checkLock = async (registroId: string): Promise<{ email: string; nombre: string; desde: Date } | null> => {
+    try {
+      const { doc, getDoc } = await import('firebase/firestore');
+      const { db, auth } = await import('./firebase');
+      const user = (auth as any).currentUser;
+      const snap = await getDoc(doc(db, 'bloqueos', registroId));
+      if (!snap.exists()) return null;
+      const data = snap.data();
+      // Bloqueo propio o expirado → ignorar
+      if (data.email === user?.email) return null;
+      const expira = data.expira?.toDate ? data.expira.toDate() : new Date(data.expira);
+      if (expira < new Date()) return null;
+      return { email: data.email, nombre: data.nombre, desde: data.desde?.toDate ? data.desde.toDate() : new Date() };
+    } catch { return null; }
   };
 
   // Restaurar imágenes y Registro de Visita desde IndexedDB al montar.
@@ -1993,6 +2045,8 @@ export default function App() {
 
   const resetState = () => {
     if (window.confirm("¿Está seguro de que desea borrar el borrador actual y comenzar de nuevo?")) {
+      if (state.registroId) releaseLock(state.registroId);
+      setBloqueoActivo(null);
       idbClear();
       setState(DEFAULT_STATE);
       localStorage.removeItem('certimar-draft-state');
@@ -2003,6 +2057,8 @@ export default function App() {
   // Nuevo registro — limpia datos del centro pero preserva el certificador
   const newRecord = () => {
     if (window.confirm('¿Iniciar un nuevo registro?\nSe limpiarán los datos del centro, extracción, desnaturalización, almacenamiento e imágenes.\nLos datos del certificador se conservan.')) {
+      if (state.registroId) releaseLock(state.registroId);
+      setBloqueoActivo(null);
       idbClear();
       setState(prev => ({
         ...DEFAULT_STATE,
@@ -2316,6 +2372,25 @@ export default function App() {
       `¿Cargar los datos de ${entry.nombreCentro} (${entry.codigoCentro}) en el formulario?\n` +
       'Los cambios no guardados del formulario actual se perderán.'
     )) return;
+
+    // Verificar bloqueo antes de abrir
+    const lock = await checkLock(entry.registroId);
+    if (lock) {
+      const hora = lock.desde.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+      const continuar = window.confirm(
+        `⚠️ Este registro está siendo editado por ${lock.email} desde las ${hora}.\n\n` +
+        'Si lo abres y guardas, podrías sobreescribir sus cambios.\n\n' +
+        '¿Deseas abrirlo de todas formas?'
+      );
+      if (!continuar) return;
+      setBloqueoActivo(lock);
+    } else {
+      setBloqueoActivo(null);
+    }
+
+    // Liberar bloqueo anterior si había un registro abierto
+    if (state.registroId) await releaseLock(state.registroId);
+
     logEvento('abrir_registro', { codigoCentro: entry.codigoCentro, nombreCentro: entry.nombreCentro, titular: entry.titular });
 
     // Primera pasada: cargar snapshot tal como viene (puede tener url vacía en registros antiguos)
@@ -2324,6 +2399,9 @@ export default function App() {
       images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: img.url ?? '' })),
       registroId: entry.registroId,
     });
+
+    // Adquirir bloqueo (incluso si otro lo tiene — el usuario confirmó)
+    await acquireLock(entry.registroId);
 
     // Segunda pasada: fusionar URLs del IDB local (cubre registros creados en este dispositivo
     // antes del fix que guarda URLs en Firestore)
@@ -8703,6 +8781,12 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             <div className="sticky top-0 z-40 bg-amber-500 text-amber-950 text-xs font-bold px-6 py-2 flex items-center gap-2">
               <ShieldCheck size={14} />
               MODO LECTURA — No puedes editar ni generar documentos en esta sesión.
+            </div>
+          )}
+          {bloqueoActivo && (
+            <div className="sticky top-0 z-40 bg-orange-500 text-white text-xs font-bold px-6 py-2 flex items-center gap-2">
+              <ShieldCheck size={14} />
+              ⚠️ ATENCIÓN: <span className="font-normal ml-1">{bloqueoActivo.nombre} ({bloqueoActivo.email}) también tiene este registro abierto desde las {bloqueoActivo.desde.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}. Coordinad antes de guardar para evitar sobreescribir cambios.</span>
             </div>
           )}
         <div className="max-w-6xl mx-auto">
