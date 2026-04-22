@@ -2659,7 +2659,7 @@ export default function App() {
   const [loginAquaPhase, setLoginAquaPhase] = useState<'idle' | 'in' | 'hold' | 'out'>('idle');
   const [wasLoggedOut, setWasLoggedOut] = useState(false);
 
-  const CHANGELOG_VERSION = '2026-04-21-v8';
+  const CHANGELOG_VERSION = '2026-04-21-v9';
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelogStep, setChangelogStep] = useState(0);
   const [pendingGenerate, setPendingGenerate] = useState<'certificado' | 'informe' | null>(null);
@@ -8960,6 +8960,18 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               'Prepicador Doble 7,5 kW (5.000 kg/h, AISI 304) agregado al catálogo estático.',
               'Panel de administración (Config → Catálogo de Equipos) permite agregar y eliminar equipos personalizados.',
               'Los equipos personalizados son visibles para todos los usuarios autenticados.',
+            ],
+          },
+          {
+            Icon: ShieldCheck,
+            color: '#b45309',
+            titulo: 'Bloqueo de edición simultánea',
+            descripcion: 'Si dos usuarios abren el mismo registro al mismo tiempo, ahora aparece un aviso para evitar sobreescribir cambios sin querer.',
+            detalle: [
+              'Al abrir un registro desde el historial, el sistema verifica si otro usuario lo tiene abierto.',
+              'Si hay conflicto, aparece un banner naranja con el nombre y la hora en que el otro usuario lo abrió.',
+              'Puedes continuar igual — el aviso es informativo para que coordinéis antes de guardar.',
+              'El bloqueo expira automáticamente a las 2 horas o cuando el usuario cierra el registro.',
             ],
           },
           {
