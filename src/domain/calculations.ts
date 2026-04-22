@@ -140,13 +140,17 @@ export function calculateDenaturation(
   }
 
   // --- Ruta: Ensilaje Químico (batch) ---
-  let batch_duration =
-    parametros_batch.tiempo_procesamiento_min + parametros_batch.tiempo_pausa_min;
-
+  // El prepicador reduce el tiempo de PROCESO (no la pausa) según el factor de eficiencia.
   // Res. Exenta N°1511/2021 — Factor de eficiencia con prepicador
+  const t_proceso_nominal = parametros_batch.tiempo_procesamiento_min;
+  let t_proceso_efectivo = t_proceso_nominal;
+  const factor_pre = equipos.cuenta_con_prepicador
+    ? (equipos.factor_eficiencia_prepicador ?? PREPICADOR_BATCH_FACTOR)
+    : 1;
   if (equipos.cuenta_con_prepicador) {
-    batch_duration = batch_duration * PREPICADOR_BATCH_FACTOR;
+    t_proceso_efectivo = t_proceso_nominal * factor_pre;
   }
+  const batch_duration = t_proceso_efectivo + parametros_batch.tiempo_pausa_min;
 
   // GUARD F1: Duración de batch debe ser > 0.
   // Sin esta guarda, batch_duration=0 produce Infinity batches → cumple_norma=true (fraude).
@@ -176,14 +180,23 @@ export function calculateDenaturation(
 
   const combined_ton = capacity_ton + capacidad_incinerador_ton;
 
+  const glosa_prepicador = equipos.cuenta_con_prepicador
+    ? `Con prepicador activo (factor de eficiencia: ${Math.round(factor_pre * 100)}%), ` +
+      `el tiempo de proceso se reduce de ${t_proceso_nominal} min a ` +
+      `${t_proceso_efectivo.toFixed(1)} min. `
+    : '';
+
   const observacion =
-    `La eficiencia del sistema depende directamente del tiempo total de cada ciclo (batch + pausa)... ` +
+    `La eficiencia del sistema depende directamente del tiempo total de cada ciclo (batch + pausa). ` +
+    `Los tiempos de pausas y de procesamiento permite determinar la cantidad de batches por día, ` +
+    `por lo tanto, estudiar detalladamente la capacidad de procesamiento total. ` +
     `(kg/batch=${parametros_batch.kilos_por_batch} -- Horas de trabajo diario: ` +
     `${equipos.horas_funcionamiento_dia} = ${total_work_min} min) ` +
-    `Duración total por batch: ${batch_duration.toFixed(2)} min / ` +
-    `Número de batches por día: ${total_work_min} ÷ ${batch_duration.toFixed(2)} = ` +
+    glosa_prepicador +
+    `Duración total por batch: ${batch_duration.toFixed(1)} min / ` +
+    `Número de batches por día: ${total_work_min} ÷ ${batch_duration.toFixed(1)} = ` +
     `${num_batches.toFixed(2)} batches ` +
-    `Capacidad diaria ${parametros_batch.kilos_por_batch} kg * ` +
+    `Capacidad diaria: ${parametros_batch.kilos_por_batch.toLocaleString('es-CL')} kg × ` +
     `${num_batches.toFixed(2)} = ${capacity_kg.toFixed(0)} kg = ${capacity_ton.toFixed(2)} toneladas` +
     (incinerador?.activo
       ? ` + Incinerador secundario: ${capacidad_incinerador_ton.toFixed(2)} TN/día. Total combinado: ${combined_ton.toFixed(2)} TN/día.`

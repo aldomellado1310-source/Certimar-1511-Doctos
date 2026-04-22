@@ -229,7 +229,8 @@ export function buildActaHtml(state: AppState): string {
   html = rep(html, '{linea_extraccion}', lineaExt);
 
   // ── F. Desnaturalización — ensilaje ───────────────────────────────────────
-  html = rep(html, '{modelo_prepicador}',     den.equipos.marca_modelo || na);
+  html = rep(html, '{modelo_prepicador}',
+    den.equipos.cuenta_con_prepicador ? (den.equipos.marca_modelo_prepicador || na) : na);
   html = rep(html, '{cuenta_con_prepicador}', siNo(den.equipos.cuenta_con_prepicador));
   html = rep(html, '{capacidad_prepicador}',
     den.equipos.cuenta_con_prepicador

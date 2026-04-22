@@ -74,7 +74,10 @@ export interface DenaturationData {
     velocidad_nominal_kg_hr: number;
     horas_funcionamiento_dia: number;
     cuenta_con_prepicador: boolean;
+    marca_modelo_prepicador: string;
+    cantidad_prepicador: number;
     capacidad_prepicador_kg_hr: number;
+    factor_eficiencia_prepicador: number;   // 0–1, ej. 0.70 = 30% reducción de tiempo proceso
     cuenta_con_recirculacion_acido: boolean;
     material_construccion: string;
     tipo_sistema: 'Ensilaje' | 'Incineración';

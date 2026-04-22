@@ -225,7 +225,10 @@ const DEFAULT_STATE: AppState = {
       velocidad_nominal_kg_hr: 0,
       horas_funcionamiento_dia: 8,
       cuenta_con_prepicador: false,
+      marca_modelo_prepicador: "",
+      cantidad_prepicador: 1,
       capacidad_prepicador_kg_hr: 0,
+      factor_eficiencia_prepicador: 0.70,
       cuenta_con_recirculacion_acido: false,
       material_construccion: "",
       tipo_sistema: 'Ensilaje',
@@ -2586,7 +2589,10 @@ export default function App() {
           velocidad_nominal_kg_hr: 1500,
           horas_funcionamiento_dia: 9,
           cuenta_con_prepicador: false,
+          marca_modelo_prepicador: "",
+          cantidad_prepicador: 1,
           capacidad_prepicador_kg_hr: 0,
+          factor_eficiencia_prepicador: 0.70,
           cuenta_con_recirculacion_acido: true,
           material_construccion: 'Acero inoxidable AISI 304',
           tipo_sistema: 'Ensilaje',
@@ -4675,7 +4681,16 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           ['Material', den.equipos.material_construccion],
           ['Capacidad de Proceso Nominal', `${den.equipos.velocidad_nominal_kg_hr} Kg/hr`],
           ['Estado (bien, mal, sin fugas)', den.equipos.estado_olla === 'Bueno' ? 'Buen estado, sin fugas.' : den.equipos.estado_olla === 'Regular' ? 'Estado regular, presenta observaciones.' : 'Mal estado, requiere revisión.'],
-          ['Señalar si cuenta con prepicador y Recirculación de ácido', `${den.equipos.cuenta_con_prepicador ? 'Cuenta con prepicador. ' : ''}${den.equipos.cuenta_con_recirculacion_acido ? 'Cuenta con sistema de recirculación de ácido.' : ''}`],
+          ['Señalar si cuenta con prepicador y Recirculación de ácido', (() => {
+            const parts: string[] = [];
+            if (den.equipos.cuenta_con_prepicador) {
+              const mdl = den.equipos.marca_modelo_prepicador ? ` (${den.equipos.marca_modelo_prepicador})` : '';
+              const cap = den.equipos.capacidad_prepicador_kg_hr ? `, ${den.equipos.capacidad_prepicador_kg_hr} Kg/Hr` : '';
+              parts.push(`Cuenta con prepicador${mdl}${cap}.`);
+            }
+            if (den.equipos.cuenta_con_recirculacion_acido) parts.push('Cuenta con sistema de recirculación de ácido.');
+            return parts.length > 0 ? parts.join(' ') : '—';
+          })()],
           [{ content: '(Pretil)', colSpan: 2, styles: { fontStyle: 'bold' } }],
           ['Material', sto.infraestructura.pretil_material],
           ['Estado (bien, mal, sin fugas)', sto.infraestructura.pretil_estado === 'Bueno' ? 'Buen estado sin fugas.' : sto.infraestructura.pretil_estado],
@@ -4734,7 +4749,16 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           [{ content: '(Por cada olla trituradora)', colSpan: 2, styles: { fontStyle: 'bold' as const } }],
           ['Material.', den.equipos.material_construccion],
           ['Estado (bien, mal, sin fugas).', 'Buen estado sin fugas y óxido nivel medio.'],
-          ['Señalar si cuenta con prepicador y dosificación de ácido.', `${den.equipos.cuenta_con_recirculacion_acido ? 'Cuenta con sistema de Recirculación de ácido.' : '—'}`],
+          ['Señalar si cuenta con prepicador y dosificación de ácido.', (() => {
+            const parts: string[] = [];
+            if (den.equipos.cuenta_con_prepicador) {
+              const mdl = den.equipos.marca_modelo_prepicador ? ` (${den.equipos.marca_modelo_prepicador})` : '';
+              const cap = den.equipos.capacidad_prepicador_kg_hr ? `, ${den.equipos.capacidad_prepicador_kg_hr} Kg/Hr` : '';
+              parts.push(`Cuenta con prepicador${mdl}${cap}.`);
+            }
+            if (den.equipos.cuenta_con_recirculacion_acido) parts.push('Cuenta con sistema de recirculación de ácido.');
+            return parts.length > 0 ? parts.join(' ') : '—';
+          })()],
           ...(den.incinerador.activo ? [
             [{ content: 'Sistema Secundario de Desnaturalización (Incinerador)', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold' as const } }],
             ['Marca/Modelo.', den.incinerador.marca_modelo],
@@ -7260,14 +7284,58 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   </div>
                   <InputField label="Velocidad Nominal" type="number" value={state.denaturation.equipos.velocidad_nominal_kg_hr} onChange={(v) => updateDenaturation('equipos.velocidad_nominal_kg_hr', v)} suffix="Kg/Hr" />
                   <InputField label="Horas Operación" type="number" value={state.denaturation.equipos.horas_funcionamiento_dia} onChange={(v) => updateDenaturation('equipos.horas_funcionamiento_dia', v)} suffix="Hrs/Día" />
-                  <div className="flex items-center gap-8 py-2 md:col-span-2">
-                    <div className="flex flex-col gap-2">
+                  <div className="md:col-span-2 space-y-4 py-2">
+                    <div className="flex items-center gap-8">
                       <CheckboxField label="Prepicador" checked={state.denaturation.equipos.cuenta_con_prepicador} onChange={(v) => updateDenaturation('equipos.cuenta_con_prepicador', v)} />
-                      {state.denaturation.equipos.cuenta_con_prepicador && (
-                        <p className="text-[10px] text-indigo-600 font-bold ml-6">CAPACIDAD: {state.denaturation.equipos.capacidad_prepicador_kg_hr} KG/HR</p>
-                      )}
+                      <CheckboxField label="Recirculación Ácido" checked={state.denaturation.equipos.cuenta_con_recirculacion_acido} onChange={(v) => updateDenaturation('equipos.cuenta_con_recirculacion_acido', v)} />
                     </div>
-                    <CheckboxField label="Recirculación Ácido" checked={state.denaturation.equipos.cuenta_con_recirculacion_acido} onChange={(v) => updateDenaturation('equipos.cuenta_con_recirculacion_acido', v)} />
+                    {state.denaturation.equipos.cuenta_con_prepicador && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-700">
+                        <InputField
+                          label="Marca / Modelo Prepicador"
+                          type="text"
+                          value={state.denaturation.equipos.marca_modelo_prepicador}
+                          onChange={(v) => updateDenaturation('equipos.marca_modelo_prepicador', v)}
+                        />
+                        <InputField
+                          label="Cantidad Prepicadores"
+                          type="number"
+                          value={state.denaturation.equipos.cantidad_prepicador}
+                          onChange={(v) => updateDenaturation('equipos.cantidad_prepicador', v)}
+                          suffix="Unidad(es)"
+                          min={1}
+                        />
+                        <InputField
+                          label="Capacidad Prepicador"
+                          type="number"
+                          value={state.denaturation.equipos.capacidad_prepicador_kg_hr}
+                          onChange={(v) => updateDenaturation('equipos.capacidad_prepicador_kg_hr', v)}
+                          suffix="Kg/Hr"
+                        />
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                            Factor Eficiencia — {Math.round(state.denaturation.equipos.factor_eficiencia_prepicador * 100)}% del tiempo de proceso
+                          </label>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="range"
+                              min={10}
+                              max={100}
+                              step={5}
+                              value={Math.round(state.denaturation.equipos.factor_eficiencia_prepicador * 100)}
+                              onChange={(e) => updateDenaturation('equipos.factor_eficiencia_prepicador', parseFloat(e.target.value) / 100)}
+                              className="flex-1 accent-indigo-600"
+                            />
+                            <span className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400 w-10 text-right">
+                              {Math.round(state.denaturation.equipos.factor_eficiencia_prepicador * 100)}%
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">
+                            Reduce el tiempo de procesamiento en un {Math.round((1 - state.denaturation.equipos.factor_eficiencia_prepicador) * 100)}%
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </FormCard>
