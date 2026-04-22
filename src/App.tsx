@@ -7555,13 +7555,26 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Material Pretil</label>
                 <select
-                  value={state.storage.infraestructura.pretil_material}
-                  onChange={(e) => updateStorage('infraestructura.pretil_material', e.target.value)}
+                  value={OPCIONES_INFRAESTRUCTURA.pretil_material.includes(state.storage.infraestructura.pretil_material) || state.storage.infraestructura.pretil_material === '' ? state.storage.infraestructura.pretil_material : '__otro__'}
+                  onChange={(e) => {
+                    if (e.target.value !== '__otro__') updateStorage('infraestructura.pretil_material', e.target.value);
+                    else updateStorage('infraestructura.pretil_material', '');
+                  }}
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
                 >
                   <option value="">Seleccionar...</option>
                   {OPCIONES_INFRAESTRUCTURA.pretil_material.map(o => <option key={o}>{o}</option>)}
+                  <option value="__otro__">Otro (especificar)…</option>
                 </select>
+                {!OPCIONES_INFRAESTRUCTURA.pretil_material.includes(state.storage.infraestructura.pretil_material) && state.storage.infraestructura.pretil_material !== '' && (
+                  <input
+                    type="text"
+                    value={state.storage.infraestructura.pretil_material}
+                    onChange={(e) => updateStorage('infraestructura.pretil_material', e.target.value)}
+                    placeholder="Especificar material…"
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-indigo-400 dark:border-indigo-500 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                  />
+                )}
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Estado Pretil</label>
