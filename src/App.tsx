@@ -2581,7 +2581,7 @@ export default function App() {
   const [loginAquaPhase, setLoginAquaPhase] = useState<'idle' | 'in' | 'hold' | 'out'>('idle');
   const [wasLoggedOut, setWasLoggedOut] = useState(false);
 
-  const CHANGELOG_VERSION = '2026-04-19-v7';
+  const CHANGELOG_VERSION = '2026-04-21-v8';
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelogStep, setChangelogStep] = useState(0);
   const [pendingGenerate, setPendingGenerate] = useState<'certificado' | 'informe' | null>(null);
@@ -8851,6 +8851,31 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               'Antes: la glosa no cambiaba al activar/desactivar ROV o Automática.',
               'Ahora: el campo se regenera automáticamente al cambiar cualquier sistema de apoyo.',
               'Solo Automática → glosa estándar. Automática + ROV → glosa con mención ROV.',
+            ],
+          },
+          {
+            Icon: FileText,
+            color: '#0f766e',
+            titulo: 'Glosa de extracción según sistemas de apoyo',
+            descripcion: 'El campo "Observación Sistema" ahora se genera automáticamente según los sistemas de apoyo marcados, incluyendo Buceo.',
+            detalle: [
+              'Solo ROV → glosa de extracción por robótica submarina.',
+              'Buceo + ROV → glosa combinada buceo y ROV.',
+              'ROV + Automática → glosa sistema automático con apoyo ROV.',
+              'Buceo + ROV + Automática → glosa completa con ambos apoyos.',
+              'El campo sigue siendo editable si necesitas personalizar el texto.',
+            ],
+          },
+          {
+            Icon: Database,
+            color: '#1e40af',
+            titulo: 'Catálogo de equipos actualizado y personalizable',
+            descripcion: 'Se agregaron los equipos TERMINATOR VRG 530/515 (Ydra) y Prepicador Doble 7,5 kW. Los administradores pueden agregar equipos personalizados.',
+            detalle: [
+              'TERMINATOR VRG 530 (22 kW, 3.500 kg/h) y VRG 515 (15 kW, 2.500 kg/h) disponibles en Desnaturalización.',
+              'Prepicador Doble 7,5 kW (5.000 kg/h, AISI 304) agregado al catálogo estático.',
+              'Panel de administración (Config → Catálogo de Equipos) permite agregar y eliminar equipos personalizados.',
+              'Los equipos personalizados son visibles para todos los usuarios autenticados.',
             ],
           },
           {
