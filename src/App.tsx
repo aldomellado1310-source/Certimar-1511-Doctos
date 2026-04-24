@@ -1891,6 +1891,9 @@ export default function App() {
           if (parsed.general && parsed.general.observaciones_acta === undefined) {
             parsed.general.observaciones_acta = '';
           }
+          if (parsed.extraction && parsed.extraction.equipos_extraccion === undefined) {
+            parsed.extraction.equipos_extraccion = [];
+          }
           return parsed;
         }
         localStorage.removeItem('certimar-draft-state');
@@ -2401,6 +2404,10 @@ export default function App() {
     // Primera pasada: cargar snapshot tal como viene (puede tener url vacía en registros antiguos)
     setState({
       ...entry.snapshot,
+      extraction: {
+        ...entry.snapshot.extraction,
+        equipos_extraccion: entry.snapshot.extraction.equipos_extraccion ?? [],
+      },
       images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: img.url ?? '' })),
       registroId: entry.registroId,
     });
@@ -7218,10 +7225,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
       <FormCard title="Equipos de Extracción">
         <div className="space-y-4">
-          {state.extraction.equipos_extraccion.length === 0 && (
+          {(state.extraction.equipos_extraccion ?? []).length === 0 && (
             <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-2">Sin equipos registrados.</p>
           )}
-          {state.extraction.equipos_extraccion.map((equipo, idx) => (
+          {(state.extraction.equipos_extraccion ?? []).map((equipo, idx) => (
             <div key={idx} className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
               <div className="md:col-span-2 flex items-center justify-between gap-2">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Equipo {idx + 1}</span>
