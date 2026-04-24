@@ -6817,11 +6817,34 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
     return (
       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
-        <SectionHeader
-          title="Histórico de Certificaciones"
-          icon={History}
-          description="Registros generados automáticamente al emitir documentos. Haz clic en los estados para actualizarlos."
-        />
+        <div className="flex items-start justify-between gap-4 mb-8">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-indigo-600 dark:bg-indigo-500 rounded-lg text-white shadow-lg shadow-indigo-500/20">
+                <History size={24} />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Histórico de Certificaciones</h2>
+            </div>
+            <p className="text-slate-500 dark:text-slate-400 text-sm max-w-2xl">Registros generados automáticamente al emitir documentos. Haz clic en los estados para actualizarlos.</p>
+          </div>
+          <button
+            onClick={exportHistoricoCSV}
+            disabled={exportingCSV}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+          >
+            {exportingCSV ? (
+              <>
+                <span className="animate-spin w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full" />
+                Exportando…
+              </>
+            ) : (
+              <>
+                <Download size={16} />
+                Exportar CSV
+              </>
+            )}
+          </button>
+        </div>
 
         {/* ── Registros desde Firestore ── */}
         <FormCard className="p-0 overflow-hidden">
