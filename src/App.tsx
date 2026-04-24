@@ -152,6 +152,7 @@ import {
   buildActaInspeccionData,
 } from './domain/documents';
 import { generateActaPdf, buildActaHtml, patchOklch } from './domain/actaHtml';
+import { inferCatalogoId } from './domain/generators';
 import {
   OPERACION_MINIMA_EXTRACTION,
   OPERACION_MINIMA_BATCH_INDEX,
@@ -1894,6 +1895,11 @@ export default function App() {
           if (parsed.extraction && parsed.extraction.equipos_extraccion === undefined) {
             parsed.extraction.equipos_extraccion = [];
           }
+          if (parsed.denaturation?.generacion_electrica) {
+            parsed.denaturation.generacion_electrica = parsed.denaturation.generacion_electrica.map(
+              (gen: any) => gen.catalogoId !== undefined ? gen : { ...gen, catalogoId: inferCatalogoId(gen) }
+            );
+          }
           return parsed;
         }
         localStorage.removeItem('certimar-draft-state');
@@ -2430,6 +2436,12 @@ export default function App() {
       extraction: {
         ...entry.snapshot.extraction,
         equipos_extraccion: entry.snapshot.extraction.equipos_extraccion ?? [],
+      },
+      denaturation: {
+        ...entry.snapshot.denaturation,
+        generacion_electrica: (entry.snapshot.denaturation.generacion_electrica ?? []).map(
+          (gen: any) => gen.catalogoId !== undefined ? gen : { ...gen, catalogoId: inferCatalogoId(gen) }
+        ),
       },
       images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: img.url ?? '' })),
       registroId: entry.registroId,
@@ -3500,12 +3512,16 @@ Se despide atentamente`;
   };
 
   const handleSelectGenerator = (index: number, id: string) => {
-    const gen = CATALOGO_GENERADORES.find(g => g.id === id);
-    if (gen) {
-      const newGens = [...state.denaturation.generacion_electrica];
-      newGens[index] = { ...newGens[index], marca: gen.marca, modelo: gen.modelo, capacidad_kva: gen.kva };
-      setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, generacion_electrica: newGens } }));
+    const newGens = [...state.denaturation.generacion_electrica];
+    if (id === 'otro') {
+      newGens[index] = { ...newGens[index], catalogoId: 'otro', marca: '', modelo: '', capacidad_kva: 0 };
+    } else {
+      const gen = CATALOGO_GENERADORES.find(g => g.id === id);
+      if (gen) {
+        newGens[index] = { ...newGens[index], catalogoId: id, marca: gen.marca, modelo: gen.modelo, capacidad_kva: gen.kva };
+      }
     }
+    setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, generacion_electrica: newGens } }));
   };
 
   const handleUpdateGenerator = (index: number, field: string, value: any) => {
@@ -3515,7 +3531,7 @@ Se despide atentamente`;
   };
 
   const handleAddGenerator = () => {
-    const newGen = { tipo: 'Principal', marca: '', modelo: '', capacidad_kva: 0, ubicacion: '' };
+    const newGen = { tipo: 'Principal', marca: '', modelo: '', capacidad_kva: 0, ubicacion: '', catalogoId: '' };
     setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, generacion_electrica: [...prev.denaturation.generacion_electrica, newGen] } }));
   };
 
