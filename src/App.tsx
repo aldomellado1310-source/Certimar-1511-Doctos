@@ -2473,6 +2473,87 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const csvEscape = (v: unknown): string => {
+    if (v === undefined || v === null) return '';
+    const s = String(v);
+    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  };
+
+  const exportHistoricoCSV = async () => {
+    setExportingCSV(true);
+    try {
+      const { getDocs, query, collection, orderBy } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      const snap = await getDocs(query(collection(db, 'historico'), orderBy('__updatedAt', 'desc')));
+
+      const toISO = (ts: any): string => {
+        if (!ts) return '';
+        if (ts?.toDate) return ts.toDate().toISOString();
+        return String(ts);
+      };
+
+      const headers = [
+        'registroId', 'codigoCentro', 'nombreCentro', 'titular', 'fechaInspeccion',
+        'creadoEn', 'ultimaModificacion',
+        'esBorrador', 'aprobado', 'firmado', 'enviadoSernapesca', 'clienteNotificado',
+        'documentosGenerados',
+        'capExtraccion_TN_dia', 'capDesnaturalizacion_TN_dia', 'capAlmacenamiento_TN',
+        'cumpleExtraccion', 'cumpleDesnaturalizacion', 'cumpleAlmacenamiento',
+        'sistemaExtraccion', 'sistemaDesnaturalizacion',
+        'modoOperacionMinima', 'numJaulas', 'jaulasSimultaneas', 'profundidad_m',
+      ];
+
+      const rows = snap.docs.map(d => {
+        const e = d.data() as RegistroHistorico;
+        const m = e.metricas;
+        return [
+          e.registroId,
+          e.codigoCentro,
+          e.nombreCentro,
+          e.titular,
+          e.fechaInspeccion,
+          toISO(e.creadoEn),
+          toISO(e.__updatedAt),
+          e.esBorrador,
+          e.aprobado,
+          e.firmado,
+          e.enviado_sernapesca,
+          e.cliente_notificado,
+          (e.documentosGenerados ?? []).join(';'),
+          m?.capExtraccion,
+          m?.capDesnaturalizacion,
+          m?.capAlmacenamiento,
+          m?.cumpleExtraccion,
+          m?.cumpleDesnaturalizacion,
+          m?.cumpleAlmacenamiento,
+          m?.sistemaExtraccion,
+          m?.sistemaDesnaturalizacion,
+          m?.modoOperacionMinima,
+          m?.numJaulas,
+          m?.jaulas_simultaneas,
+          m?.profundidad_m,
+        ].map(csvEscape).join(',');
+      });
+
+      const csv = '﻿' + headers.join(',') + '\r\n' + rows.join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `historico_certimar_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error exportando CSV:', err);
+      alert('No se pudo exportar el historial. Verifica tu conexión.');
+    } finally {
+      setExportingCSV(false);
+    }
+  };
+
   // Importar borrador desde archivo JSON
   const importDraftRef = useRef<HTMLInputElement>(null);
 
@@ -3563,6 +3644,7 @@ Se despide atentamente`;
   const [selectedHistoricoEntry, setSelectedHistoricoEntry] = useState<RegistroHistorico | null>(null);
   const [resubirLoadingId, setResubirLoadingId] = useState<string | null>(null); // "docId-tipo"
   const [confirmDownload, setConfirmDownload] = useState<{ entry: RegistroHistorico; tipo: string; url?: string } | null>(null);
+  const [exportingCSV, setExportingCSV] = useState(false);
   const resubirPendienteRef = useRef<{ entry: RegistroHistorico; tipo: string } | null>(null);
   const resubirFileInputRef = useRef<HTMLInputElement>(null);
 
