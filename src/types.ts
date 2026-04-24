@@ -281,4 +281,5 @@ export interface RegistroHistorico {
     registro_visita?: string;
   };
   __updatedAt?: any;
+  creadoEn?: any;
 }
