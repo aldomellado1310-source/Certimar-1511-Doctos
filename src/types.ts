@@ -125,6 +125,7 @@ export interface DenaturationData {
     modelo: string;
     capacidad_kva: number;
     ubicacion: string;
+    catalogoId?: string;
   }>;
   resultados: {
     duracion_total_batch_min: number;

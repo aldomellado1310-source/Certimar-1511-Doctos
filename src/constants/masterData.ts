@@ -205,6 +205,7 @@ export const CATALOGO_GENERADORES = [
   { id: 'weichai-wpg33l1', marca: 'Weichai', modelo: 'WPG33L1', kva: 33 },
   { id: 'mwm-sgd330-50', marca: 'MWM', modelo: 'SGD330.50', kva: 330 },
   { id: 'caterpillar-fg-wilson-p56', marca: 'Caterpillar / FG Wilson', modelo: 'P56', kva: 50 },
+  { id: 'otro', marca: '', modelo: '', kva: 0 },
 ];
 
 export const CATALOGO_ALMACENAMIENTO = [20, 21, 30, 32, 40, 45, 50];
