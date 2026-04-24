@@ -77,6 +77,7 @@ const FIXTURE_STATE: AppState = {
       capacidad_diaria_ton: 23.6,  // valor real del registro
       cumple_norma: true,           // 23.6 ≥ 15
     },
+    equipos_extraccion: [],
   },
   denaturation: {
     equipos: {

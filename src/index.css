@@ -47,3 +47,14 @@
     scrollbar-width: none;
   }
 }
+
+/* Native select dropdown options — ensures readable contrast in both themes */
+select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+.dark select option {
+  background-color: #1e293b;
+  color: #f1f5f9;
+}

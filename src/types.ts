@@ -63,6 +63,14 @@ export interface ExtractionData {
     capacidad_diaria_ton: number;
     cumple_norma: boolean;
   };
+  equipos_extraccion: Array<{
+    tipo: string;
+    id_catalogo: string;
+    marca: string;
+    modelo: string;
+    capacidad_kg_h: number;
+    ubicacion: string;
+  }>;
 }
 
 export interface DenaturationData {

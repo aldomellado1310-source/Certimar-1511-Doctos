@@ -215,7 +215,8 @@ const DEFAULT_STATE: AppState = {
       n_buzos_por_team: 4,
       periodicidad_buceo: "DIARIA"
     },
-    resultados: { ciclos_por_dia: 0, capacidad_diaria_ton: 0, cumple_norma: false }
+    resultados: { ciclos_por_dia: 0, capacidad_diaria_ton: 0, cumple_norma: false },
+    equipos_extraccion: []
   },
   denaturation: {
     equipos: {
@@ -2580,6 +2581,7 @@ export default function App() {
           observacion_sistema: 'Sistema Automático; Consta de 24 Lift-up / 1 por Jaula, con cono extractor el cual está amarrado al fondo de la malla.',
         },
         resultados: { ciclos_por_dia: 0, capacidad_diaria_ton: 0, cumple_norma: false },
+        equipos_extraccion: [],
       },
       denaturation: {
         equipos: {
@@ -3407,6 +3409,33 @@ Se despide atentamente`;
   const handleRemoveGenerator = (index: number) => {
     const newGens = state.denaturation.generacion_electrica.filter((_, i) => i !== index);
     setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, generacion_electrica: newGens } }));
+  };
+
+  const handleAddExtractionEquipo = () => {
+    const newEquipo = { tipo: 'Principal', id_catalogo: '', marca: '', modelo: '', capacidad_kg_h: 0, ubicacion: '' };
+    setState(prev => ({ ...prev, extraction: { ...prev.extraction, equipos_extraccion: [...prev.extraction.equipos_extraccion, newEquipo] } }));
+  };
+
+  const handleRemoveExtractionEquipo = (index: number) => {
+    const newEquipos = state.extraction.equipos_extraccion.filter((_, i) => i !== index);
+    setState(prev => ({ ...prev, extraction: { ...prev.extraction, equipos_extraccion: newEquipos } }));
+  };
+
+  const handleUpdateExtractionEquipo = (index: number, field: string, value: any) => {
+    const newEquipos = [...state.extraction.equipos_extraccion];
+    (newEquipos[index] as any)[field] = value;
+    setState(prev => ({ ...prev, extraction: { ...prev.extraction, equipos_extraccion: newEquipos } }));
+  };
+
+  const handleSelectExtractionEquipoItem = (index: number, id: string) => {
+    const system = CATALOGO_EXTRACCION.sistemas.find(s => s.id === id);
+    if (system) {
+      const newEquipos = [...state.extraction.equipos_extraccion];
+      newEquipos[index] = { ...newEquipos[index], id_catalogo: id, marca: system.marca, modelo: system.modelo, capacidad_kg_h: system.capacidad_kg_h };
+      setState(prev => ({ ...prev, extraction: { ...prev.extraction, equipos_extraccion: newEquipos } }));
+    } else {
+      handleUpdateExtractionEquipo(index, 'id_catalogo', id);
+    }
   };
 
   const updateGeneral = (field: string, value: any) => {
@@ -7186,6 +7215,58 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           </div>
         </div>
       </div>
+
+      <FormCard title="Equipos de Extracción">
+        <div className="space-y-4">
+          {state.extraction.equipos_extraccion.length === 0 && (
+            <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-2">Sin equipos registrados.</p>
+          )}
+          {state.extraction.equipos_extraccion.map((equipo, idx) => (
+            <div key={idx} className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="md:col-span-2 flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Equipo {idx + 1}</span>
+                <button onClick={() => handleRemoveExtractionEquipo(idx)} className="text-xs text-red-400 hover:text-red-600 transition-colors">✕ Quitar</button>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Tipo</label>
+                <select
+                  value={equipo.tipo}
+                  onChange={(e) => handleUpdateExtractionEquipo(idx, 'tipo', e.target.value)}
+                  className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                >
+                  <option value="Principal">Principal</option>
+                  <option value="Apoyo">Apoyo</option>
+                  <option value="Backup">Backup</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Línea (Catálogo)</label>
+                <select
+                  value={equipo.id_catalogo}
+                  onChange={(e) => handleSelectExtractionEquipoItem(idx, e.target.value)}
+                  className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                >
+                  <option value="">Seleccionar...</option>
+                  {CATALOGO_EXTRACCION.sistemas.map(s => (
+                    <option key={s.id} value={s.id}>{s.marca} {s.modelo}</option>
+                  ))}
+                </select>
+              </div>
+              <InputField label="Marca" value={equipo.marca} onChange={(v) => handleUpdateExtractionEquipo(idx, 'marca', v)} />
+              <InputField label="Capacidad" type="number" value={equipo.capacidad_kg_h} onChange={(v) => handleUpdateExtractionEquipo(idx, 'capacidad_kg_h', v)} suffix="Kg/Hr" />
+              <div className="md:col-span-2">
+                <InputField label="Ubicación" value={equipo.ubicacion} onChange={(v) => handleUpdateExtractionEquipo(idx, 'ubicacion', v)} placeholder="Ej: A/N Pontón, cubierta popa" />
+              </div>
+            </div>
+          ))}
+          <button
+            onClick={handleAddExtractionEquipo}
+            className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500 hover:border-indigo-400 hover:text-indigo-500 transition-colors text-sm font-medium"
+          >
+            + Agregar Equipo de Extracción
+          </button>
+        </div>
+      </FormCard>
 
       {(isAdmin || isEditor) && (
         <div className="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
