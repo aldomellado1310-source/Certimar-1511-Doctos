@@ -7789,16 +7789,27 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Modelo (Catálogo)</label>
                     <select
-                      value={CATALOGO_GENERADORES.find(g => g.modelo === gen.modelo)?.id || ''}
+                      value={gen.catalogoId || ''}
                       onChange={(e) => handleSelectGenerator(idx, e.target.value)}
                       className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
                     >
                       <option value="">Seleccionar...</option>
                       {CATALOGO_GENERADORES.map(g => (
-                        <option key={g.id} value={g.id}>{g.marca} {g.modelo} — {g.kva} kVA</option>
+                        <option key={g.id} value={g.id}>
+                          {g.id === 'otro' ? 'Otro (Especificar)' : `${g.marca} ${g.modelo} — ${g.kva} kVA`}
+                        </option>
                       ))}
                     </select>
                   </div>
+
+                  {gen.catalogoId === 'otro' && (
+                    <InputField
+                      label="Modelo"
+                      value={gen.modelo}
+                      onChange={(v) => handleUpdateGenerator(idx, 'modelo', v)}
+                      placeholder="Ej: WPG55L2"
+                    />
+                  )}
 
                   <InputField label="Marca" value={gen.marca} onChange={(v) => handleUpdateGenerator(idx, 'marca', v)} />
                   <InputField label="Capacidad" type="number" value={gen.capacidad_kva} onChange={(v) => handleUpdateGenerator(idx, 'capacidad_kva', v)} suffix="kVA" />
