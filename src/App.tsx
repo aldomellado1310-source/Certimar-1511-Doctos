@@ -3515,13 +3515,14 @@ Se despide atentamente`;
     const newGens = [...state.denaturation.generacion_electrica];
     if (id === 'otro') {
       newGens[index] = { ...newGens[index], catalogoId: 'otro', marca: '', modelo: '', capacidad_kva: 0 };
+      setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, generacion_electrica: newGens } }));
     } else {
       const gen = CATALOGO_GENERADORES.find(g => g.id === id);
       if (gen) {
         newGens[index] = { ...newGens[index], catalogoId: id, marca: gen.marca, modelo: gen.modelo, capacidad_kva: gen.kva };
+        setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, generacion_electrica: newGens } }));
       }
     }
-    setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, generacion_electrica: newGens } }));
   };
 
   const handleUpdateGenerator = (index: number, field: string, value: any) => {
