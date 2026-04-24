@@ -29,7 +29,7 @@ function oklchToHex(l: number, c: number, h: number): string {
 }
 
 /** Reemplaza todas las ocurrencias de oklch(...) en un string CSS con hex. */
-function patchOklch(css: string): string {
+export function patchOklch(css: string): string {
   return css.replace(
     /oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.%]+)?\s*\)/g,
     (_, l, c, h) => oklchToHex(parseFloat(l), parseFloat(c), parseFloat(h))
