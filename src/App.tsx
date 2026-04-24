@@ -2760,7 +2760,7 @@ export default function App() {
   const SESSION_KEY = 'certimar-session';
   const SESSION_TTL = 8 * 60 * 60 * 1000; // 8 horas
 
-  const readSession = (): { role: 'admin' | 'editor' | 'reader'; expiry: number } | null => {
+  const readSession = (): { role: 'admin' | 'editor' | 'reader'; email?: string; expiry: number } | null => {
     try {
       const raw = localStorage.getItem(SESSION_KEY);
       if (!raw) return null;
@@ -2797,6 +2797,8 @@ export default function App() {
   }, []);
   const isAdmin  = userRole === 'admin';
   const isEditor = userRole === 'editor';
+  const sessionEmail = (savedSession as any)?.email ?? '';
+  const canExportCSV = ['operaciones@certimar.cl', 'eflores@certimar.cl'].includes(sessionEmail);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() =>
     typeof window !== 'undefined' && window.innerWidth < 768
   );
@@ -6828,23 +6830,25 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             </div>
             <p className="text-slate-500 dark:text-slate-400 text-sm max-w-2xl">Registros generados automáticamente al emitir documentos. Haz clic en los estados para actualizarlos.</p>
           </div>
-          <button
-            onClick={exportHistoricoCSV}
-            disabled={exportingCSV}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
-          >
-            {exportingCSV ? (
-              <>
-                <span className="animate-spin w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full" />
-                Exportando…
-              </>
-            ) : (
-              <>
-                <Download size={16} />
-                Exportar CSV
-              </>
-            )}
-          </button>
+          {canExportCSV && (
+            <button
+              onClick={exportHistoricoCSV}
+              disabled={exportingCSV}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+            >
+              {exportingCSV ? (
+                <>
+                  <span className="animate-spin w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full" />
+                  Exportando…
+                </>
+              ) : (
+                <>
+                  <Download size={16} />
+                  Exportar CSV
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {/* ── Registros desde Firestore ── */}
@@ -8975,7 +8979,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               onClick={async () => {
                 try { const { signOut } = await import('firebase/auth'); const { auth } = await import('./firebase'); await signOut(auth); } catch {}
                 localStorage.removeItem('certimar-session');
-                setWasLoggedOut(true); setUserRole(null); setShowWelcome(true);
+                setActiveTab('general'); setWasLoggedOut(true); setUserRole(null); setShowWelcome(true);
               }}
               className={cn("w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400", isSidebarCollapsed && "justify-center px-0")}
             >
