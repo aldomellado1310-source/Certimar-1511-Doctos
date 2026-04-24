@@ -2187,6 +2187,7 @@ export default function App() {
             esBorrador: true,
             documentosGenerados: idx >= 0 ? (prev[idx].documentosGenerados ?? []) : [],
             snapshot: { ...state, images: imagesMetadata } as any,
+            creadoEn: idx >= 0 ? (prev[idx].creadoEn ?? 'pending') : 'pending',
           };
           return idx >= 0 ? prev.map(e => e.id === docId ? updated : e) : [updated, ...prev];
         });
