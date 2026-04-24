@@ -151,7 +151,7 @@ import {
   buildInformeTecnicoData,
   buildActaInspeccionData,
 } from './domain/documents';
-import { generateActaPdf, buildActaHtml } from './domain/actaHtml';
+import { generateActaPdf, buildActaHtml, patchOklch } from './domain/actaHtml';
 import {
   OPERACION_MINIMA_EXTRACTION,
   OPERACION_MINIMA_BATCH_INDEX,
@@ -2148,6 +2148,7 @@ export default function App() {
       const existingEntry = historicoEntries.find(e => e.id === docId);
       const keepNonBorrador = existingEntry && existingEntry.esBorrador === false;
       if (!keepNonBorrador) {
+        const esEntradaNueva = !existingEntry?.creadoEn;
         await setDoc(doc(db, 'historico', docId), {
           registroId: docId,
           codigoCentro: cc.codigo_centro,
@@ -2171,6 +2172,7 @@ export default function App() {
             profundidad_m: state.extraction.parametros.profundidad_operacion_m,
           },
           __updatedAt: serverTimestamp(),
+          ...(esEntradaNueva && { creadoEn: serverTimestamp() }),
         }, { merge: true });
         setHistoricoEntries(prev => {
           const idx = prev.findIndex(e => e.id === docId);
@@ -2243,6 +2245,10 @@ export default function App() {
         },
         __updatedAt: serverTimestamp(),
       };
+      const esEntradaNueva = !historicoEntries.find(e => e.id === docId)?.creadoEn;
+      if (esEntradaNueva) {
+        payload.creadoEn = serverTimestamp();
+      }
       if (documentUrl) {
         payload[`documentUrls.${tipo}`] = documentUrl;
       }
@@ -2280,8 +2286,23 @@ export default function App() {
         if (iframeDoc.readyState === 'complete') resolve();
         else iframe.addEventListener('load', () => resolve(), { once: true });
       });
+      // Patch getComputedStyle in the iframe so html2canvas never sees oklch() values
+      const iframeWin = iframe.contentWindow as any;
+      const origGCS = iframeWin.getComputedStyle.bind(iframeWin);
+      iframeWin.getComputedStyle = (el: Element, pseudo?: string | null) => {
+        const cs = origGCS(el, pseudo);
+        return new Proxy(cs, {
+          get(t: any, p: string | symbol) {
+            const v = t[p];
+            if (typeof p === 'string' && typeof v === 'string' && v.includes('oklch')) {
+              return patchOklch(v);
+            }
+            return typeof v === 'function' ? v.bind(t) : v;
+          },
+        });
+      };
       const doc = new jsPDF({ format: [215.9, 355.6], unit: 'mm' });
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         (doc as any).html(iframeDoc.body, {
           callback: () => resolve(),
           x: 0, y: 0,
@@ -2289,6 +2310,7 @@ export default function App() {
           windowWidth: 816,
           autoPaging: 'text',
         });
+        setTimeout(() => reject(new Error('html2canvas timeout after 20s')), 20000);
       });
       return doc.output('blob');
     } finally {
