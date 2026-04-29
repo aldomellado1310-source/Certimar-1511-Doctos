@@ -17,7 +17,12 @@
       "Bash(grep -o '.\\\\{0,200\\\\}Observaciones.\\\\{0,200\\\\}' c:/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos/src/assets/acta-template.html)",
       "Bash(grep -o '.\\\\{0,500\\\\}Observaciones.\\\\{0,500\\\\}' c:/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos/src/assets/acta-template.html)",
       "Bash(awk 'NR>=6010 && NR<=7080 {print NR\": \"$0}' src/App.tsx)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(git log *)",
+      "Bash(git update-index *)",
+      "Bash(npx tsc *)",
+      "Bash(git checkout *)",
+      "Bash(git -C ../Certimar-1511-Integrado log --format=\"%h %ad %s\" --date=format:\"%Y-%m-%d %H:%M\" -10)"
     ],
     "additionalDirectories": [
       "c:\\Users\\aldon\\Documents\\Proyectos\\Certimar-1511-Doctos",
