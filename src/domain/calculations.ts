@@ -140,17 +140,12 @@ export function calculateDenaturation(
   }
 
   // --- Ruta: Ensilaje Químico (batch) ---
-  // El prepicador reduce el tiempo de PROCESO (no la pausa) según el factor de eficiencia.
-  // Res. Exenta N°1511/2021 — Factor de eficiencia con prepicador
-  const t_proceso_nominal = parametros_batch.tiempo_procesamiento_min;
-  let t_proceso_efectivo = t_proceso_nominal;
+  // Res. Exenta N°1511/2021 — El prepicador reduce la duración TOTAL del batch
   const factor_pre = equipos.cuenta_con_prepicador
     ? (equipos.factor_eficiencia_prepicador ?? PREPICADOR_BATCH_FACTOR)
     : 1;
-  if (equipos.cuenta_con_prepicador) {
-    t_proceso_efectivo = t_proceso_nominal * factor_pre;
-  }
-  const batch_duration = t_proceso_efectivo + parametros_batch.tiempo_pausa_min;
+  const batch_duration_base = parametros_batch.tiempo_procesamiento_min + parametros_batch.tiempo_pausa_min;
+  const batch_duration = batch_duration_base * factor_pre;
 
   // GUARD F1: Duración de batch debe ser > 0.
   // Sin esta guarda, batch_duration=0 produce Infinity batches → cumple_norma=true (fraude).
@@ -182,8 +177,8 @@ export function calculateDenaturation(
 
   const glosa_prepicador = equipos.cuenta_con_prepicador
     ? `Con prepicador activo (factor de eficiencia: ${Math.round(factor_pre * 100)}%), ` +
-      `el tiempo de proceso se reduce de ${t_proceso_nominal} min a ` +
-      `${t_proceso_efectivo.toFixed(1)} min. `
+      `la duración total del batch se reduce de ${batch_duration_base.toFixed(1)} min a ` +
+      `${batch_duration.toFixed(1)} min. `
     : '';
 
   const observacion =

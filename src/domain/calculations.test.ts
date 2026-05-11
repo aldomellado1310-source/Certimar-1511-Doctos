@@ -28,7 +28,7 @@ const BASE_EXTRACTION_PARAMS = {
   horas_efectivas_trabajo: 9,
   personal_operativo: 4,
   profundidad_operacion_m: 20,
-  sistema_principal: 'LIFT-UP (Novatech)' as const,
+  sistema_principal: 'LIFT-UP' as const,
   talla_pez: 'Grande (>=4.5kg)' as const,
   factor_ajuste_biomasa: 1.0,
   marca_equipo: 'Novatech 10"',

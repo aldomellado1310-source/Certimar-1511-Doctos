@@ -199,7 +199,7 @@ const DEFAULT_STATE: AppState = {
       horas_efectivas_trabajo: 8,
       personal_operativo: 2,
       profundidad_operacion_m: 20,
-      sistema_principal: 'LIFT-UP (Novatech)',
+      sistema_principal: 'LIFT-UP',
       talla_pez: 'Grande (>=4.5kg)',
       factor_ajuste_biomasa: 1.0,
       marca_equipo: "",
@@ -660,29 +660,51 @@ const InputField = ({
   label: string, value: any, onChange: (val: any) => void, onBlur?: () => void, type?: string,
   placeholder?: string, suffix?: string, inputRef?: React.RefObject<HTMLInputElement | null>,
   highlight?: boolean, min?: number, max?: number
-}) => (
+}) => {
+  const isNumeric = type === 'number';
+  const [local, setLocal] = React.useState<string>(isNumeric ? String(value ?? '') : '');
+
+  React.useEffect(() => {
+    if (isNumeric) setLocal(String(value ?? ''));
+  }, [value, isNumeric]);
+
+  const handleNumericChange = (raw: string) => {
+    setLocal(raw);
+    const v = parseFloat(raw);
+    if (!isNaN(v)) {
+      const clamped = min !== undefined && v < min ? min
+                    : max !== undefined && v > max ? max
+                    : v;
+      onChange(clamped);
+    }
+  };
+
+  const handleNumericBlur = () => {
+    const v = parseFloat(local);
+    if (isNaN(v) || local.trim() === '') {
+      setLocal(String(value ?? ''));
+    } else {
+      const clamped = min !== undefined && v < min ? min
+                    : max !== undefined && v > max ? max
+                    : v;
+      setLocal(String(clamped));
+      onChange(clamped);
+    }
+    onBlur?.();
+  };
+
+  return (
   <div className="space-y-1.5">
     <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
     <div className="relative">
       <input
         ref={inputRef}
-        type={type}
-        value={value}
-        min={min}
-        max={max}
-        onChange={(e) => {
-          if (type === 'number') {
-            let v = parseFloat(e.target.value);
-            if (isNaN(v)) v = min ?? 0;
-            if (min !== undefined && v < min) v = min;
-            if (max !== undefined && v > max) v = max;
-            onChange(v);
-          } else {
-            onChange(e.target.value);
-          }
-        }}
+        type={isNumeric ? 'text' : type}
+        inputMode={isNumeric ? 'decimal' : undefined}
+        value={isNumeric ? local : value}
+        onChange={(e) => isNumeric ? handleNumericChange(e.target.value) : onChange(e.target.value)}
         placeholder={placeholder}
-        onBlur={onBlur}
+        onBlur={isNumeric ? handleNumericBlur : onBlur}
         className={cn(
           "w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium",
           highlight && "ring-2 ring-indigo-500 ring-offset-2 border-indigo-500 bg-white dark:bg-slate-900"
@@ -695,7 +717,8 @@ const InputField = ({
       )}
     </div>
   </div>
-);
+  );
+};
 
 // Combo de autocompletado para leyendas fotográficas.
 // Filtra el catálogo según la sección, resuelve placeholders dinámicos ({m3}, {kva})
@@ -1342,7 +1365,7 @@ const WelcomeScreen = ({
                 <div style={{ position: 'relative', zIndex: 1, marginTop: 32, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 20, height: 1, background: '#1e2535' }} />
                   <p style={{ fontSize: 10, fontWeight: 400, color: '#334155', letterSpacing: '0.05em' }}>
-                    Developed by Chucao Tech SpA, 2026, Puerto Aysén
+                    Developed by Micorriza, 2026, Puerto Aysén
                   </p>
                 </div>
               </div>
@@ -1899,6 +1922,9 @@ export default function App() {
             parsed.denaturation.generacion_electrica = parsed.denaturation.generacion_electrica.map(
               (gen: any) => gen.catalogoId !== undefined ? gen : { ...gen, catalogoId: inferCatalogoId(gen) }
             );
+          }
+          if (parsed.extraction?.parametros?.sistema_principal === 'LIFT-UP (Novatech)') {
+            parsed.extraction.parametros.sistema_principal = 'LIFT-UP';
           }
           return parsed;
         }
@@ -2689,7 +2715,7 @@ export default function App() {
           horas_efectivas_trabajo: 9,
           personal_operativo: 4,
           profundidad_operacion_m: 20,
-          sistema_principal: 'LIFT-UP (Novatech)',
+          sistema_principal: 'LIFT-UP',
           talla_pez: 'Grande (>=4.5kg)',
           factor_ajuste_biomasa: 1.0,
           marca_equipo: 'Novatech 10"',
@@ -7228,7 +7254,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   onChange={(e) => updateExtraction('parametros.sistema_principal', e.target.value)}
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
                 >
-                  <option value="LIFT-UP (Novatech)">LIFT-UP (Novatech)</option>
+                  <option value="LIFT-UP">LIFT-UP</option>
                   <option value="Mortex HW">Mortex HW</option>
                   <option value="ROV">ROV</option>
                   <option value="Succión por Yoma">Succión por Yoma</option>
@@ -9075,7 +9101,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           </p>
           {!isSidebarCollapsed && (
             <p className="text-[9px] text-slate-300 dark:text-slate-600 tracking-wide">
-              Developed by Chucao Tech 2026 · v{__APP_VERSION__}
+              Developed by Micorriza 2026 · v{__APP_VERSION__}
             </p>
           )}
           {isSidebarCollapsed && (

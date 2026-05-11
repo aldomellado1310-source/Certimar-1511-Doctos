@@ -248,7 +248,7 @@ export function buildActaHtml(state: AppState): string {
 
   // Observación ensilaje — reemplaza números hardcodeados del template
   html = rep(html,
-    '(kg/batch=1400 -- Horas de trabajo diari&iacute;o: 9 = 540 min)',
+    '(kg/batch=1400 -- Horas de trabajo diar&iacute;o: 9 = 540 min)',
     `(kg/batch=${den.parametros_batch.kilos_por_batch} -- Horas de trabajo diario: ${den.equipos.horas_funcionamiento_dia} = ${total_min} min)`
   );
   html = rep(html,
