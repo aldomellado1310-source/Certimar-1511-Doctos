@@ -4740,7 +4740,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // ── 7. Tira de fotos paisaje/fondo portada (Y=237, H=28) — sobre las olas ──
       const TIRA_Y = 237, TIRA_H = 28;
       const fotosTecnicas = correctedImgs.filter(img =>
-        img.seccion === 'Paisaje' && img.url
+        (img.seccion === 'Paisaje' || img.enPortada) && img.url
       ).slice(0, 4);
       if (fotosTecnicas.length > 0) {
         const gap = 1.5, fw = (PW - gap * (fotosTecnicas.length - 1)) / fotosTecnicas.length;

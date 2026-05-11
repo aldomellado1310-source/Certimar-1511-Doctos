@@ -55,7 +55,7 @@ const FIXTURE_STATE: AppState = {
       horas_efectivas_trabajo: 9,
       personal_operativo: 4,
       profundidad_operacion_m: 20,
-      sistema_principal: 'LIFT-UP (Novatech)',
+      sistema_principal: 'LIFT-UP',
       talla_pez: 'Grande (>=4.5kg)',
       factor_ajuste_biomasa: 1.0,
       marca_equipo: 'Novatech 10"',
@@ -245,7 +245,7 @@ describe('buildInformeTecnicoData — Centro 110814 PAMELA', () => {
   });
 
   it('extracción refleja sistema LIFT-UP con 24 jaulas', () => {
-    expect(informe.extraccion.sistema).toBe('LIFT-UP (Novatech)');
+    expect(informe.extraccion.sistema).toBe('LIFT-UP');
     expect(informe.extraccion.jaulas).toBe(24);
     expect(informe.extraccion.talla).toBe('Grande (>=4.5kg)');
     expect(informe.extraccion.capacidadTonDia).toBe(23.6);

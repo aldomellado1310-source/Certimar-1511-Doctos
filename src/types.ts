@@ -25,7 +25,7 @@ export interface GeneralData {
 }
 
 export type FishSize = 'Pequeño (<1.5kg)' | 'Mediano (1.5-4.5kg)' | 'Grande (>=4.5kg)';
-export type ExtractionSystem = 'LIFT-UP (Novatech)' | 'Mortex HW' | 'ROV' | 'Succión por Yoma';
+export type ExtractionSystem = 'LIFT-UP' | 'Mortex HW' | 'ROV' | 'Succión por Yoma';
 
 export interface ExtractionData {
   sistemas_apoyo: {

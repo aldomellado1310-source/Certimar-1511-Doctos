@@ -28,7 +28,7 @@ export const MIN_STORAGE_TON = 20;
 // Res. Exenta N°1511/2021 — Parámetros técnicos de sistemas de extracción
 // ---------------------------------------------------------------------------
 
-/** η LIFT-UP (Novatech) en profundidad ≤ 25 m */
+/** η LIFT-UP en profundidad ≤ 25 m */
 export const ETA_LIFTUP_SHALLOW = 0.95;
 /** η Mortex HW en profundidad ≤ 25 m */
 export const ETA_MORTEX_SHALLOW = 0.92;
@@ -37,7 +37,7 @@ export const ETA_ROV_SHALLOW = 0.75;
 /** η Succión por Yoma (no varía con profundidad) */
 export const ETA_YOMA = 0.80;
 
-/** η LIFT-UP (Novatech) en profundidad > 25 m */
+/** η LIFT-UP en profundidad > 25 m */
 export const ETA_LIFTUP_DEEP = 0.85;
 /** η Mortex HW en profundidad > 25 m */
 export const ETA_MORTEX_DEEP = 0.82;
@@ -110,16 +110,16 @@ export const FORMIC_ACID_DENSITY_TN_M3 = 1.2;
 
 /** η shallow por tipo de sistema */
 export const ETA_BY_SYSTEM_SHALLOW: Record<ExtractionSystem, number> = {
-  'LIFT-UP (Novatech)': ETA_LIFTUP_SHALLOW,
-  'Mortex HW':          ETA_MORTEX_SHALLOW,
+  'LIFT-UP':   ETA_LIFTUP_SHALLOW,
+  'Mortex HW': ETA_MORTEX_SHALLOW,
   'ROV':                ETA_ROV_SHALLOW,
   'Succión por Yoma':   ETA_YOMA,
 };
 
 /** η deep por tipo de sistema (Yoma no varía) */
 export const ETA_BY_SYSTEM_DEEP: Record<ExtractionSystem, number> = {
-  'LIFT-UP (Novatech)': ETA_LIFTUP_DEEP,
-  'Mortex HW':          ETA_MORTEX_DEEP,
+  'LIFT-UP':   ETA_LIFTUP_DEEP,
+  'Mortex HW': ETA_MORTEX_DEEP,
   'ROV':                ETA_ROV_DEEP,
   'Succión por Yoma':   ETA_YOMA,
 };
