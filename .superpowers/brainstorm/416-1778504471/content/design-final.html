@@ -1,0 +1,98 @@
+<h2>Diseño propuesto</h2>
+<p class="subtitle">Vista agrupada por sección + contador enPortada. ¿Se ve bien?</p>
+
+<div class="mockup">
+  <div class="mockup-header">ReportView — Nueva UI de imágenes</div>
+  <div class="mockup-body" style="font-family:sans-serif;font-size:11px;background:#f8fafc;padding:0;">
+
+    <!-- Sticky bar -->
+    <div style="background:rgba(255,255,255,0.95);border-bottom:1px solid #e2e8f0;padding:8px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10;">
+      <span style="font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.05em;">12 IMÁGENES</span>
+      <div style="width:1px;height:14px;background:#e2e8f0;"></div>
+      <!-- Counter enPortada -->
+      <div style="display:flex;align-items:center;gap:5px;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:20px;padding:3px 10px;">
+        <span style="font-size:9px;">★</span>
+        <span style="font-size:10px;font-weight:700;color:#7c3aed;">2/4 en portada</span>
+      </div>
+      <!-- Badge sección Paisaje como referencia -->
+      <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:20px;padding:3px 10px;font-size:10px;font-weight:600;color:#15803d;">Paisaje 2</div>
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:20px;padding:3px 10px;font-size:10px;font-weight:600;color:#1d4ed8;">Extracción 4</div>
+      <div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:3px 10px;font-size:10px;color:#94a3b8;">Desnaturalización 3</div>
+      <div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:3px 10px;font-size:10px;color:#94a3b8;">Almacenamiento 0</div>
+    </div>
+
+    <div style="padding:12px 16px;display:flex;flex-direction:column;gap:10px;">
+
+      <!-- Grupo: Paisaje -->
+      <div style="border:1.5px solid #86efac;border-radius:8px;overflow:hidden;">
+        <div style="background:#f0fdf4;padding:7px 12px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:11px;color:#94a3b8;">⠿⠿</span>
+            <span style="font-weight:700;color:#15803d;font-size:11px;">Paisaje</span>
+            <span style="background:#15803d;color:#fff;border-radius:9px;padding:0 6px;font-size:9px;font-weight:700;">2</span>
+          </div>
+          <span style="font-size:9px;color:#86efac;font-style:italic;">Tira de fotos en portada PDF</span>
+        </div>
+        <div style="background:#fff;padding:8px;display:flex;gap:6px;">
+          <div style="width:72px;height:54px;background:linear-gradient(135deg,#4ade80,#22c55e);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:grab;color:#fff;font-size:9px;border:2px solid #86efac;">⠿ Foto 1</div>
+          <div style="width:72px;height:54px;background:linear-gradient(135deg,#86efac,#4ade80);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:grab;color:#fff;font-size:9px;">⠿ Foto 2</div>
+          <div style="width:72px;height:54px;border:2px dashed #86efac;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#86efac;font-size:9px;background:#f0fdf4;">+ Soltar aquí</div>
+        </div>
+      </div>
+
+      <!-- Grupo: Extracción -->
+      <div style="border:1.5px solid #bfdbfe;border-radius:8px;overflow:hidden;">
+        <div style="background:#eff6ff;padding:7px 12px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:11px;color:#94a3b8;">⠿⠿</span>
+            <span style="font-weight:700;color:#1d4ed8;font-size:11px;">Extracción</span>
+            <span style="background:#1d4ed8;color:#fff;border-radius:9px;padding:0 6px;font-size:9px;font-weight:700;">4</span>
+          </div>
+        </div>
+        <div style="background:#fff;padding:8px;display:grid;grid-template-columns:repeat(4,72px);gap:6px;">
+          <div style="height:54px;background:linear-gradient(135deg,#60a5fa,#3b82f6);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:grab;color:#fff;font-size:9px;">⠿ F1</div>
+          <div style="height:54px;background:linear-gradient(135deg,#93c5fd,#60a5fa);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:grab;color:#fff;font-size:9px;">⠿ F2</div>
+          <!-- Tarjeta con enPortada activo -->
+          <div style="height:54px;background:linear-gradient(135deg,#a78bfa,#7c3aed);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:grab;color:#fff;font-size:9px;border:2px solid #7c3aed;">⠿ F3 ★</div>
+          <div style="height:54px;background:linear-gradient(135deg,#bfdbfe,#93c5fd);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:grab;color:#fff;font-size:9px;">⠿ F4</div>
+        </div>
+      </div>
+
+      <!-- Grupo: Almacenamiento (vacío) -->
+      <div style="border:1.5px dashed #e2e8f0;border-radius:8px;overflow:hidden;">
+        <div style="background:#f8fafc;padding:7px 12px;display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;color:#cbd5e1;">⠿⠿</span>
+          <span style="font-weight:700;color:#94a3b8;font-size:11px;">Almacenamiento</span>
+          <span style="background:#e2e8f0;color:#94a3b8;border-radius:9px;padding:0 6px;font-size:9px;font-weight:700;">0</span>
+        </div>
+        <div style="background:#fff;padding:8px;">
+          <div style="height:36px;border:2px dashed #e2e8f0;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-size:9px;">Arrastra fotos aquí para asignarlas a Almacenamiento</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Nota: botón enPortada bloqueado -->
+    <div style="margin:0 16px 12px;background:#faf5ff;border:1px solid #ddd6fe;border-radius:6px;padding:8px 12px;font-size:10px;color:#7c3aed;display:flex;align-items:center;gap:8px;">
+      <span style="font-size:14px;">★</span>
+      <div>
+        <strong>Portada llena (4/4).</strong> El botón "Añadir a portada" se deshabilita automáticamente cuando se alcanza el límite.
+        Las fotos de Paisaje cuentan igual que las marcadas con ★.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px;">
+  <h3>Resumen de cambios</h3>
+  <ul style="margin:8px 0 0 16px;line-height:1.8;font-size:13px;">
+    <li><strong>Nueva UI:</strong> Grilla plana → grupos acordeón por sección (todas las secciones)</li>
+    <li><strong>Drag:</strong> @dnd-kit/core + @dnd-kit/sortable — dentro del grupo reordena, fuera cambia <code>seccion</code></li>
+    <li><strong>Counter:</strong> Badge "X/4 en portada" en sticky bar; botón ★ bloqueado al llegar a 4</li>
+    <li><strong>No hay cambios en PDF</strong> — solo la UI de gestión cambia</li>
+    <li><strong>Secciones:</strong> General · Extracción · Desnaturalización · Almacenamiento · Paisaje · Ubicación Espacial · Portada</li>
+  </ul>
+</div>
+
+<p style="margin-top:16px;font-size:12px;color:#64748b;">¿Este diseño está bien? Si es así lo escribo como spec y pasamos a la implementación.</p>

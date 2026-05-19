@@ -10,7 +10,12 @@
       "Bash(git stash *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "PowerShell($content = Get-Content \"src/assets/acta-template.html\" -Raw; $idx = $content.IndexOf\\('kg/batch'\\); if \\($idx -ge 0\\) { $content.Substring\\([Math]::Max\\(0,$idx-50\\), 300\\) } else { \"NOT FOUND kg/batch\" }; $idx2 = $content.IndexOf\\('9 = 540'\\); if \\($idx2 -ge 0\\) { $content.Substring\\([Math]::Max\\(0,$idx2-100\\), 400\\) } else { \"NOT FOUND 9 = 540\" })",
+      "Bash(Find \"c:\\\\Users\\\\aldon\\\\Documents\\\\Proyectos\\\\Certimar-1511-Doctos\\\\src\" -type f -name \"*.ts\" -o -name \"*.tsx\")",
+      "Bash(npx firebase *)",
+      "Bash(bash \"C:/Users/aldon/.claude/skills/brainstorming/scripts/start-server.sh\" --project-dir \"c:/Users/aldon/Documents/Proyectos/Certimar-1511-Doctos\")",
+      "Bash(xargs cat)"
     ],
     "additionalDirectories": [
       "c:\\Users\\aldon\\Documents\\Proyectos\\Certimar-1511-Doctos\\docs\\superpowers\\plans"

@@ -1,0 +1,90 @@
+<h2>¿Dónde va la imagen hero de portada?</h2>
+<p class="subtitle">La sección <code>'Portada'</code> ya existe en el código pero nunca se renderiza. ¿Cómo debe aparecer en el PDF?</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:12px;">
+      <!-- Opción A: Fondo full-width con overlay -->
+      <div style="width:100%;height:220px;position:relative;overflow:hidden;border-radius:4px;font-family:sans-serif;">
+        <!-- Fondo foto simulado -->
+        <div style="position:absolute;inset:0;background:linear-gradient(135deg,#2a4a7f 0%,#4a9bc4 50%,#1e4796 100%);opacity:0.85;"></div>
+        <!-- Overlay oscuro para texto legible -->
+        <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.1) 0%,rgba(0,0,0,0.45) 100%);"></div>
+        <!-- Franja navy top -->
+        <div style="position:absolute;top:0;left:0;right:0;height:5px;background:#1B3464;"></div>
+        <!-- Logo -->
+        <div style="position:absolute;top:10px;left:14px;font-size:9px;color:#fff;font-weight:700;opacity:0.9;">[LOGO]</div>
+        <!-- Código doc -->
+        <div style="position:absolute;top:10px;right:10px;font-size:7px;color:#fff;opacity:0.8;">11054919022…</div>
+        <!-- Texto sobre la foto -->
+        <div style="position:absolute;bottom:30px;left:14px;right:14px;">
+          <div style="font-size:18px;font-weight:900;color:#fff;line-height:1.1;text-shadow:0 1px 4px rgba(0,0,0,0.5);">INFORME<br>TÉCNICO</div>
+          <div style="font-size:6px;color:rgba(255,255,255,0.8);margin-top:5px;">INSPECCIÓN SISTEMA DE MORTALIDAD</div>
+          <div style="font-size:8px;font-weight:700;color:#fff;margin-top:3px;">CENTRO 110549 — Valverde 2</div>
+        </div>
+        <!-- Tira de olas abajo -->
+        <div style="position:absolute;bottom:0;left:0;right:0;height:14px;background:linear-gradient(to right,#4A9BC4,#2B6CB0,#6BCEDA,#1E4796);opacity:0.9;"></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Foto como fondo completo</h3>
+      <p>La foto del centro ocupa toda la portada. El texto (título, nombre del centro) se superpone con overlay oscuro para mantener legibilidad. Máximo impacto visual.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:12px;">
+      <!-- Opción B: Foto en banda horizontal debajo del texto -->
+      <div style="width:100%;height:220px;position:relative;overflow:hidden;border-radius:4px;font-family:sans-serif;background:#fff;">
+        <!-- Franja navy top -->
+        <div style="height:4px;background:#1B3464;"></div>
+        <!-- Header área (blanca) -->
+        <div style="padding:8px 12px 4px;display:flex;justify-content:space-between;align-items:flex-start;">
+          <div style="font-size:8px;color:#1B3464;font-weight:700;">[LOGO]</div>
+          <div style="font-size:6px;color:#8a9ab5;">11054919022…</div>
+        </div>
+        <!-- Barra lateral azul + Texto -->
+        <div style="display:flex;padding:0 12px;gap:6px;margin-top:2px;">
+          <div style="width:3px;background:#4A9BC4;border-radius:2px;margin-top:2px;height:60px;flex-shrink:0;"></div>
+          <div>
+            <div style="font-size:16px;font-weight:900;color:#1B3464;line-height:1.1;">INFORME<br>TÉCNICO</div>
+            <div style="font-size:5.5px;color:#8a9ab5;margin-top:4px;">INSPECCIÓN SISTEMA DE MORTALIDAD</div>
+            <div style="font-size:7.5px;font-weight:700;color:#1B3464;margin-top:2px;">CENTRO 110549 — Valverde 2</div>
+            <div style="font-size:6px;color:#8a9ab5;margin-top:1px;">EXPORTADORA LOS FIORDOS LTDA.</div>
+          </div>
+        </div>
+        <!-- FOTO en banda horizontal -->
+        <div style="margin:8px 12px 0;height:62px;background:linear-gradient(135deg,#2a6bc4 0%,#4a9bc4 40%,#1e7a8f 100%);border-radius:4px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.6);font-size:8px;font-style:italic;">[Foto del centro acuícola]</div>
+        <!-- Olas debajo -->
+        <div style="margin-top:6px;height:10px;background:linear-gradient(135deg,#4A9BC4 0%,#2B6CB0 40%,#1E4796 100%);"></div>
+        <!-- Tira fotos -->
+        <div style="display:flex;gap:2px;padding:0;height:24px;">
+          <div style="flex:1;background:#4A9BC4;opacity:0.85;"></div>
+          <div style="flex:1;background:#2B6CB0;opacity:0.85;"></div>
+          <div style="flex:1;background:#6BCEDA;opacity:0.85;"></div>
+          <div style="flex:1;background:#1E4796;opacity:0.85;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Foto en banda media</h3>
+      <p>El diseño actual se mantiene (logo, texto, barra lateral). Se agrega una foto horizontal entre el bloque de texto y las olas. Menos disruptivo, más formal.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:12px;">
+      <!-- Opción C: Sin hero image, solo mejoras menores -->
+      <div style="width:100%;height:220px;position:relative;overflow:hidden;border-radius:4px;font-family:sans-serif;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <div style="font-size:28px;margin-bottom:8px;">✗</div>
+        <div style="font-size:10px;color:#64748b;text-align:center;max-width:140px;">Mantener portada actual sin imagen hero.<br><br>Solo implementar counter + drag reorder.</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — No implementar hero image</h3>
+      <p>Dejar la portada como está (con las olas y la tira de fotos) y enfocarse solo en el contador enPortada y el reordenamiento.</p>
+    </div>
+  </div>
+
+</div>
