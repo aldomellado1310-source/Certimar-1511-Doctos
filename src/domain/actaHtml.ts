@@ -45,6 +45,16 @@ const MESES_ES = [
 // Helpers de reemplazo
 // ---------------------------------------------------------------------------
 
+/** Escapes HTML special characters to prevent XSS in document.write/iframeDoc.write contexts. */
+function escHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 /** Placeholder directo dentro de un span: {key} */
 function rep(html: string, from: string, to: string): string {
   return html.split(from).join(to);
@@ -153,10 +163,10 @@ export function buildActaHtml(state: AppState): string {
   );
 
   // ── B. Centro de cultivo ──────────────────────────────────────────────────
-  html = rep(html, '{codigo_RNA}',     cc.codigo_centro);
-  html = rep(html, '{nombre_titular}', cc.titular);
-  html = rep(html, '{nombre_centro}',  cc.nombre_centro);
-  html = rep(html, '{ACS}',            cc.acs);
+  html = rep(html, '{codigo_RNA}',     escHtml(cc.codigo_centro));
+  html = rep(html, '{nombre_titular}', escHtml(cc.titular));
+  html = rep(html, '{nombre_centro}',  escHtml(cc.nombre_centro));
+  html = rep(html, '{ACS}',            escHtml(cc.acs));
 
   // ── C. Evaluación documental ──────────────────────────────────────────────
   html = rep(html, '{fecha_generacion_acta}', g.fechas.evaluacion_documental);
@@ -190,7 +200,7 @@ export function buildActaHtml(state: AppState): string {
     );
     html = rep(html, '<p class="c169"><span class="c12 c10">N/A</span>', `<p class="c169"><span class="c12 c10">${ext.parametros.n_teams_buceo ?? 1}</span>`);
     html = rep(html, '<p class="c200"><span class="c12 c10">N/A</span>', `<p class="c200"><span class="c12 c10">${ext.parametros.n_buzos_por_team ?? 4}</span>`);
-    html = rep(html, '<p class="c157"><span class="c12 c10">N/A</span>', `<p class="c157"><span class="c12 c10">${ext.parametros.periodicidad_buceo || 'DIARIA'}</span>`);
+    html = rep(html, '<p class="c157"><span class="c12 c10">N/A</span>', `<p class="c157"><span class="c12 c10">${escHtml(ext.parametros.periodicidad_buceo || 'DIARIA')}</span>`);
   }
 
   // YOMA: NO→SI
@@ -218,8 +228,10 @@ export function buildActaHtml(state: AppState): string {
   html = rep(html, '{cfm}',           isAuto && ext.parametros.potencia_cfm > 0 ? ext.parametros.potencia_cfm.toString() : na);
   // Observaciones de extracción — usa el campo editable del estado (puede haber sido modificado por el usuario)
   const nroJaulas = ext.parametros.numero_total_jaulas.toString();
-  const lineaExt  = ext.parametros.marca_equipo || ext.parametros.sistema_principal;
-  const glosa = ext.parametros.observacion_sistema || `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla.`;
+  const lineaExt  = escHtml(ext.parametros.marca_equipo || ext.parametros.sistema_principal);
+  const glosa = ext.parametros.observacion_sistema
+    ? escHtml(ext.parametros.observacion_sistema)
+    : `Sistema Automático; Consta de ${nroJaulas} Lift-up/ ${lineaExt}, 1 por Jaula , con cono extractor el cual está amarrado al fondo de la malla.`;
   html = rep(html,
     'Sistema Autom&aacute;tico; Consta de {nro_jaulas} &nbsp;Lift-up/ {linea_extraccion}, 1 por Jaula , con cono extractor el cual est&aacute; amarrado al fondo de la malla.',
     glosa
@@ -230,7 +242,7 @@ export function buildActaHtml(state: AppState): string {
 
   // ── F. Desnaturalización — ensilaje ───────────────────────────────────────
   // {modelo_prepicador} = "Identificar proveedor (modelo)" → modelo de la trituradora/sistema ensilaje
-  html = rep(html, '{modelo_prepicador}', den.equipos.marca_modelo || na);
+  html = rep(html, '{modelo_prepicador}', escHtml(den.equipos.marca_modelo || na));
   html = rep(html, '{cuenta_con_prepicador}', siNo(den.equipos.cuenta_con_prepicador));
   html = rep(html, '{capacidad_prepicador}',
     den.equipos.cuenta_con_prepicador
@@ -262,37 +274,38 @@ export function buildActaHtml(state: AppState): string {
 
   // ── F. Desnaturalización — incinerador (placeholders fragmentados) ─────────
   repSplit; // ensure function is referenced
+  const eInc = (v: string | undefined | null) => escHtml(v || na);
   html = repSplit(html, 'marca_incinerador',
-    incActivo ? (inc!.marca_modelo || na) : na);
+    incActivo ? eInc(inc!.marca_modelo) : na);
   html = repSplit(html, 'dim_2dra_camara_incinerador',
-    incActivo ? (den.parametros_incineracion.camara_secundaria || na) : na);
+    incActivo ? eInc(den.parametros_incineracion.camara_secundaria) : na);
   html = repSplit(html, 'sistema_carga_incinerador',
-    incActivo ? (inc!.sistema_carga || na) : na);
+    incActivo ? eInc(inc!.sistema_carga) : na);
   html = repSplit(html, 'tem_2da_camara_incinerador',
-    incActivo ? (inc!.temperatura_camara_secundaria_c ? `${inc!.temperatura_camara_secundaria_c}°C` : na) : na);
+    incActivo ? (inc!.temperatura_camara_secundaria_c ? escHtml(`${inc!.temperatura_camara_secundaria_c}°C`) : na) : na);
   // dim_1ra es directo (no fragmentado)
   html = rep(html,     '{dim_1ra_camara_incinerador}',
-    incActivo ? (den.parametros_incineracion.camara_primaria || na) : na);
+    incActivo ? eInc(den.parametros_incineracion.camara_primaria) : na);
   html = repSplit(html, 'quemadores_2da_camara_incinerador',
     incActivo ? (inc!.num_quemadores_secundaria?.toString() || na) : na);
   html = repSplit(html, 'quemadores_1ra_camara_incinerador',
     incActivo ? (inc!.num_quemadores_primaria?.toString() || na) : na);
   html = repSplit(html, 'temp_funcionamiento_incinerador',
-    incActivo ? (inc!.temperatura_camara_primaria_c ? `${inc!.temperatura_camara_primaria_c}°C` : na) : na);
+    incActivo ? (inc!.temperatura_camara_primaria_c ? escHtml(`${inc!.temperatura_camara_primaria_c}°C`) : na) : na);
   html = repSplit(html, 'capacidada_incinerador',
     incActivo ? (inc!.capacidad_carga_kg_h?.toString() || na) : na);
   html = repSplit(html, 'horas_funcionamiento_incinerador',
     incActivo ? (inc!.horas_funcionamiento_dia?.toString() || na) : na);
   html = repSplit(html, 'requerimienoa_incinerador',
-    incActivo ? (inc!.requerimiento_energetico || na) : na);
+    incActivo ? eInc(inc!.requerimiento_energetico) : na);
   html = repSplit(html, 'sistema_descarga_incinerador',
-    incActivo ? (inc!.sistema_descarga || na) : na);
+    incActivo ? eInc(inc!.sistema_descarga) : na);
   html = repSplit(html, 'disposicion_final',
-    incActivo ? (inc!.disposicion_final || na) : na);
+    incActivo ? eInc(inc!.disposicion_final) : na);
   html = repSplit(html, 'capacidad_almacenamiento_gas',
-    incActivo ? (inc!.almacenamiento_gas || na) : na);
+    incActivo ? eInc(inc!.almacenamiento_gas) : na);
   html = repSplit(html, 'incinerador_sistema_primario_o_scndario',
-    incActivo ? (inc!.observaciones || na) : na);
+    incActivo ? eInc(inc!.observaciones) : na);
 
   // ── G. Almacenamiento (placeholders directos de un solo span) ─────────────
   html = rep(html, '{capacidad_almacenamiento*1.2}', calcSto.capacidad_almacenaje_ton.toFixed(2));
@@ -301,15 +314,15 @@ export function buildActaHtml(state: AppState): string {
   // ── H. Certificación — Observaciones ─────────────────────────────────────
   html = rep(html,
     '<p class="c172"><span class="c12 c10">NO</span></p>',
-    `<p class="c172"><span class="c12 c10">${g.observaciones_acta?.trim() || 'N/A'}</span></p>`
+    `<p class="c172"><span class="c12 c10">${escHtml(g.observaciones_acta?.trim() || 'N/A')}</span></p>`
   );
 
   // ── A. Certificador (sección encabezado + firma) ──────────────────────────
-  html = rep(html, 'ENGELBERT FLORES CARRIO',         cert.nombre.toUpperCase());
-  html = rep(html, 'Engelbert Flores Carrio',          cert.nombre);
-  html = rep(html, 'DN-02727-2023',                   cert.numero_registro);
-  html = rep(html, 'Sistema de Mortalidad DN-02727',  `Sistema de Mortalidad ${regShort}`);
-  html = rep(html, '13.968.696-9',                    cert.rut);  // aparece 2 veces
+  html = rep(html, 'ENGELBERT FLORES CARRIO',         escHtml(cert.nombre.toUpperCase()));
+  html = rep(html, 'Engelbert Flores Carrio',          escHtml(cert.nombre));
+  html = rep(html, 'DN-02727-2023',                   escHtml(cert.numero_registro));
+  html = rep(html, 'Sistema de Mortalidad DN-02727',  `Sistema de Mortalidad ${escHtml(regShort)}`);
+  html = rep(html, '13.968.696-9',                    escHtml(cert.rut));  // aparece 2 veces
 
   return html;
 }

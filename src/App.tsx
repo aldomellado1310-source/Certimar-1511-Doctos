@@ -153,6 +153,7 @@ import {
 } from './domain/documents';
 import { generateActaPdf, buildActaHtml, patchOklch } from './domain/actaHtml';
 import { inferCatalogoId } from './domain/generators';
+import { validarOrdenFechas } from './domain/validation';
 import {
   OPERACION_MINIMA_EXTRACTION,
   OPERACION_MINIMA_BATCH_INDEX,
@@ -185,11 +186,12 @@ const DEFAULT_STATE: AppState = {
       nombre_an_ensilaje: ""
     },
     fechas: {
-      evaluacion_documental: new Date().toISOString().split('T')[0],
-      inspeccion_terreno: new Date().toISOString().split('T')[0],
-      emision_certificado: new Date().toISOString().split('T')[0]
+      evaluacion_documental: "",
+      inspeccion_terreno: "",
+      emision_certificado: ""
     },
-    observaciones_acta: ""
+    observaciones_acta: "",
+    revisionConfirmada: false
   },
   extraction: {
     sistemas_apoyo: { buceo: false, rov: false, succion_yoma: false, automatica: false },
@@ -1915,6 +1917,9 @@ export default function App() {
           if (parsed.general && parsed.general.observaciones_acta === undefined) {
             parsed.general.observaciones_acta = '';
           }
+          if (parsed.general && parsed.general.revisionConfirmada === undefined) {
+            parsed.general.revisionConfirmada = false;
+          }
           if (parsed.extraction && parsed.extraction.equipos_extraccion === undefined) {
             parsed.extraction.equipos_extraccion = [];
           }
@@ -2138,11 +2143,8 @@ export default function App() {
         general: {
           ...DEFAULT_STATE.general,
           certificador: prev.general.certificador,
-          fechas: {
-            evaluacion_documental: new Date().toISOString().split('T')[0],
-            inspeccion_terreno:    new Date().toISOString().split('T')[0],
-            emision_certificado:   new Date().toISOString().split('T')[0],
-          },
+          fechas: { evaluacion_documental: "", inspeccion_terreno: "", emision_certificado: "" },
+          revisionConfirmada: false,
         },
       }));
       setActiveTab('general');
@@ -3277,16 +3279,30 @@ export default function App() {
     const ext  = state.extraction.parametros;
     const den  = state.denaturation.equipos;
     const sto  = state.storage.parametros;
+    const ordenFechas = validarOrdenFechas(g.fechas);
     return [
-      // ─ General ─
-      { id: 'codigo',    tab: 'general' as const,      grupo: 'Centro',       label: 'Código de centro',              detail: cc.codigo_centro   || 'Sin ingresar', ok: !!cc.codigo_centro.trim(),         required: true  },
-      { id: 'nombre',    tab: 'general' as const,      grupo: 'Centro',       label: 'Nombre del centro',             detail: cc.nombre_centro   || 'Sin ingresar', ok: !!cc.nombre_centro.trim(),         required: true  },
-      { id: 'titular',   tab: 'general' as const,      grupo: 'Centro',       label: 'Titular / empresa',             detail: cc.titular         || 'Sin ingresar', ok: !!cc.titular.trim(),               required: true  },
-      { id: 'acs',       tab: 'general' as const,      grupo: 'Centro',       label: 'A.C.S',                         detail: cc.acs             || 'Sin ingresar', ok: !!cc.acs.trim(),                   required: true  },
-      { id: 'ubicacion', tab: 'general' as const,      grupo: 'Centro',       label: 'Ubicación',                     detail: cc.ubicacion       || 'Sin ingresar', ok: !!cc.ubicacion.trim(),             required: true  },
-      { id: 'cert_nom',  tab: 'general' as const,      grupo: 'Certificador', label: 'Nombre certificador',           detail: cert.nombre          || 'Sin ingresar', ok: !!cert.nombre.trim(),            required: true  },
-      { id: 'cert_reg',  tab: 'general' as const,      grupo: 'Certificador', label: 'N° registro',                   detail: cert.numero_registro || 'Sin ingresar', ok: !!cert.numero_registro.trim(),   required: true  },
-      { id: 'fechas',    tab: 'general' as const,      grupo: 'Fechas',       label: 'Fechas completas',              detail: g.fechas.inspeccion_terreno || 'Sin fecha', ok: !!(g.fechas.evaluacion_documental && g.fechas.inspeccion_terreno && g.fechas.emision_certificado), required: true },
+      // ─ General — Centro ─
+      { id: 'codigo',         tab: 'general' as const, grupo: 'Centro',       label: 'Código de centro',                detail: cc.codigo_centro         || 'Sin ingresar', ok: !!cc.codigo_centro.trim(),         required: true  },
+      { id: 'nombre',         tab: 'general' as const, grupo: 'Centro',       label: 'Nombre del centro',               detail: cc.nombre_centro         || 'Sin ingresar', ok: !!cc.nombre_centro.trim(),         required: true  },
+      { id: 'titular',        tab: 'general' as const, grupo: 'Centro',       label: 'Titular / empresa',               detail: cc.titular               || 'Sin ingresar', ok: !!cc.titular.trim(),               required: true  },
+      { id: 'acs',            tab: 'general' as const, grupo: 'Centro',       label: 'A.C.S',                           detail: cc.acs                   || 'Sin ingresar', ok: !!cc.acs.trim(),                   required: true  },
+      { id: 'ubicacion',      tab: 'general' as const, grupo: 'Centro',       label: 'Ubicación',                       detail: cc.ubicacion             || 'Sin ingresar', ok: !!cc.ubicacion.trim(),             required: true  },
+      { id: 'nombre_an',      tab: 'general' as const, grupo: 'Centro',       label: 'Nombre A/N Ensilaje',             detail: cc.nombre_an_ensilaje    || 'Sin ingresar', ok: !!cc.nombre_an_ensilaje.trim(),    required: true  },
+      { id: 'formato_modulo', tab: 'general' as const, grupo: 'Centro',       label: 'Formato del módulo',              detail: cc.formato_modulo        || 'Sin ingresar', ok: !!cc.formato_modulo.trim(),        required: false },
+      { id: 'tamano_jaulas',  tab: 'general' as const, grupo: 'Centro',       label: 'Tamaño de jaulas',                detail: cc.tamano_jaulas         || 'Sin ingresar', ok: !!cc.tamano_jaulas.trim(),         required: false },
+      { id: 'coordenadas',    tab: 'general' as const, grupo: 'Centro',       label: 'Coordenadas ensilaje',            detail: cc.coordenadas_ensilaje  || 'Sin ingresar', ok: !!cc.coordenadas_ensilaje.trim(),  required: false },
+      // ─ General — Certificador ─
+      { id: 'cert_nom',       tab: 'general' as const, grupo: 'Certificador', label: 'Nombre certificador',             detail: cert.nombre              || 'Sin ingresar', ok: !!cert.nombre.trim(),              required: true  },
+      { id: 'cert_rut',       tab: 'general' as const, grupo: 'Certificador', label: 'RUT certificador',                detail: cert.rut                 || 'Sin ingresar', ok: !!cert.rut.trim(),                 required: true  },
+      { id: 'cert_reg',       tab: 'general' as const, grupo: 'Certificador', label: 'N° registro',                     detail: cert.numero_registro     || 'Sin ingresar', ok: !!cert.numero_registro.trim(),     required: true  },
+      // ─ General — Fechas ─
+      { id: 'fecha_eval',     tab: 'general' as const, grupo: 'Fechas',       label: 'Fecha evaluación documental',     detail: g.fechas.evaluacion_documental || 'Sin ingresar', ok: !!g.fechas.evaluacion_documental, required: true },
+      { id: 'fecha_inspec',   tab: 'general' as const, grupo: 'Fechas',       label: 'Fecha inspección terreno',        detail: g.fechas.inspeccion_terreno    || 'Sin ingresar', ok: !!g.fechas.inspeccion_terreno,    required: true },
+      { id: 'fecha_emis',     tab: 'general' as const, grupo: 'Fechas',       label: 'Fecha emisión certificado',       detail: g.fechas.emision_certificado   || 'Sin ingresar', ok: !!g.fechas.emision_certificado,   required: true },
+      { id: 'orden_fechas',   tab: 'general' as const, grupo: 'Fechas',       label: 'Orden cronológico',               detail: ordenFechas.mensaje ?? 'eval ≤ inspec ≤ emis', ok: ordenFechas.valido, required: true },
+      // ─ General — Revisión ─
+      { id: 'revision_confirmada', tab: 'general' as const, grupo: 'Revisión', label: 'Revisión confirmada',           detail: g.revisionConfirmada ? 'Confirmado' : 'Pendiente', ok: !!(g.revisionConfirmada), required: true },
+      { id: 'observaciones',  tab: 'general' as const, grupo: 'Revisión',     label: 'Observaciones acta revisadas',    detail: g.observaciones_acta  ? 'Ingresadas' : 'Vacías (quedará N/A)', ok: !!g.observaciones_acta.trim(), required: false },
       // ─ Extracción ─
       { id: 'jaulas',    tab: 'extraction' as const,   grupo: 'Parámetros',   label: 'N° total de jaulas',            detail: ext.numero_total_jaulas > 0 ? String(ext.numero_total_jaulas) : 'Sin ingresar', ok: ext.numero_total_jaulas > 0, required: true },
       { id: 'cfm',       tab: 'extraction' as const,   grupo: 'Parámetros',   label: 'Potencia compresor (CFM)',       detail: g.modo_operacion_minima ? 'N/A (Op. Mín.)' : (ext.potencia_cfm > 0 ? String(ext.potencia_cfm) : 'Sin ingresar'), ok: g.modo_operacion_minima || ext.potencia_cfm > 0, required: true },
@@ -3307,6 +3323,13 @@ export default function App() {
 
   const canEmit = useMemo(
     () => checklistItems.filter(i => i.required).every(i => i.ok),
+    [checklistItems]
+  );
+
+  const allGenCritOk = useMemo(
+    () => checklistItems
+      .filter(i => i.tab === 'general' && i.required && i.id !== 'revision_confirmada')
+      .every(i => i.ok),
     [checklistItems]
   );
 
@@ -3595,8 +3618,9 @@ Se despide atentamente`;
   };
 
   const updateGeneral = (field: string, value: any) => {
+    const resetRevision = field !== 'revisionConfirmada' ? { revisionConfirmada: false } : {};
     if (!field.includes('.')) {
-      setState(prev => ({ ...prev, general: { ...prev.general, [field]: value } }));
+      setState(prev => ({ ...prev, general: { ...prev.general, [field]: value, ...resetRevision } }));
       return;
     }
     const [section, key] = field.split('.');
@@ -3607,7 +3631,8 @@ Se despide atentamente`;
         [section]: {
           ...(prev.general as any)[section],
           [key]: value
-        }
+        },
+        ...resetRevision
       }
     }));
   };
@@ -6271,6 +6296,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           </div>
         </FormCard>
       </div>
+
     </div>
   );
 
@@ -9172,14 +9198,14 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           storage: 'Almacenamiento', report: 'Informe',
         };
         return (
-          <div className="fixed bottom-6 right-5 z-50 w-60 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm overflow-hidden select-none">
-            <div className={`flex items-center justify-between px-3 py-2 font-semibold text-white text-xs ${allOk ? 'bg-emerald-600' : 'bg-[#0f2d5e]'}`}>
+          <div className="fixed bottom-6 right-5 z-50 w-72 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm overflow-hidden select-none">
+            <div className={`flex items-center justify-between px-3 py-2.5 font-semibold text-white text-xs ${allOk ? 'bg-emerald-600' : 'bg-[#0f2d5e]'}`}>
               <span>Checklist · {sectionLabel[activeTab]}</span>
               <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${allOk ? 'bg-emerald-400 text-emerald-900' : 'bg-white/20'}`}>{done}/{total}</span>
             </div>
-            <ul className="divide-y divide-slate-100 dark:divide-slate-700 max-h-64 overflow-y-auto">
+            <ul className="divide-y divide-slate-100 dark:divide-slate-700">
               {sectionItems.map(item => (
-                <li key={item.id} className="flex items-center gap-2 px-3 py-1.5">
+                <li key={item.id} className="flex items-center gap-2 px-3 py-2">
                   <span className={`flex-shrink-0 font-bold text-base leading-none ${item.ok ? 'text-emerald-500' : item.required ? 'text-red-500' : 'text-amber-400'}`}>
                     {item.ok ? '✓' : item.required ? '✗' : '○'}
                   </span>
@@ -9193,6 +9219,54 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           </div>
         );
       })()}
+
+      {/* ── Popup "Confirmar Revisión" ── */}
+      <AnimatePresence>
+        {activeTab === 'general' && allGenCritOk && !state.general.revisionConfirmada && (
+          <motion.div
+            key="revision-popup"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.92, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.92, y: 16 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+              className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4 space-y-5 border border-slate-200 dark:border-slate-700"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center shrink-0">
+                  <CheckCircle2 size={22} className="text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900 dark:text-white">Datos generales completos</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                    Todos los campos requeridos están listos. Confirma que revisaste la información antes de emitir.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-700/40 rounded-xl px-4 py-3 space-y-1 text-xs text-slate-500 dark:text-slate-400">
+                <p className="font-semibold text-slate-700 dark:text-slate-200 text-[11px] uppercase tracking-wide mb-1">Esta información aparecerá en:</p>
+                <p>· Acta de Inspección (código, titular, fechas, certificador)</p>
+                <p>· Certificado de Verificación (identificación, firmante)</p>
+                <p>· Informe Técnico (tabla completa incl. A/N ensilaje y coordenadas)</p>
+              </div>
+
+              <button
+                onClick={() => updateGeneral('revisionConfirmada', true)}
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-emerald-500/25"
+              >
+                <CheckCircle2 size={16} />
+                He revisado y confirmo los datos
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Anotador de imagen */}
       {annotatingImg && (

@@ -22,6 +22,7 @@ export interface GeneralData {
   };
   modo_operacion_minima?: boolean;
   observaciones_acta: string;
+  revisionConfirmada?: boolean;
 }
 
 export type FishSize = 'Pequeño (<1.5kg)' | 'Mediano (1.5-4.5kg)' | 'Grande (>=4.5kg)';
