@@ -251,6 +251,18 @@ export interface RegistroHistorico {
   titular: string;
   fechaInspeccion: string;
   documentosGenerados: string[];  // 'certificado' | 'informe' | 'acta'
+  // Vínculo con Registro de Visita (certimar-integrado)
+  registroVisitaId?: string;    // Firestore ID en registros_visita
+  nroRegistroVisita?: string;   // Número legible, ej. "RV-2026-0042"
+  origenRV?: boolean;           // true = auto-generado por onRvGuardado
+  resoluciones?: {
+    res1511?: boolean;
+    cicE1?: boolean;
+    cicE2?: boolean;
+    ca?: boolean;
+    vs?: boolean;
+    desinfeccion?: boolean;
+  };
   // Estado de gestión
   esBorrador?: boolean;
   aprobado?: boolean;
