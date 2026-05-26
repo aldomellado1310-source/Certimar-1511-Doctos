@@ -278,7 +278,48 @@ const DEFAULT_STATE: AppState = {
     },
     resultados: { capacidad_almacenaje_ton: 0, cumple_norma: false }
   },
-  images: []
+  images: [],
+  cic1821: {
+    tipoCertificacion: 'CIC_E1',
+    nroCertificado: '',
+    fechaEmision: new Date().toISOString().split('T')[0],
+    fechaInicioSiembra: '',
+    fechaTerminoSiembra: '',
+    nroModulosCultivo: 1,
+    identificacionModulo: '',
+    variablesAmbientales: {
+      corrientes:   { fechaInicio: '', fechaTermino: '', empresaEjecutora: '', metodologiaEquipo: '', cumple: true, observaciones: '' },
+      vientos:      { fechaInicio: '', fechaTermino: '', empresaEjecutora: '', metodologiaEquipo: '', cumple: true, observaciones: '' },
+      olas:         { fechaInicio: '', fechaTermino: '', empresaEjecutora: '', metodologiaEquipo: '', cumple: true, observaciones: '' },
+      calidadFondo: { fechaInicio: '', fechaTermino: '', empresaEjecutora: '', metodologiaEquipo: '', cumple: true, observaciones: '' },
+      batimetria:   { fechaInicio: '', fechaTermino: '', empresaEjecutora: '', metodologiaEquipo: '', cumple: true, observaciones: '' },
+      estudiosComplementarios: '',
+      revisionDesde: '',
+      revisionHasta: '',
+    },
+    memoriaCalculo: {
+      empresaEjecutora: '',
+      fechaEmision: '',
+      metodologiaAnalisis: 'Análisis dinámico de estructuras mediante software especializado.',
+      observaciones: 'N/A',
+      fechasRevision: '',
+      cumple: true,
+    },
+    coordenadasDiseno: [
+      { vertice: 1, utmEste: '', utmNorte: '', datum: 'WGS84 / Huso 19S' },
+      { vertice: 2, utmEste: '', utmNorte: '', datum: 'WGS84 / Huso 19S' },
+      { vertice: 3, utmEste: '', utmNorte: '', datum: 'WGS84 / Huso 19S' },
+      { vertice: 4, utmEste: '', utmNorte: '', datum: 'WGS84 / Huso 19S' },
+    ],
+    pruebasTraccion: {
+      fechaEjecucion: '',
+      empresaEjecutora: '',
+      metodologia: 'Dinamometría hidráulica con registro digital de carga y tiempo.',
+      cumple: true,
+    },
+    rvId: '',
+    nroRegistroVisita: '',
+  },
 };
 
 // --- Components ---
@@ -1900,7 +1941,7 @@ const AerialPreview: React.FC<{
 // --- Main App ---
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'general' | 'extraction' | 'denaturation' | 'storage' | 'report' | 'issue' | 'history' | 'config' | 'stats'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'extraction' | 'denaturation' | 'storage' | 'report' | 'issue' | 'cic1821' | 'history' | 'config' | 'stats'>('general');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [state, setState] = useState<AppState>(() => {
     const SCHEMA_VERSION = 'v3';
@@ -1925,6 +1966,9 @@ export default function App() {
           }
           if (parsed.extraction?.parametros?.sistema_principal === 'LIFT-UP (Novatech)') {
             parsed.extraction.parametros.sistema_principal = 'LIFT-UP';
+          }
+          if (!parsed.cic1821) {
+            parsed.cic1821 = DEFAULT_STATE.cic1821;
           }
           return parsed;
         }
@@ -2294,7 +2338,7 @@ export default function App() {
   const uploadDocToStorage = async (
     blob: Blob,
     docId: string,
-    tipo: 'certificado' | 'informe' | 'acta' | 'registro_visita'
+    tipo: 'certificado' | 'informe' | 'acta' | 'registro_visita' | 'cic_e1_certificado' | 'cic_e1_anexo'
   ): Promise<string> => {
     const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
     const { storage } = await import('./firebase');
@@ -2348,6 +2392,91 @@ export default function App() {
       return doc.output('blob');
     } finally {
       document.body.removeChild(iframe);
+    }
+  };
+
+  // ── CIC 1821 E1: genera, sube a Storage y guarda en histórico ────────────
+  const [generatingCic, setGeneratingCic] = useState<'certificado' | 'anexo' | null>(null);
+
+  const generateAndUploadCic1821 = async (tipo: 'certificado' | 'anexo') => {
+    setGeneratingCic(tipo);
+    try {
+      const { generateCertificadoCIC_E1PDF, generateAnexoCIC_E1PDF } = await import('./domain/cic1821');
+      const cic = state.cic1821;
+      const g   = state.general;
+      const cc  = g.centro_cultivo;
+
+      const certData = {
+        nroCertificado:          cic.nroCertificado || `${cc.codigo_centro}-E1-${cic.fechaEmision}`,
+        tipoCertificacion:       cic.tipoCertificacion,
+        fechaEmision:            cic.fechaEmision,
+        fechaInicioSiembra:      cic.fechaInicioSiembra || null,
+        fechaTerminoSiembra:     cic.fechaTerminoSiembra || null,
+        codigoRNA:               cc.codigo_centro,
+        nombreCentro:            cc.nombre_centro,
+        titular:                 cc.titular,
+        certificadorNombre:      g.certificador.nombre,
+        certificadorRut:         g.certificador.rut,
+        certificadorNRegistro:   g.certificador.numero_registro,
+      };
+
+      const anexoData = {
+        ...certData,
+        nroModulosCultivo:    cic.nroModulosCultivo,
+        identificacionModulo: cic.identificacionModulo,
+        fechaInicioSiembra:   cic.fechaInicioSiembra,
+        fechaTerminoSiembra:  cic.fechaTerminoSiembra,
+        variablesAmbientales: cic.variablesAmbientales,
+        memoriaCalculo:       cic.memoriaCalculo,
+        coordenadasDiseno:    cic.coordenadasDiseno,
+        pruebasTraccion:      cic.pruebasTraccion,
+        certificadorRut:      g.certificador.rut,
+      };
+
+      const blob = tipo === 'certificado'
+        ? await generateCertificadoCIC_E1PDF(certData)
+        : await generateAnexoCIC_E1PDF(anexoData);
+
+      const docId = cic.rvId || state.registroId || `cic_${cc.codigo_centro || 'sin-codigo'}`;
+      const storageKey: 'cic_e1_certificado' | 'cic_e1_anexo' =
+        tipo === 'certificado' ? 'cic_e1_certificado' : 'cic_e1_anexo';
+
+      const url = await uploadDocToStorage(blob, docId, storageKey);
+
+      // Guardar en histórico
+      const { doc: fsDoc, setDoc, serverTimestamp, arrayUnion } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      const historicoPayload: Record<string, any> = {
+        registroId:           docId,
+        codigoCentro:         cc.codigo_centro,
+        nombreCentro:         cc.nombre_centro,
+        titular:              cc.titular,
+        fechaInspeccion:      g.fechas.inspeccion_terreno,
+        esBorrador:           false,
+        documentosGenerados:  arrayUnion(storageKey),
+        [`documentUrls.${storageKey}`]: url,
+        origenRV:             !!cic.rvId,
+        registroVisitaId:     cic.rvId || null,
+        nroRegistroVisita:    cic.nroRegistroVisita || null,
+        resoluciones:         { cicE1: true },
+        snapshot:             { ...state, images: [] },
+        __updatedAt:          serverTimestamp(),
+      };
+      const esNuevo = !historicoEntries.find(e => e.id === docId)?.creadoEn;
+      if (esNuevo) historicoPayload.creadoEn = serverTimestamp();
+
+      await setDoc(fsDoc(db, 'historico', docId), historicoPayload, { merge: true });
+
+      // Descarga inmediata
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${storageKey}_${cc.codigo_centro || 'centro'}.pdf`;
+      a.click();
+    } catch (err) {
+      console.error('Error generando CIC E1:', err);
+      alert('Error al generar el PDF. Revisa la consola para más detalles.');
+    } finally {
+      setGeneratingCic(null);
     }
   };
 
@@ -6850,9 +6979,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
     const DocBadge = ({ tipo }: { tipo: string }) => {
       const map: Record<string, string> = {
-        certificado: 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300',
-        informe: 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
-        acta: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300',
+        certificado:       'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300',
+        informe:           'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+        acta:              'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300',
+        cic_e1_certificado:'bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300',
+        cic_e1_anexo:      'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
       };
       return (
         <span className={cn('px-2 py-0.5 rounded-md text-[10px] font-bold uppercase', map[tipo] ?? 'bg-slate-100 text-slate-500')}>
@@ -7038,6 +7169,13 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     setConfirmDownload(null);
                     if (url) {
                       window.open(url, '_blank');
+                    } else if (tipo === 'cic_e1_certificado' || tipo === 'cic_e1_anexo') {
+                      setState({
+                        ...entry.snapshot,
+                        images: (entry.snapshot.images as any[]).map((img: any) => ({ ...img, url: img.url ?? '' })),
+                        registroId: entry.registroId,
+                      });
+                      setActiveTab('cic1821');
                     } else if (tipo === 'acta') {
                       generateActaPdf(entry.snapshot);
                     } else {
@@ -8639,6 +8777,228 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
     );
   };
 
+  // ── Vista CIC 1821 E1 ──────────────────────────────────────────────────────
+  const setCic = (patch: Partial<typeof state.cic1821>) =>
+    setState(prev => ({ ...prev, cic1821: { ...prev.cic1821, ...patch } }));
+
+  const setCicVA = (estudio: keyof typeof state.cic1821.variablesAmbientales, patch: Partial<typeof state.cic1821.variablesAmbientales.corrientes>) =>
+    setState(prev => ({
+      ...prev,
+      cic1821: {
+        ...prev.cic1821,
+        variablesAmbientales: {
+          ...prev.cic1821.variablesAmbientales,
+          [estudio]: { ...(prev.cic1821.variablesAmbientales as any)[estudio], ...patch },
+        },
+      },
+    }));
+
+  const setCicMC = (patch: Partial<typeof state.cic1821.memoriaCalculo>) =>
+    setState(prev => ({ ...prev, cic1821: { ...prev.cic1821, memoriaCalculo: { ...prev.cic1821.memoriaCalculo, ...patch } } }));
+
+  const setCicPT = (patch: Partial<typeof state.cic1821.pruebasTraccion>) =>
+    setState(prev => ({ ...prev, cic1821: { ...prev.cic1821, pruebasTraccion: { ...prev.cic1821.pruebasTraccion, ...patch } } }));
+
+  const setCicCoord = (idx: number, patch: Partial<{ utmEste: string; utmNorte: string; datum: string }>) =>
+    setState(prev => ({
+      ...prev,
+      cic1821: {
+        ...prev.cic1821,
+        coordenadasDiseno: prev.cic1821.coordenadasDiseno.map((v, i) => i === idx ? { ...v, ...patch } : v),
+      },
+    }));
+
+  const Cic1821View = () => {
+    const cic = state.cic1821;
+    const g   = state.general;
+    const cc  = g.centro_cultivo;
+
+    const vaEstudios: [string, keyof typeof cic.variablesAmbientales][] = [
+      ['Estudio de Corrientes',       'corrientes'],
+      ['Estudio de Vientos',          'vientos'],
+      ['Estudio de Olas',             'olas'],
+      ['Estudio de Calidad de fondo', 'calidadFondo'],
+      ['Estudio de Batimetría',       'batimetria'],
+    ];
+
+    const inputCls = "w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400";
+    const labelCls = "block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1";
+
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
+        {/* Header */}
+        <div className="flex items-start gap-4 mb-4">
+          <div className="p-2 bg-teal-600 dark:bg-teal-500 rounded-lg text-white shadow-lg shadow-teal-500/20">
+            <ShieldCheck size={24} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Certificación Estructuras — CIC E1/E2</h2>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Res. Ex. N° 1821/2020 · Genera el Certificado (1 pág.) y el Anexo (2 págs.) en formato PDF oficial.</p>
+          </div>
+        </div>
+
+        {/* Vínculo RV */}
+        <FormCard title="Vínculo con Registro de Visita">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>ID RV (Firestore)</label>
+              <input className={inputCls} value={cic.rvId} onChange={e => setCic({ rvId: e.target.value })} placeholder="Ej. RV-2026-0042" />
+            </div>
+            <div>
+              <label className={labelCls}>N° Registro de Visita</label>
+              <input className={inputCls} value={cic.nroRegistroVisita} onChange={e => setCic({ nroRegistroVisita: e.target.value })} placeholder="Ej. RV-2026-0042" />
+            </div>
+          </div>
+          <p className="text-xs text-slate-400 mt-2">Si el RV fue creado desde el sistema integrado, ingresa su ID para vincular el documento.</p>
+        </FormCard>
+
+        {/* Encabezado Certificado */}
+        <FormCard title="Datos del Certificado">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className={labelCls}>N° Certificado</label>
+              <input className={inputCls} value={cic.nroCertificado} onChange={e => setCic({ nroCertificado: e.target.value })} placeholder="Ej. 110XXXDDMMAAE1" />
+            </div>
+            <div>
+              <label className={labelCls}>Tipo Certificación</label>
+              <select className={inputCls} value={cic.tipoCertificacion} onChange={e => setCic({ tipoCertificacion: e.target.value as any })}>
+                <option value="CIC_E1">CIC Etapa 1 (CIC-E1)</option>
+                <option value="CIC_E2">CIC Etapa 2 (CIC-E2)</option>
+                <option value="ANUAL">Certificación Anual</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Fecha Emisión</label>
+              <input type="date" className={inputCls} value={cic.fechaEmision} onChange={e => setCic({ fechaEmision: e.target.value })} />
+            </div>
+            <div>
+              <label className={labelCls}>Fecha Inicio Siembra</label>
+              <input type="date" className={inputCls} value={cic.fechaInicioSiembra} onChange={e => setCic({ fechaInicioSiembra: e.target.value })} />
+            </div>
+            <div>
+              <label className={labelCls}>Fecha Término Siembra</label>
+              <input type="date" className={inputCls} value={cic.fechaTerminoSiembra} onChange={e => setCic({ fechaTerminoSiembra: e.target.value })} />
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>N° Módulos de Cultivo</label>
+              <input type="number" min={1} className={inputCls} value={cic.nroModulosCultivo} onChange={e => setCic({ nroModulosCultivo: Number(e.target.value) })} />
+            </div>
+            <div>
+              <label className={labelCls}>Identificación del Módulo</label>
+              <input className={inputCls} value={cic.identificacionModulo} onChange={e => setCic({ identificacionModulo: e.target.value })} placeholder="Ej. 100" />
+            </div>
+          </div>
+          <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg text-xs text-slate-500 dark:text-slate-400 space-y-0.5">
+            <p><span className="font-semibold">Centro:</span> {cc.codigo_centro || '—'} · {cc.nombre_centro || '—'}</p>
+            <p><span className="font-semibold">Titular:</span> {cc.titular || '—'}</p>
+            <p><span className="font-semibold">Certificador:</span> {g.certificador.nombre} · {g.certificador.rut} · {g.certificador.numero_registro}</p>
+          </div>
+        </FormCard>
+
+        {/* Variables Ambientales */}
+        <FormCard title="I. Revisión Documental — Variables Ambientales">
+          <div className="space-y-5">
+            {vaEstudios.map(([label, key]) => {
+              const e = (cic.variablesAmbientales as any)[key];
+              return (
+                <div key={key} className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3">
+                  <p className="font-bold text-sm text-slate-800 dark:text-slate-200">{label}</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div><label className={labelCls}>Fecha Inicio</label><input type="date" className={inputCls} value={e.fechaInicio} onChange={ev => setCicVA(key as any, { fechaInicio: ev.target.value })} /></div>
+                    <div><label className={labelCls}>Fecha Término</label><input type="date" className={inputCls} value={e.fechaTermino} onChange={ev => setCicVA(key as any, { fechaTermino: ev.target.value })} /></div>
+                    <div><label className={labelCls}>Empresa Ejecutora</label><input className={inputCls} value={e.empresaEjecutora} onChange={ev => setCicVA(key as any, { empresaEjecutora: ev.target.value })} /></div>
+                    <div><label className={labelCls}>Metodología / Equipo</label><input className={inputCls} value={e.metodologiaEquipo} onChange={ev => setCicVA(key as any, { metodologiaEquipo: ev.target.value })} /></div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={e.cumple} onChange={ev => setCicVA(key as any, { cumple: ev.target.checked })} className="w-4 h-4 rounded" />
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Cumple Res. Ex. N° 1821/2020</span>
+                    </label>
+                  </div>
+                  <div><label className={labelCls}>Observaciones</label><input className={inputCls} value={e.observaciones} onChange={ev => setCicVA(key as any, { observaciones: ev.target.value })} placeholder="Sin Observaciones." /></div>
+                </div>
+              );
+            })}
+            <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3">
+              <p className="font-bold text-sm text-slate-800 dark:text-slate-200">Revisión de estudios complementarios (opcional)</p>
+              <input className={inputCls} value={cic.variablesAmbientales.estudiosComplementarios} onChange={e => setState(prev => ({ ...prev, cic1821: { ...prev.cic1821, variablesAmbientales: { ...prev.cic1821.variablesAmbientales, estudiosComplementarios: e.target.value } } }))} placeholder="Sin observaciones." />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className={labelCls}>Revisión desde (DD/MM/AAAA)</label><input className={inputCls} value={cic.variablesAmbientales.revisionDesde} onChange={e => setState(prev => ({ ...prev, cic1821: { ...prev.cic1821, variablesAmbientales: { ...prev.cic1821.variablesAmbientales, revisionDesde: e.target.value } } }))} placeholder="DD" /></div>
+              <div><label className={labelCls}>Revisión hasta (DD/MM/AAAA)</label><input className={inputCls} value={cic.variablesAmbientales.revisionHasta} onChange={e => setState(prev => ({ ...prev, cic1821: { ...prev.cic1821, variablesAmbientales: { ...prev.cic1821.variablesAmbientales, revisionHasta: e.target.value } } }))} placeholder="DD" /></div>
+            </div>
+          </div>
+        </FormCard>
+
+        {/* Memoria de Cálculo */}
+        <FormCard title="2. Memoria de Cálculo del Módulo de Cultivo y Fondeo">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><label className={labelCls}>Empresa Ejecutora</label><input className={inputCls} value={cic.memoriaCalculo.empresaEjecutora} onChange={e => setCicMC({ empresaEjecutora: e.target.value })} /></div>
+            <div><label className={labelCls}>Fecha de Emisión</label><input type="date" className={inputCls} value={cic.memoriaCalculo.fechaEmision} onChange={e => setCicMC({ fechaEmision: e.target.value })} /></div>
+            <div className="md:col-span-2"><label className={labelCls}>Metodología de Análisis</label><input className={inputCls} value={cic.memoriaCalculo.metodologiaAnalisis} onChange={e => setCicMC({ metodologiaAnalisis: e.target.value })} /></div>
+            <div><label className={labelCls}>Observaciones al documento</label><input className={inputCls} value={cic.memoriaCalculo.observaciones} onChange={e => setCicMC({ observaciones: e.target.value })} placeholder="N/A" /></div>
+            <div><label className={labelCls}>Fechas de Revisión</label><input className={inputCls} value={cic.memoriaCalculo.fechasRevision} onChange={e => setCicMC({ fechasRevision: e.target.value })} /></div>
+          </div>
+          <label className="flex items-center gap-2 mt-3 cursor-pointer">
+            <input type="checkbox" checked={cic.memoriaCalculo.cumple} onChange={e => setCicMC({ cumple: e.target.checked })} className="w-4 h-4 rounded" />
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Cumple con Res. Ex. N° 1821/2020</span>
+          </label>
+        </FormCard>
+
+        {/* Coordenadas */}
+        <FormCard title="3. Ubicación Geográfica — Coordenadas del Módulo (Diseño)">
+          <div className="space-y-3">
+            {cic.coordenadasDiseno.map((v, i) => (
+              <div key={i} className="grid grid-cols-4 gap-3 items-end">
+                <div><label className={labelCls}>Vértice {v.vertice}</label><input className={inputCls} readOnly value={v.vertice} /></div>
+                <div><label className={labelCls}>UTM Este</label><input className={inputCls} value={v.utmEste} onChange={e => setCicCoord(i, { utmEste: e.target.value })} placeholder="XXXXXXX" /></div>
+                <div><label className={labelCls}>UTM Norte</label><input className={inputCls} value={v.utmNorte} onChange={e => setCicCoord(i, { utmNorte: e.target.value })} placeholder="XXXXXXXX" /></div>
+                <div><label className={labelCls}>Datum / Huso</label><input className={inputCls} value={v.datum} onChange={e => setCicCoord(i, { datum: e.target.value })} /></div>
+              </div>
+            ))}
+          </div>
+        </FormCard>
+
+        {/* Pruebas de Tracción */}
+        <FormCard title="Pruebas de Tracción">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><label className={labelCls}>Fecha de Ejecución</label><input type="date" className={inputCls} value={cic.pruebasTraccion.fechaEjecucion} onChange={e => setCicPT({ fechaEjecucion: e.target.value })} /></div>
+            <div><label className={labelCls}>Empresa Ejecutora</label><input className={inputCls} value={cic.pruebasTraccion.empresaEjecutora} onChange={e => setCicPT({ empresaEjecutora: e.target.value })} /></div>
+            <div className="md:col-span-2"><label className={labelCls}>Metodología Utilizada</label><input className={inputCls} value={cic.pruebasTraccion.metodologia} onChange={e => setCicPT({ metodologia: e.target.value })} /></div>
+          </div>
+          <label className="flex items-center gap-2 mt-3 cursor-pointer">
+            <input type="checkbox" checked={cic.pruebasTraccion.cumple} onChange={e => setCicPT({ cumple: e.target.checked })} className="w-4 h-4 rounded" />
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Cumple con la Memoria de Cálculo</span>
+          </label>
+        </FormCard>
+
+        {/* Botones de generación */}
+        <div className="flex flex-wrap gap-4 pt-2">
+          <button
+            onClick={() => generateAndUploadCic1821('certificado')}
+            disabled={!!generatingCic || userRole === 'reader'}
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm shadow-lg shadow-teal-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {generatingCic === 'certificado'
+              ? <><span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> Generando…</>
+              : <><Download size={16} /> Certificado (1 pág.)</>}
+          </button>
+          <button
+            onClick={() => generateAndUploadCic1821('anexo')}
+            disabled={!!generatingCic || userRole === 'reader'}
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-sm shadow-lg shadow-teal-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {generatingCic === 'anexo'
+              ? <><span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> Generando…</>
+              : <><Download size={16} /> Anexo (2 págs.)</>}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const IssueView = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
       <SectionHeader 
@@ -8995,8 +9355,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             {!isSidebarCollapsed && (
               <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 pb-1">Documentos</p>
             )}
-            <NavItem active={activeTab === 'issue'}   onClick={() => setActiveTab('issue')}   icon={ShieldCheck} label="Certificado" collapsed={isSidebarCollapsed} variant="emerald" />
-            <NavItem active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={History}     label="Históricos"  collapsed={isSidebarCollapsed} />
+            <NavItem active={activeTab === 'issue'}   onClick={() => setActiveTab('issue')}   icon={ShieldCheck} label="Certificado"   collapsed={isSidebarCollapsed} variant="emerald" />
+            <NavItem active={activeTab === 'cic1821'} onClick={() => setActiveTab('cic1821')} icon={Anchor}      label="CIC 1821 E1"  collapsed={isSidebarCollapsed} variant="emerald" />
+            <NavItem active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={History}     label="Históricos"   collapsed={isSidebarCollapsed} />
             {isAdmin && (
               <NavItem active={activeTab === 'stats'} onClick={() => setActiveTab('stats')} icon={BarChart2} label="Estadísticas" collapsed={isSidebarCollapsed} />
             )}
@@ -9154,6 +9515,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             {activeTab === 'storage' && StorageView()}
             {activeTab === 'report' && ReportView()}
             {activeTab === 'issue' && IssueView()}
+            {activeTab === 'cic1821' && Cic1821View()}
             {activeTab === 'history' && HistoryView()}
             {activeTab === 'config' && ConfigView()}
             {StatsView()}
