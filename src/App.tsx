@@ -3816,12 +3816,47 @@ Se despide atentamente`;
 
   const [historicoEntries, setHistoricoEntries] = useState<RegistroHistorico[]>([]);
   const [historicoLoading, setHistoricoLoading] = useState(false);
+  const [historicoFilter, setHistoricoFilter] = useState<'todos' | 'pendientes' | 'origen_rv'>('todos');
   const [selectedHistoricoEntry, setSelectedHistoricoEntry] = useState<RegistroHistorico | null>(null);
   const [resubirLoadingId, setResubirLoadingId] = useState<string | null>(null); // "docId-tipo"
   const [confirmDownload, setConfirmDownload] = useState<{ entry: RegistroHistorico; tipo: string; url?: string } | null>(null);
   const [exportingCSV, setExportingCSV] = useState(false);
   const resubirPendienteRef = useRef<{ entry: RegistroHistorico; tipo: string } | null>(null);
   const resubirFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Devuelve lista de acciones pendientes para un entry del histórico.
+  const getPendienteItems = (e: RegistroHistorico): string[] => {
+    const r: string[] = [];
+    const docs = e.documentosGenerados ?? [];
+    const urls = e.documentUrls ?? {};
+    const res  = e.resoluciones ?? {};
+
+    if (e.esBorrador) {
+      r.push('Borrador sin finalizar');
+      return r;
+    }
+
+    // RV vinculado pero sin ningún documento todavía
+    if (e.origenRV && docs.length === 0 && !Object.values(urls).some(Boolean)) {
+      r.push('Sin documentos generados');
+    }
+
+    // Resoluciones declaradas con documentos faltantes
+    if (res.res1511 && !urls.certificado && !urls.informe) r.push('Informe 1511 sin generar');
+    if (res.cicE1 && !urls.cic_e1_certificado)              r.push('CIC E1 — Certificado sin generar');
+    if (res.cicE1 && !urls.cic_e1_anexo)                    r.push('CIC E1 — Anexo sin generar');
+    if (res.cicE2 && !urls.cic_e1_certificado)              r.push('CIC E2 — Certificado sin generar');
+    if (res.cicE2 && !urls.cic_e1_anexo)                    r.push('CIC E2 — Anexo sin generar');
+    if (res.ca   && !urls.cic_e1_certificado)               r.push('Solicitud CA — sin generar');
+    if (res.vs   && !urls.cic_e1_certificado)               r.push('Solicitud VS — sin generar');
+
+    // Documentos generados pero sin pasos de cierre completados
+    const hayPdfs = Object.values(urls).some(Boolean);
+    if (hayPdfs && !e.firmado)            r.push('Sin firma');
+    if (hayPdfs && !e.enviado_sernapesca) r.push('Sin enviar a SERNAPESCA');
+
+    return r;
+  };
 
   const handleResubirDocumento = (entry: RegistroHistorico, tipo: string) => {
     resubirPendienteRef.current = { entry, tipo };
@@ -6994,7 +7029,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
     return (
       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
-        <div className="flex items-start justify-between gap-4 mb-8">
+        <div className="flex items-start justify-between gap-4 mb-4">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-indigo-600 dark:bg-indigo-500 rounded-lg text-white shadow-lg shadow-indigo-500/20">
@@ -7002,7 +7037,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               </div>
               <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Histórico de Certificaciones</h2>
             </div>
-            <p className="text-slate-500 dark:text-slate-400 text-sm max-w-2xl">Registros generados automáticamente al emitir documentos. Haz clic en los estados para actualizarlos.</p>
+            <p className="text-slate-500 dark:text-slate-400 text-sm max-w-2xl">Registros generados al emitir documentos. Haz clic en los estados para actualizarlos.</p>
           </div>
           {canExportCSV && (
             <button
@@ -7011,19 +7046,68 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
             >
               {exportingCSV ? (
-                <>
-                  <span className="animate-spin w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full" />
-                  Exportando…
-                </>
+                <><span className="animate-spin w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full" />Exportando…</>
               ) : (
-                <>
-                  <Download size={16} />
-                  Exportar CSV
-                </>
+                <><Download size={16} />Exportar CSV</>
               )}
             </button>
           )}
         </div>
+
+        {/* ── Barra de filtros ── */}
+        {(() => {
+          const totalPendientes = historicoEntries.filter(e => getPendienteItems(e).length > 0).length;
+          const totalOrigenRv   = historicoEntries.filter(e => e.origenRV).length;
+          const filters: { key: typeof historicoFilter; label: string; count: number; color: string }[] = [
+            { key: 'todos',      label: 'Todos',       count: historicoEntries.length, color: 'indigo' },
+            { key: 'pendientes', label: 'Pendientes',  count: totalPendientes,         color: 'amber'  },
+            { key: 'origen_rv',  label: 'Origen RV',   count: totalOrigenRv,           color: 'teal'   },
+          ];
+          return (
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              {filters.map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setHistoricoFilter(f.key)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold border transition-colors',
+                    historicoFilter === f.key
+                      ? f.color === 'amber'
+                        ? 'bg-amber-500 text-white border-amber-500 shadow'
+                        : f.color === 'teal'
+                          ? 'bg-teal-600 text-white border-teal-600 shadow'
+                          : 'bg-indigo-600 text-white border-indigo-600 shadow'
+                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                  )}
+                >
+                  {f.label}
+                  <span className={cn(
+                    'text-[10px] font-bold px-1.5 py-0.5 rounded-full',
+                    historicoFilter === f.key
+                      ? 'bg-white/20'
+                      : f.count > 0 && f.key === 'pendientes'
+                        ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-500'
+                  )}>
+                    {f.count}
+                  </span>
+                </button>
+              ))}
+
+              {/* Alerta resumen de pendientes */}
+              {historicoFilter === 'todos' && totalPendientes > 0 && (
+                <button
+                  onClick={() => setHistoricoFilter('pendientes')}
+                  className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs font-bold hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
+                >
+                  <AlertTriangle size={14} />
+                  {totalPendientes} registro{totalPendientes !== 1 ? 's' : ''} con acciones pendientes
+                  <ChevronRight size={12} />
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── Registros desde Firestore ── */}
         <FormCard className="p-0 overflow-hidden">
@@ -7040,14 +7124,34 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <p className="text-xs mt-1 text-slate-400">Aparecerán aquí cuando generes el primer documento.</p>
             </div>
           )}
-          {!historicoLoading && historicoEntries.length > 0 && (
+          {!historicoLoading && historicoEntries.length > 0 && (() => {
+            const filtered = historicoEntries.filter(e => {
+              if (historicoFilter === 'pendientes') return getPendienteItems(e).length > 0;
+              if (historicoFilter === 'origen_rv')  return !!e.origenRV;
+              return true;
+            });
+            if (filtered.length === 0) return (
+              <div className="px-6 py-14 text-center text-slate-400 dark:text-slate-500">
+                <CheckCircle2 size={28} className="mx-auto mb-3 text-emerald-400 opacity-70" />
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                  {historicoFilter === 'pendientes' ? '¡Sin pendientes! Todos los registros están al día.' : 'Ningún registro coincide con este filtro.'}
+                </p>
+              </div>
+            );
+            return (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
-              {historicoEntries.map((entry) => {
+              {filtered.map((entry) => {
                 const docs = entry.documentosGenerados ?? [];
                 const urls = entry.documentUrls ?? {};
                 const m = entry.metricas;
+                const pendientes = getPendienteItems(entry);
                 return (
-                  <div key={entry.id} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 flex flex-col gap-3 hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-colors">
+                  <div key={entry.id} className={cn(
+                    "bg-white dark:bg-slate-800 rounded-2xl border p-5 flex flex-col gap-3 transition-colors",
+                    pendientes.length > 0
+                      ? "border-amber-300 dark:border-amber-500/50 hover:border-amber-400 dark:hover:border-amber-400/60"
+                      : "border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500/50"
+                  )}>
                     {/* Header */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -7057,6 +7161,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         {entry.esBorrador && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-bold uppercase border border-slate-300 dark:border-slate-600">Borrador</span>
+                        )}
+                        {entry.origenRV && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 font-bold uppercase border border-teal-200 dark:border-teal-500/30" title={`RV: ${entry.nroRegistroVisita || entry.registroVisitaId || '—'}`}>
+                            Origen RV
+                          </span>
                         )}
                         {entry.metricas?.modoOperacionMinima && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold uppercase">Op. Min.</span>
@@ -7102,11 +7211,29 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                                 : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-indigo-100 hover:text-indigo-700 dark:hover:bg-indigo-500/20 dark:hover:text-indigo-400 border border-dashed border-slate-300 dark:border-slate-600'
                             )}
                           >
-                            ↓ {d}
+                            ↓ {d.replace('cic_e1_', 'CIC E1 ').replace('_', ' ')}
                           </button>
                         );
                       })}
                     </div>
+
+                    {/* Acciones pendientes */}
+                    {pendientes.length > 0 && (
+                      <div className="rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 px-3 py-2.5">
+                        <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                          <AlertTriangle size={11} />
+                          Pendiente{pendientes.length > 1 ? 's' : ''}
+                        </p>
+                        <ul className="space-y-0.5">
+                          {pendientes.map((p, i) => (
+                            <li key={i} className="text-[11px] text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                              <span className="w-1 h-1 rounded-full bg-amber-500 flex-shrink-0" />
+                              {p}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
                     {/* Status chips */}
                     <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700">
