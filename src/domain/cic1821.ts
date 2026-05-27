@@ -130,6 +130,29 @@ export function emptyPruebasTraccion(): PruebasTraccionCIC {
   };
 }
 
+// ─── Logo SERNAPESCA — carga automática ───────────────────────────────────────
+
+let _logoCache: string | null | undefined = undefined;
+
+async function loadSernapescaLogo(): Promise<string | null> {
+  if (_logoCache !== undefined) return _logoCache;
+  try {
+    const resp = await fetch('/sernapesca-logo.png');
+    if (!resp.ok) { _logoCache = null; return null; }
+    const blob = await resp.blob();
+    _logoCache = await new Promise<string>((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result as string);
+      r.onerror = rej;
+      r.readAsDataURL(blob);
+    });
+    return _logoCache;
+  } catch {
+    _logoCache = null;
+    return null;
+  }
+}
+
 // ─── PDF — utilidades internas ────────────────────────────────────────────────
 
 const BLUE_DARK: [number, number, number] = [26, 58, 92];
@@ -204,15 +227,16 @@ function finalY(doc: jsPDF): number {
  */
 export async function generateCertificadoCIC_E1PDF(
   data: CertificadoCIC_E1Data,
-  sernapescaLogo: string | null = null,
+  sernapescaLogo?: string | null,
 ): Promise<Blob> {
+  const logo = sernapescaLogo !== undefined ? sernapescaLogo : await loadSernapescaLogo();
   const doc = new jsPDF({ format: 'a4', unit: 'mm' });
 
   let y = addHeader(
     doc,
     'CERTIFICADO DE SEGURIDAD DE ESTRUCTURAS DE CULTIVO',
     'EMITIDO POR CERTIFICADOR PERSONA NATURAL',
-    sernapescaLogo,
+    logo,
   );
 
   y += 2;
@@ -322,13 +346,14 @@ export async function generateCertificadoCIC_E1PDF(
  */
 export async function generateAnexoCIC_E1PDF(
   data: AnexoCIC_E1Data,
-  sernapescaLogo: string | null = null,
+  sernapescaLogo?: string | null,
 ): Promise<Blob> {
+  const logo = sernapescaLogo !== undefined ? sernapescaLogo : await loadSernapescaLogo();
   const doc = new jsPDF({ format: 'a4', unit: 'mm' });
 
   // ── Página 1 ─────────────────────────────────────────────────────────────
 
-  let y = addHeader(doc, 'ANEXO', 'CERTIFICACIÓN DE ESTRUCTURAS DE CULTIVO', sernapescaLogo);
+  let y = addHeader(doc, 'ANEXO', 'CERTIFICACIÓN DE ESTRUCTURAS DE CULTIVO', logo);
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
@@ -451,7 +476,7 @@ export async function generateAnexoCIC_E1PDF(
   // ── Página 2 ─────────────────────────────────────────────────────────────
 
   doc.addPage();
-  y = addHeader(doc, 'ANEXO', 'CERTIFICACIÓN DE ESTRUCTURAS DE CULTIVO', sernapescaLogo);
+  y = addHeader(doc, 'ANEXO', 'CERTIFICACIÓN DE ESTRUCTURAS DE CULTIVO', logo);
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');

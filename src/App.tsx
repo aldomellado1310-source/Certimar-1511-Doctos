@@ -7263,7 +7263,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 );
               })}
             </div>
-          )}
+            );
+          })()}
         </FormCard>
 
         {/* ── Modal confirmación descarga Inspector ── */}
