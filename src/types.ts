@@ -182,6 +182,59 @@ export interface ReportImage {
   croppedUrl?: string;  // data URL de recorte manual; si existe, se usa en PDF en lugar de url
 }
 
+// ─── CIC 1821 E1/E2 ───────────────────────────────────────────────────────────
+
+export interface EstudioAmbientalCic {
+  fechaInicio: string;
+  fechaTermino: string;
+  empresaEjecutora: string;
+  metodologiaEquipo: string;
+  cumple: boolean;
+  observaciones: string;
+}
+
+export interface Cic1821FormState {
+  tipoCertificacion: 'ANUAL' | 'CIC_E1' | 'CIC_E2';
+  nroCertificado: string;
+  fechaEmision: string;
+  fechaInicioSiembra: string;
+  fechaTerminoSiembra: string;
+  nroModulosCultivo: number;
+  identificacionModulo: string;
+  variablesAmbientales: {
+    corrientes: EstudioAmbientalCic;
+    vientos: EstudioAmbientalCic;
+    olas: EstudioAmbientalCic;
+    calidadFondo: EstudioAmbientalCic;
+    batimetria: EstudioAmbientalCic;
+    estudiosComplementarios: string;
+    revisionDesde: string;
+    revisionHasta: string;
+  };
+  memoriaCalculo: {
+    empresaEjecutora: string;
+    fechaEmision: string;
+    metodologiaAnalisis: string;
+    observaciones: string;
+    fechasRevision: string;
+    cumple: boolean;
+  };
+  coordenadasDiseno: Array<{
+    vertice: number;
+    utmEste: string;
+    utmNorte: string;
+    datum: string;
+  }>;
+  pruebasTraccion: {
+    fechaEjecucion: string;
+    empresaEjecutora: string;
+    metodologia: string;
+    cumple: boolean;
+  };
+  rvId: string;
+  nroRegistroVisita: string;
+}
+
 export interface AppState {
   general: GeneralData;
   extraction: ExtractionData;
@@ -189,6 +242,7 @@ export interface AppState {
   storage: StorageData;
   images: ReportImage[];
   registroId?: string;  // correlativo interno (REG-001…), nunca incluido en documentos
+  cic1821: Cic1821FormState;
 }
 
 export type EventoTipo =
@@ -251,6 +305,18 @@ export interface RegistroHistorico {
   titular: string;
   fechaInspeccion: string;
   documentosGenerados: string[];  // 'certificado' | 'informe' | 'acta'
+  // Vínculo con Registro de Visita (certimar-integrado)
+  registroVisitaId?: string;    // Firestore ID en registros_visita
+  nroRegistroVisita?: string;   // Número legible, ej. "RV-2026-0042"
+  origenRV?: boolean;           // true = auto-generado por onRvGuardado
+  resoluciones?: {
+    res1511?: boolean;
+    cicE1?: boolean;
+    cicE2?: boolean;
+    ca?: boolean;
+    vs?: boolean;
+    desinfeccion?: boolean;
+  };
   // Estado de gestión
   esBorrador?: boolean;
   aprobado?: boolean;
@@ -280,6 +346,8 @@ export interface RegistroHistorico {
     informe?: string;
     acta?: string;
     registro_visita?: string;
+    cic_e1_certificado?: string;
+    cic_e1_anexo?: string;
   };
   __updatedAt?: any;
   creadoEn?: any;
