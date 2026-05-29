@@ -1132,6 +1132,9 @@ const WelcomeScreen = ({
     const t1 = setTimeout(() => setSplashPhase('logo'),  1300);
     const t2 = setTimeout(() => setSplashPhase('out'),   3100);
     const t3 = setTimeout(() => setPhase('login'),       3600);
+    // Precarga firebase/auth para que el popup no sea bloqueado por el navegador
+    import('firebase/auth').catch(() => {});
+    import('./firebase').catch(() => {});
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
