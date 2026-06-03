@@ -146,7 +146,9 @@ export function buildActaHtml(state: AppState): string {
   const total_min  = den.equipos.horas_funcionamiento_dia * 60;
   const batchDur   = calcDen.duracion_total_batch_min;
   const numBatches = calcDen.numero_batches_dia;
-  const capKg      = numBatches * den.parametros_batch.kilos_por_batch;
+  const nOllasCalc = den.equipos.cantidad_ollas > 0 ? den.equipos.cantidad_ollas : 1;
+  const capKg      = numBatches * den.parametros_batch.kilos_por_batch * nOllasCalc;
+  const glosaOllas = nOllasCalc > 1 ? ` × ${nOllasCalc} ollas trituradoras en paralelo` : '';
 
   const inc       = den.incinerador;
   const incActivo = inc?.activo === true;
@@ -241,6 +243,18 @@ export function buildActaHtml(state: AppState): string {
   html = rep(html, '{linea_extraccion}', lineaExt);
 
   // ── F. Desnaturalización — ensilaje ───────────────────────────────────────
+  // "Cantidad de sistemas de ensilaje (N°)" y "Cantidad de trituradoras (olla moledora)"
+  // son celdas con valor hardcodeado "1" en el template → se sustituyen por el estado.
+  const nSistemas = (den.equipos.cantidad_sistemas ?? 1).toString();
+  const nOllas    = (den.equipos.cantidad_ollas ?? 1).toString();
+  html = rep(html,
+    '<p class="c140"><span class="c12 c10">1</span></p>',
+    `<p class="c140"><span class="c12 c10">${nSistemas}</span></p>`
+  );
+  html = rep(html,
+    '<p class="c164"><span class="c10">1</span></p>',
+    `<p class="c164"><span class="c10">${nOllas}</span></p>`
+  );
   // {modelo_prepicador} = "Identificar proveedor (modelo)" → modelo de la trituradora/sistema ensilaje
   html = rep(html, '{modelo_prepicador}', escHtml(den.equipos.marca_modelo || na));
   html = rep(html, '{cuenta_con_prepicador}', siNo(den.equipos.cuenta_con_prepicador));
@@ -269,7 +283,7 @@ export function buildActaHtml(state: AppState): string {
   );
   html = rep(html,
     'Capacidad diaria: 1.400 kg * 16,07 = 22.500 kg = 22,5 toneladas',
-    `Capacidad diaria: ${den.parametros_batch.kilos_por_batch.toLocaleString('es-CL')} kg × ${numBatches.toFixed(2)} = ${capKg.toFixed(0)} kg = ${calcDen.capacidad_diaria_ton.toFixed(2)} toneladas`
+    `Capacidad diaria: ${den.parametros_batch.kilos_por_batch.toLocaleString('es-CL')} kg × ${numBatches.toFixed(2)}${glosaOllas} = ${capKg.toFixed(0)} kg = ${calcDen.capacidad_diaria_ton.toFixed(2)} toneladas`
   );
 
   // ── F. Desnaturalización — incinerador (placeholders fragmentados) ─────────
@@ -310,6 +324,12 @@ export function buildActaHtml(state: AppState): string {
   // ── G. Almacenamiento (placeholders directos de un solo span) ─────────────
   html = rep(html, '{capacidad_almacenamiento*1.2}', calcSto.capacidad_almacenaje_ton.toFixed(2));
   html = rep(html, '{capacidad_almacenamiento}',     sto.parametros.capacidad_almacenaje_m3.toString());
+  // Observaciones de almacenamiento — texto hardcodeado en template (3 spans
+  // fragmentados por Google Docs) → se sustituye por el campo editable del estado.
+  html = rep(html,
+    '<p class="c92"><span class="c12 c10">SE REALIZA EL </span><span class="c10">C&Aacute;LCULO</span><span class="c12 c10">&nbsp;POR DENSIDAD POR DENSIDAD DE &Aacute;CIDO F&Oacute;RMICO 1.2 TN/M3</span></p>',
+    `<p class="c92"><span class="c12 c10">${escHtml(sto.parametros.observaciones?.trim() || na)}</span></p>`
+  );
 
   // ── H. Certificación — Observaciones ─────────────────────────────────────
   html = rep(html,

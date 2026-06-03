@@ -45,6 +45,7 @@ const BASE_EXTRACTION_PARAMS = {
 
 const BASE_EQUIPOS_ENSILAJE = {
   cantidad_sistemas: 1,
+  cantidad_ollas: 1,
   id_catalogo_trituradora: 'acuimaster-ac715',
   id_catalogo_incinerador: '',
   marca_modelo: 'ACUIMASTER AC-715 LT',
@@ -179,6 +180,29 @@ describe('calculateExtraction', () => {
     });
   });
 
+  describe('Ajuste de biomasa como factor de multiplicación', () => {
+    it('escala la capacidad proporcionalmente aun cuando el equipo es el límite (Scale AQ 8" Pequeño)', () => {
+      // Scale AQ 8" = 1700 kg/h, Pequeño (t_trabajo 10) → equipo limita a ~283 kg/ciclo (< biomasa 360).
+      // El ajuste debe multiplicar el resultado efectivo, no quedar absorbido por el min().
+      const params = {
+        ...BASE_EXTRACTION_PARAMS,
+        talla_pez: 'Pequeño (<1.5kg)' as const,
+        id_catalogo_equipo: 'scaleaq-8',
+        marca_equipo: 'Scale AQ 8"',
+        factor_ajuste_biomasa: 1.0,
+      };
+      const base  = calculateExtraction(params);
+      const doble = calculateExtraction({ ...params, factor_ajuste_biomasa: 2.0 });
+      expect(doble.capacidad_diaria_ton).toBeCloseTo(base.capacidad_diaria_ton * 2, 5);
+    });
+
+    it('reduce la capacidad a la mitad con factor 0.5', () => {
+      const base  = calculateExtraction(BASE_EXTRACTION_PARAMS);
+      const mitad = calculateExtraction({ ...BASE_EXTRACTION_PARAMS, factor_ajuste_biomasa: 0.5 });
+      expect(mitad.capacidad_diaria_ton).toBeCloseTo(base.capacidad_diaria_ton / 2, 5);
+    });
+  });
+
   describe('Variación por talla de pez', () => {
     it('pez Mediano produce mayor capacidad kg_bins que Grande (375 > 270 kg)', () => {
       const grande = calculateExtraction({ ...BASE_EXTRACTION_PARAMS, talla_pez: 'Grande (>=4.5kg)' });
@@ -302,6 +326,52 @@ describe('calculateDenaturation (Ensilaje)', () => {
         BASE_INCINERACION_PARAMS
       );
       expect(con.capacidad_diaria_ton).toBeGreaterThan(sin.capacidad_diaria_ton);
+    });
+  });
+
+  describe('Factor de multiplicación por cantidad de ollas trituradoras', () => {
+    it('duplica la capacidad diaria con 2 ollas (procesamiento en paralelo)', () => {
+      const una = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cantidad_ollas: 1 },
+        BASE_BATCH_PARAMS,
+        BASE_INCINERACION_PARAMS
+      );
+      const dos = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cantidad_ollas: 2 },
+        BASE_BATCH_PARAMS,
+        BASE_INCINERACION_PARAMS
+      );
+      expect(dos.capacidad_diaria_ton).toBeCloseTo(una.capacidad_diaria_ton * 2, 5);
+      // La duración del batch y los batches/día por olla NO cambian
+      expect(dos.duracion_total_batch_min).toBe(una.duracion_total_batch_min);
+      expect(dos.numero_batches_dia).toBe(una.numero_batches_dia);
+    });
+
+    it('trata cantidad_ollas ausente o ≤ 0 como 1 (sin penalizar capacidad)', () => {
+      const base = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cantidad_ollas: 1 },
+        BASE_BATCH_PARAMS,
+        BASE_INCINERACION_PARAMS
+      );
+      const cero = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cantidad_ollas: 0 },
+        BASE_BATCH_PARAMS,
+        BASE_INCINERACION_PARAMS
+      );
+      expect(cero.capacidad_diaria_ton).toBeCloseTo(base.capacidad_diaria_ton, 5);
+    });
+
+    it('un centro que NO cumple con 1 olla puede cumplir con varias ollas', () => {
+      // 700 kg/batch, 25 min, 9h → ~15.12 TN/día con 1 olla. Con kg/batch menor cae bajo el umbral.
+      const params = { ...BASE_BATCH_PARAMS, kilos_por_batch: 400 };
+      const una = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cantidad_ollas: 1 }, params, BASE_INCINERACION_PARAMS
+      );
+      const tres = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cantidad_ollas: 3 }, params, BASE_INCINERACION_PARAMS
+      );
+      expect(una.cumple_norma).toBe(false);
+      expect(tres.cumple_norma).toBe(true);
     });
   });
 

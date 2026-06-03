@@ -68,7 +68,7 @@ export function calculateExtraction(
   // Propuesta C — Opción B: capacidad nominal del equipo como límite superior de kg_bins.
   // El equipo puede procesar como máximo capacidad_kg_h × (t_trabajo / 60) kg por ciclo.
   // Si no hay equipo seleccionado, se usa el límite regulatorio sin restricción de equipo.
-  let kg_bins = biomasa_max_kg * parametros.factor_ajuste_biomasa;
+  let kg_bins = biomasa_max_kg;
   if (parametros.id_catalogo_equipo) {
     const equipo = CATALOGO_EXTRACCION.sistemas.find(s => s.id === parametros.id_catalogo_equipo);
     if (equipo) {
@@ -76,6 +76,11 @@ export function calculateExtraction(
       kg_bins = Math.min(kg_bins, capacidad_equipo_kg_ciclo);
     }
   }
+
+  // Ajuste de biomasa: factor de multiplicación sobre el kg efectivo por ciclo.
+  // Se aplica DESPUÉS del límite del equipo para que siempre escale el resultado
+  // (antes multiplicaba la biomasa regulatoria y quedaba absorbido por el min()).
+  kg_bins = kg_bins * parametros.factor_ajuste_biomasa;
 
   // Res. Exenta N°1511/2021 — Umbral mínimo Extracción: 15 TN/día
   // motocompresores_por_jaula multiplica las líneas de extracción paralelas por jaula
@@ -163,8 +168,13 @@ export function calculateDenaturation(
     };
   }
 
+  // Factor de multiplicación por ollas/trituradoras en paralelo.
+  // Cada olla procesa su propia secuencia de batches → la capacidad escala linealmente.
+  // Ausente o ≤ 0 se trata como 1 (sin penalizar capacidad, retrocompatible).
+  const n_ollas = equipos.cantidad_ollas > 0 ? equipos.cantidad_ollas : 1;
+
   const num_batches = total_work_min / batch_duration;
-  const capacity_kg = num_batches * parametros_batch.kilos_por_batch;
+  const capacity_kg = num_batches * parametros_batch.kilos_por_batch * n_ollas;
   const capacity_ton = capacity_kg / 1000;
 
   // Secondary incinerador capacity (only for Ensilaje primary route)
@@ -181,6 +191,10 @@ export function calculateDenaturation(
       `${batch_duration.toFixed(1)} min. `
     : '';
 
+  const glosa_ollas = n_ollas > 1
+    ? ` × ${n_ollas} ollas trituradoras en paralelo`
+    : '';
+
   const observacion =
     `La eficiencia del sistema depende directamente del tiempo total de cada ciclo (batch + pausa). ` +
     `Los tiempos de pausas y de procesamiento permite determinar la cantidad de batches por día, ` +
@@ -192,7 +206,7 @@ export function calculateDenaturation(
     `Número de batches por día: ${total_work_min} ÷ ${batch_duration.toFixed(1)} = ` +
     `${num_batches.toFixed(2)} batches ` +
     `Capacidad diaria: ${parametros_batch.kilos_por_batch.toLocaleString('es-CL')} kg × ` +
-    `${num_batches.toFixed(2)} = ${capacity_kg.toFixed(0)} kg = ${capacity_ton.toFixed(2)} toneladas` +
+    `${num_batches.toFixed(2)}${glosa_ollas} = ${capacity_kg.toFixed(0)} kg = ${capacity_ton.toFixed(2)} toneladas` +
     (incinerador?.activo
       ? ` + Incinerador secundario: ${capacidad_incinerador_ton.toFixed(2)} TN/día. Total combinado: ${combined_ton.toFixed(2)} TN/día.`
       : '');

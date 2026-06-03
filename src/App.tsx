@@ -58,8 +58,11 @@ import {
   LayoutGrid,
   MousePointer2,
   RefreshCw,
+  Menu,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 // ── WelcomeScreen constants (outside component to avoid re-renders) ──
 const SCHOOL_FISH = Array.from({ length: 22 }, (_, i) => {
   const angle = (i / 22) * Math.PI * 2 + (i % 3) * 0.25;
@@ -225,6 +228,7 @@ const DEFAULT_STATE: AppState = {
   denaturation: {
     equipos: {
       cantidad_sistemas: 1,
+      cantidad_ollas: 1,
       id_catalogo_trituradora: "",
       id_catalogo_incinerador: "",
       marca_modelo: "",
@@ -357,8 +361,31 @@ const RAY_DATA = [
   { left: 90, skew: 10,  h: 40, dur: 7,  delay: 6 },
 ];
 
-const MarineBackground = () => (
-  <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden opacity-55 dark:opacity-40 transition-colors duration-700">
+const MarineBackground = () => {
+  const reduceMotion = useReducedMotion();
+
+  // Pausar la animación cuando la pestaña no está visible (ahorra batería/CPU en terreno).
+  const [docVisible, setDocVisible] = React.useState(
+    typeof document === 'undefined' || document.visibilityState !== 'hidden'
+  );
+  React.useEffect(() => {
+    const onVis = () => setDocVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  // Movimiento reducido o pestaña oculta: solo el gradiente estático, sin criaturas animadas.
+  if (reduceMotion || !docVisible) {
+    return (
+      <div aria-hidden="true" className="fixed inset-0 pointer-events-none z-0 overflow-hidden opacity-55 dark:opacity-40 transition-colors duration-700">
+        <div className="absolute inset-0 bg-gradient-to-b from-sky-50/40 via-indigo-50/20 via-60% to-cyan-100/40 dark:from-slate-950 dark:via-indigo-950/60 dark:to-slate-900" />
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-50/10 via-transparent to-teal-50/10 dark:from-blue-950/20 dark:to-teal-950/20" />
+      </div>
+    );
+  }
+
+  return (
+  <div aria-hidden="true" className="fixed inset-0 pointer-events-none z-0 overflow-hidden opacity-55 dark:opacity-40 transition-colors duration-700">
 
     {/* === FONDO: gradiente profundidad oceánica === */}
     <div className="absolute inset-0 bg-gradient-to-b from-sky-50/40 via-indigo-50/20 via-60% to-cyan-100/40 dark:from-slate-950 dark:via-indigo-950/60 dark:to-slate-900" />
@@ -577,7 +604,8 @@ const MarineBackground = () => (
     </div>
 
   </div>
-);
+  );
+};
 
 const Logo = ({ collapsed, tema }: { collapsed?: boolean; tema?: { logo: 'certimar' | 'engelbert'; palette: 'certimar' | 'engelbert' } }) => {
   const src = tema?.logo === 'engelbert' ? '/engelbert-logo.png' : '/certimar-logo.png';
@@ -628,13 +656,15 @@ const DateField = ({
     return dmy;
   };
   const [raw, setRaw] = React.useState(toDisplay(value));
+  const fieldId = React.useId();
 
   React.useEffect(() => { setRaw(toDisplay(value)); }, [value]);
 
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
+      <label htmlFor={fieldId} className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">{label}</label>
       <input
+        id={fieldId}
         ref={inputRef}
         type="text"
         value={raw}
@@ -649,7 +679,7 @@ const DateField = ({
           if (!/^\d{2}-\d{2}-\d{4}$/.test(raw)) setRaw(toDisplay(value));
         }}
         className={cn(
-          "w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium",
+          "w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium",
           highlight && "ring-2 ring-indigo-500 ring-offset-2 border-indigo-500 bg-white dark:bg-slate-900"
         )}
       />
@@ -696,11 +726,14 @@ const InputField = ({
     onBlur?.();
   };
 
+  const fieldId = React.useId();
+
   return (
   <div className="space-y-1.5">
-    <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
+    <label htmlFor={fieldId} className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">{label}</label>
     <div className="relative">
       <input
+        id={fieldId}
         ref={inputRef}
         type={isNumeric ? 'text' : type}
         inputMode={isNumeric ? 'decimal' : undefined}
@@ -709,7 +742,7 @@ const InputField = ({
         placeholder={placeholder}
         onBlur={isNumeric ? handleNumericBlur : onBlur}
         className={cn(
-          "w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium",
+          "w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium",
           highlight && "ring-2 ring-indigo-500 ring-offset-2 border-indigo-500 bg-white dark:bg-slate-900"
         )}
       />
@@ -756,14 +789,15 @@ const LeyendaCombo = ({
 
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Descripción</label>
+      <label htmlFor={listId + '-input'} className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Descripción</label>
       <input
+        id={listId + '-input'}
         list={listId}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={handleBlur}
         placeholder="Seleccione o escriba una descripción..."
-        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
+        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
       />
       <datalist id={listId}>
         {allOpciones.map((op, i) => <option key={i} value={op} />)}
@@ -891,7 +925,7 @@ const ImageAnnotator: React.FC<{
     );
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/85 flex flex-col items-center justify-center p-4 gap-3">
+    <div className="fixed inset-0 z-[var(--z-overlay)] bg-black/85 flex flex-col items-center justify-center p-4 gap-3">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 rounded-xl px-4 py-2.5 shadow-xl max-w-4xl w-full">
         <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Marcar:</span>
@@ -958,6 +992,7 @@ const CenterCodeAutocomplete = ({
 }) => {
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
+  const concesionFieldId = React.useId();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Sync from external changes only (e.g. reset or auto-fill from center selection).
@@ -996,9 +1031,10 @@ const CenterCodeAutocomplete = ({
 
   return (
     <div className="space-y-1.5" ref={containerRef}>
-      <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
+      <label htmlFor={concesionFieldId} className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">{label}</label>
       <div className="relative">
         <input
+          id={concesionFieldId}
           ref={inputRef}
           type="text"
           value={query}
@@ -1012,7 +1048,7 @@ const CenterCodeAutocomplete = ({
           onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
           placeholder="Ej. 102345"
           className={cn(
-            "w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium",
+            "w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium",
             highlight && "ring-2 ring-indigo-500 ring-offset-2 border-indigo-500 bg-white dark:bg-slate-900"
           )}
         />
@@ -1671,7 +1707,7 @@ const CropModal: React.FC<{
   const TutIcon = tut ? tut.icon : null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col gap-4 p-5 w-full max-w-2xl relative">
 
         {/* Tutorial overlay (shown on first use) */}
@@ -1893,7 +1929,7 @@ const AerialPreview: React.FC<{
       </div>
       <div className="p-3 flex flex-col gap-1.5">
         <Slot img={top} label="Arriba (ancho completo)" />
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
           <Slot img={left} label="Centro izquierda" />
           <Slot img={right} label="Centro derecha" />
         </div>
@@ -2775,6 +2811,7 @@ export default function App() {
       denaturation: {
         equipos: {
           cantidad_sistemas: 1,
+          cantidad_ollas: 1,
           id_catalogo_trituradora: 'acuimaster-ac715',
           id_catalogo_incinerador: '',
           marca_modelo: 'ACUIMASTER AC-715 LT',
@@ -2857,7 +2894,7 @@ export default function App() {
   const [loginAquaPhase, setLoginAquaPhase] = useState<'idle' | 'in' | 'hold' | 'out'>('idle');
   const [wasLoggedOut, setWasLoggedOut] = useState(false);
 
-  const CHANGELOG_VERSION = '2026-04-21-v9';
+  const CHANGELOG_VERSION = '2026-06-03-v13';
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelogStep, setChangelogStep] = useState(0);
   const [pendingGenerate, setPendingGenerate] = useState<'certificado' | 'informe' | null>(null);
@@ -2870,6 +2907,8 @@ export default function App() {
   }, [pendingGenerate]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!savedSession) return;
+    // Opt-out permanente: si el usuario eligió "No volver a mostrar", no se muestra nunca más.
+    if (localStorage.getItem('certimar-changelog-never') === 'true') return;
     const seen = localStorage.getItem('certimar-changelog-seen');
     if (seen !== CHANGELOG_VERSION) { setShowChangelog(true); setChangelogStep(0); }
   }, []);
@@ -2877,16 +2916,16 @@ export default function App() {
   const isEditor = userRole === 'editor';
   const sessionEmail = (savedSession as any)?.email ?? '';
   const canExportCSV = ['operaciones@certimar.cl', 'eflores@certimar.cl'].includes(sessionEmail);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() =>
-    typeof window !== 'undefined' && window.innerWidth < 768
-  );
+  // Colapsado del sidebar: preferencia solo de escritorio (en móvil se usa el drawer)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
-  // Auto-colapsar sidebar en móvil
+  // Drawer del sidebar en móvil (off-canvas)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  useEffect(() => { setMobileSidebarOpen(false); }, [activeTab]);
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)');
-    const handler = (e: MediaQueryListEvent) => setIsSidebarCollapsed(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileSidebarOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
   const [tema, setTema] = useState<{ logo: 'certimar' | 'engelbert'; palette: 'certimar' | 'engelbert' }>(() => {
     try {
@@ -3374,6 +3413,32 @@ export default function App() {
   const hasImages = state.images.length > 0;
   const [generating, setGenerating] = useState<'certificado'|'informe'|'acta'|null>(null);
 
+  // ── Checklist flotante: minimizar y arrastrar para no tapar el formulario ──
+  const [checklistMin, setChecklistMin] = useState(() => localStorage.getItem('certimar-checklist-min') === 'true');
+  const [checklistPos, setChecklistPos] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem('certimar-checklist-pos');
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (typeof p?.x === 'number' && typeof p?.y === 'number') {
+        // Clampar dentro de la ventana actual por si cambió de tamaño
+        const x = Math.min(Math.max(8, p.x), Math.max(8, window.innerWidth - 288 - 8));
+        const y = Math.min(Math.max(8, p.y), Math.max(8, window.innerHeight - 48));
+        return { x, y };
+      }
+    } catch { /* noop */ }
+    return null;
+  });
+  const checklistDragRef = useRef<{ dx: number; dy: number } | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('certimar-checklist-min', String(checklistMin));
+  }, [checklistMin]);
+  useEffect(() => {
+    if (checklistPos) localStorage.setItem('certimar-checklist-pos', JSON.stringify(checklistPos));
+    else localStorage.removeItem('certimar-checklist-pos');
+  }, [checklistPos]);
+
   // Chequeo previo: verifica concordancia de capacidades entre los 3 documentos
   const checkCapacidades = (): string[] => {
     const issues: string[] = [];
@@ -3656,9 +3721,10 @@ Se despide atentamente`;
   };
 
   const updateGeneral = (field: string, value: any) => {
-    const resetRevision = field !== 'revisionConfirmada' ? { revisionConfirmada: false } : {};
+    // La confirmación de revisión se pide una sola vez al completar los datos.
+    // Editar campos después de confirmar NO debe reabrir el popup (interferiría al escribir).
     if (!field.includes('.')) {
-      setState(prev => ({ ...prev, general: { ...prev.general, [field]: value, ...resetRevision } }));
+      setState(prev => ({ ...prev, general: { ...prev.general, [field]: value } }));
       return;
     }
     const [section, key] = field.split('.');
@@ -3669,8 +3735,7 @@ Se despide atentamente`;
         [section]: {
           ...(prev.general as any)[section],
           [key]: value
-        },
-        ...resetRevision
+        }
       }
     }));
   };
@@ -4996,7 +5061,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         body: [
           [{ content: 'Equipo de Desnaturalización y capacidades', colSpan: 2, styles: { fillColor: AZUL_MARINO, textColor: [255,255,255] as [number,number,number], fontStyle: 'bold' as const } }],
           ...(den.incinerador.activo ? [['Número de plataformas de desnaturalización.', '2 (Ensilaje + Incinerador)']] : []),
-          ['Número ollas trituradoras.', String(den.equipos.cantidad_sistemas)],
+          ['Número ollas trituradoras.', String(den.equipos.cantidad_ollas ?? 1)],
           ['Capacidad de procesamiento Nominal (kg/h).', `${den.equipos.velocidad_nominal_kg_hr} Kg/h`],
           ['Horas de funcionamiento al día.', `${den.equipos.horas_funcionamiento_dia} hrs.`],
           ['Marca.', den.equipos.marca_modelo],
@@ -5798,7 +5863,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Sesiones', value: kpis.sesiones, icon: Activity, color: 'indigo', desc: 'Accesos al sistema' },
             { label: 'Documentos generados', value: kpis.docsTotal, icon: FileText, color: 'emerald', desc: 'Cert. + Informes + Actas' },
@@ -6215,7 +6280,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 </div>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <CenterCodeAutocomplete
                 inputRef={centerCodeRef}
                 highlight={state.general.centro_cultivo.codigo_centro === ""}
@@ -6238,7 +6303,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 value={state.general.centro_cultivo.titular}
                 onChange={(e) => updateGeneral('centro_cultivo.titular', e.target.value)}
                 placeholder="Ej. EXPORTADORA LOS FIORDOS LTDA."
-                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
+                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
               />
               <datalist id="titulares-list">
                 {TITULARES_CONOCIDOS.map(t => <option key={t} value={t} />)}
@@ -6266,7 +6331,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 value={state.general.centro_cultivo.formato_modulo}
                 onChange={(e) => updateGeneral('centro_cultivo.formato_modulo', e.target.value)}
                 placeholder="24 jaulas, tipo Metálicas"
-                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
+                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
               />
               <datalist id="formato-modulo-list">
                 {FORMATOS_MODULO_CONOCIDOS.map(f => <option key={f} value={f} />)}
@@ -6281,7 +6346,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 value={state.general.centro_cultivo.tamano_jaulas}
                 onChange={(e) => updateGeneral('centro_cultivo.tamano_jaulas', e.target.value)}
                 placeholder="30 x 30 metros"
-                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
+                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
               />
               <datalist id="tamano-jaulas-list">
                 {TAMANOS_JAULAS_CONOCIDOS.map(t => <option key={t} value={t} />)}
@@ -6296,7 +6361,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 value={state.general.centro_cultivo.nombre_an_ensilaje}
                 onChange={(e) => updateGeneral('centro_cultivo.nombre_an_ensilaje', e.target.value)}
                 placeholder="A/N Pontón Alimentador"
-                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
+                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
               />
               <datalist id="an-ensilaje-list">
                 {NOMBRES_AN_CONOCIDOS.map(n => <option key={n} value={n} />)}
@@ -6354,7 +6419,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               onChange={(e) => updateGeneral('observaciones_acta', e.target.value)}
               rows={4}
               placeholder="Observaciones para la sección H del acta (dejar vacío para N/A)"
-              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium resize-none"
+              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium resize-none"
             />
           </div>
         </FormCard>
@@ -6622,7 +6687,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         {/* Tema / Marca */}
         <div className="space-y-3">
           <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 px-1">Tema / Marca</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {([
               { logoKey: 'certimar' as const, paletteKey: 'certimar' as const, label: 'Certimar', logo: '/certimar-logo.png', accent: 'indigo', desc: 'Azul marino — paleta oficial Certimar' },
               { logoKey: 'engelbert' as const, paletteKey: 'engelbert' as const, label: 'Engelbert', logo: '/engelbert-logo.png', accent: 'orange', desc: 'Naranja y negro — Engelbert Aquastructures' },
@@ -6851,7 +6916,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     <p className="text-[10px] font-bold text-violet-500 uppercase tracking-widest flex items-center gap-1">
                       <Star size={10} /> Portada del informe
                     </p>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {portadaEntries.map(([name, url]) => <LogoCard key={name} name={name} url={url} />)}
                     </div>
                   </div>
@@ -6863,7 +6928,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     {portadaEntries.length > 0 && (
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Todas las empresas</p>
                     )}
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {restEntries.map(([name, url]) => <LogoCard key={name} name={name} url={url} />)}
                     </div>
                   </div>
@@ -6983,7 +7048,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           )}
         </div>
 
-        {/* ── Registros desde Firestore ── */}
+        {/* ── Filtro de borradores ── */}
         {!historicoLoading && historicoEntries.length > 0 && (
           <div className="flex items-center gap-1.5 mb-3">
             {([
@@ -7006,6 +7071,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             ))}
           </div>
         )}
+
+        {/* ── Registros desde Firestore ── */}
         <FormCard className="p-0 overflow-hidden">
           {historicoLoading && (
             <div className="flex items-center gap-3 px-6 py-5 text-sm text-slate-500 dark:text-slate-400">
@@ -7284,7 +7351,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         </div>
                       ))}
                     </div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-600 dark:text-slate-400">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-600 dark:text-slate-400">
                       <p><span className="font-semibold">Sist. extracción:</span> {m.sistemaExtraccion}</p>
                       <p><span className="font-semibold">Sist. desnat.:</span> {m.sistemaDesnaturalizacion}</p>
                       <p><span className="font-semibold">N° jaulas:</span> {m.numJaulas} (simul.: {m.jaulas_simultaneas})</p>
@@ -7382,7 +7449,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="space-y-6">
               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sistemas de Apoyo</h4>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <CheckboxField label="Buceo" checked={state.extraction.sistemas_apoyo.buceo} onChange={(v) => updateExtraction('sistemas_apoyo.buceo', v)} />
                 <CheckboxField label="ROV" checked={state.extraction.sistemas_apoyo.rov} onChange={(v) => updateExtraction('sistemas_apoyo.rov', v)} />
                 <CheckboxField label="Yoma" checked={state.extraction.sistemas_apoyo.succion_yoma} onChange={(v) => updateExtraction('sistemas_apoyo.succion_yoma', v)} />
@@ -7390,11 +7457,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               </div>
               
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sistema Principal</label>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Sistema Principal</label>
                 <select
-                  value={state.extraction.parametros.sistema_principal}
+                  aria-label="Sistema Principal" value={state.extraction.parametros.sistema_principal}
                   onChange={(e) => updateExtraction('parametros.sistema_principal', e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
                 >
                   <option value="LIFT-UP">LIFT-UP</option>
                   <option value="Mortex HW">Mortex HW</option>
@@ -7404,11 +7471,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Talla de Pez</label>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Talla de Pez</label>
                 <select
-                  value={state.extraction.parametros.talla_pez}
+                  aria-label="Talla de Pez" value={state.extraction.parametros.talla_pez}
                   onChange={(e) => updateExtraction('parametros.talla_pez', e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
                 >
                   <option value="Pequeño (<1.5kg)">Pequeño (&lt;1.5kg)</option>
                   <option value="Mediano (1.5-4.5kg)">Mediano (1.5-4.5kg)</option>
@@ -7417,11 +7484,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Línea de Extracción (Catálogo)</label>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Línea de Extracción (Catálogo)</label>
                 <select
-                  value={state.extraction.parametros.id_catalogo_equipo}
+                  aria-label="Línea de Extracción (Catálogo)" value={state.extraction.parametros.id_catalogo_equipo}
                   onChange={(e) => handleSelectExtractionSystem(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                  className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
                 >
                   <option value="">Seleccionar equipo...</option>
                   {CATALOGO_EXTRACCION.sistemas.map(s => (
@@ -7433,11 +7500,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <InputField label="Marca Equipo" value={state.extraction.parametros.marca_equipo} onChange={(v) => updateExtraction('parametros.marca_equipo', v)} />
               {!state.general.modo_operacion_minima && (<>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Equipo de Aire (Catálogo)</label>
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Equipo de Aire (Catálogo)</label>
                   <select
-                    value={state.extraction.parametros.id_catalogo_compresor}
+                    aria-label="Equipo de Aire (Catálogo)" value={state.extraction.parametros.id_catalogo_compresor}
                     onChange={(e) => handleSelectCompressor(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                    className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
                   >
                     <option value="">Seleccionar compresor...</option>
                     {CATALOGO_EXTRACCION.compresores.map(c => (
@@ -7445,7 +7512,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     ))}
                   </select>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <InputField label="Tipo Compresor" value={state.extraction.parametros.tipo_compresor} onChange={(v) => updateExtraction('parametros.tipo_compresor', v)} />
                   <InputField label="Potencia (CFM)" type="number" value={state.extraction.parametros.potencia_cfm} onChange={(v) => updateExtraction('parametros.potencia_cfm', v)} suffix="CFM" />
                 </div>
@@ -7466,12 +7533,12 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   <InputField label="Jaulas Simult." type="number" value={state.extraction.parametros.jaulas_simultaneas} onChange={(v) => updateExtraction('parametros.jaulas_simultaneas', v)} />
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <InputField label="Personal Op." type="number" value={state.extraction.parametros.personal_operativo} onChange={(v) => updateExtraction('parametros.personal_operativo', v)} />
                 <InputField label="Profundidad" type="number" value={state.extraction.parametros.profundidad_operacion_m} onChange={(v) => updateExtraction('parametros.profundidad_operacion_m', v)} suffix="m" />
               </div>
               <InputField label="Horas Trabajo" type="number" value={state.extraction.parametros.horas_efectivas_trabajo} onChange={(v) => updateExtraction('parametros.horas_efectivas_trabajo', v)} suffix="Hrs" min={0.5} max={24} />
-              <InputField label="Ajuste Biomasa" type="number" value={state.extraction.parametros.factor_ajuste_biomasa} onChange={(v) => updateExtraction('parametros.factor_ajuste_biomasa', v)} min={0.1} max={2.0} />
+              <InputField label="Ajuste Biomasa" type="number" value={state.extraction.parametros.factor_ajuste_biomasa} onChange={(v) => updateExtraction('parametros.factor_ajuste_biomasa', v)} min={0.01} suffix="× factor" />
               <InputField label="Disponibilidad fd₀" type="number" value={state.extraction.parametros.disponibilidad_base_fd} onChange={(v) => updateExtraction('parametros.disponibilidad_base_fd', v)} min={0.1} max={1.0} />
               {!state.general.modo_operacion_minima && (
                 <InputField label="Motocompresores/Jaula" type="number" value={state.extraction.parametros.motocompresores_por_jaula} onChange={(v) => updateExtraction('parametros.motocompresores_por_jaula', v)} />
@@ -7479,7 +7546,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               {state.extraction.sistemas_apoyo.buceo && (
                 <div className="space-y-3">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Equipo de Buceo</h4>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <InputField label="N° Teams" type="number" value={state.extraction.parametros.n_teams_buceo} onChange={(v) => updateExtraction('parametros.n_teams_buceo', v)} />
                     <InputField label="N° Buzos/Team" type="number" value={state.extraction.parametros.n_buzos_por_team} onChange={(v) => updateExtraction('parametros.n_buzos_por_team', v)} />
                   </div>
@@ -7503,7 +7570,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   value={state.extraction.parametros.observacion_sistema}
                   onChange={(e) => updateExtraction('parametros.observacion_sistema', e.target.value)}
                   rows={3}
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium resize-none"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium resize-none"
                 />
               </div>
             </div>
@@ -7554,9 +7621,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Tipo</label>
                 <select
-                  value={equipo.tipo}
+                  aria-label="Tipo" value={equipo.tipo}
                   onChange={(e) => handleUpdateExtractionEquipo(idx, 'tipo', e.target.value)}
-                  className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                  className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
                 >
                   <option value="Principal">Principal</option>
                   <option value="Apoyo">Apoyo</option>
@@ -7566,9 +7633,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Línea (Catálogo)</label>
                 <select
-                  value={equipo.id_catalogo}
+                  aria-label="Línea (Catálogo)" value={equipo.id_catalogo}
                   onChange={(e) => handleSelectExtractionEquipoItem(idx, e.target.value)}
-                  className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                  className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
                 >
                   <option value="">Seleccionar...</option>
                   {CATALOGO_EXTRACCION.sistemas.map(s => (
@@ -7659,11 +7726,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <FormCard title="Equipos y Trituración">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Olla Trituradora (Catálogo)</label>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Olla Trituradora (Catálogo)</label>
                 <select 
-                  value={state.denaturation.equipos.id_catalogo_trituradora}
+                  aria-label="Olla Trituradora (Catálogo)" value={state.denaturation.equipos.id_catalogo_trituradora}
                   onChange={(e) => handleSelectTrituradora(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                  className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
                 >
                       <option value="">Seleccionar trituradora...</option>
                       {CATALOGO_DESNATURALIZACION.trituradoras.map(t => (
@@ -7686,10 +7753,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Estado Olla Trituradora</label>
                     <select
-                      value={state.denaturation.equipos.estado_olla}
+                      aria-label="Estado Olla Trituradora" value={state.denaturation.equipos.estado_olla}
                       onChange={(e) => updateDenaturation('equipos.estado_olla', e.target.value)}
                       className={cn(
-                        "w-full px-4 py-2.5 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-medium text-sm dark:[color-scheme:dark]",
+                        "w-full px-4 py-2.5 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 font-medium text-sm dark:[color-scheme:dark]",
                         state.denaturation.equipos.estado_olla === 'Bueno'
                           ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300"
                           : state.denaturation.equipos.estado_olla === 'Regular'
@@ -7704,6 +7771,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   </div>
                   <InputField label="Velocidad Nominal" type="number" value={state.denaturation.equipos.velocidad_nominal_kg_hr} onChange={(v) => updateDenaturation('equipos.velocidad_nominal_kg_hr', v)} suffix="Kg/Hr" />
                   <InputField label="Horas Operación" type="number" value={state.denaturation.equipos.horas_funcionamiento_dia} onChange={(v) => updateDenaturation('equipos.horas_funcionamiento_dia', v)} suffix="Hrs/Día" />
+                  <InputField label="Cantidad Sistemas de Ensilaje" type="number" value={state.denaturation.equipos.cantidad_sistemas ?? 1} onChange={(v) => updateDenaturation('equipos.cantidad_sistemas', v)} suffix="N°" min={1} />
+                  <InputField label="Cantidad Ollas Trituradoras" type="number" value={state.denaturation.equipos.cantidad_ollas ?? 1} onChange={(v) => updateDenaturation('equipos.cantidad_ollas', v)} suffix="N° (×capacidad)" min={1} />
                   <div className="md:col-span-2 space-y-4 py-2">
                     <div className="flex items-center gap-8">
                       <CheckboxField label="Prepicador" checked={state.denaturation.equipos.cuenta_con_prepicador} onChange={(v) => updateDenaturation('equipos.cuenta_con_prepicador', v)} />
@@ -7769,8 +7838,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     if (!tri?.configuraciones_batch?.length) return null;
                     return (
                       <div className="md:col-span-3 space-y-1.5">
-                        <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Configuración de Batch (Catálogo)</label>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Configuración de Batch (Catálogo)</label>
                         <select
+                          aria-label="Configuración de Batch (Catálogo)"
                           defaultValue=""
                           key={tri.id}
                           onChange={(e) => {
@@ -7781,7 +7851,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                               updateDenaturation('parametros_batch.tiempo_pausa_min', cfg.t_pausa);
                             }
                           }}
-                          className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                          className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
                         >
                           <option value="">Seleccionar configuración registrada...</option>
                           {tri.configuraciones_batch.map(c => (
@@ -7807,9 +7877,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   {state.denaturation.incinerador.activo && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
                       <div className="space-y-1.5 md:col-span-2">
-                        <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Incinerador (Catálogo)</label>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Incinerador (Catálogo)</label>
                         <select
-                          value={state.denaturation.incinerador.id_catalogo}
+                          aria-label="Incinerador (Catálogo)" value={state.denaturation.incinerador.id_catalogo}
                           onChange={(e) => handleSelectIncineradorSecundario(e.target.value)}
                           className="w-full px-4 py-2.5 bg-orange-50 dark:bg-orange-500/10 border border-orange-100 dark:border-orange-500/20 rounded-xl outline-none focus:ring-2 focus:ring-orange-500/20 text-slate-900 dark:text-slate-100 font-medium"
                         >
@@ -7850,26 +7920,26 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         );
                       })()}
                       <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sistema de Carga</label>
-                        <select value={state.denaturation.incinerador.sistema_carga} onChange={(e) => updateDenaturation('incinerador.sistema_carga', e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none">
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Sistema de Carga</label>
+                        <select aria-label="Sistema de Carga" value={state.denaturation.incinerador.sistema_carga} onChange={(e) => updateDenaturation('incinerador.sistema_carga', e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500">
                           {OPCIONES_INCINERADOR.sistema_carga.map(o => <option key={o}>{o}</option>)}
                         </select>
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sistema de Descarga</label>
-                        <select value={state.denaturation.incinerador.sistema_descarga} onChange={(e) => updateDenaturation('incinerador.sistema_descarga', e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none">
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Sistema de Descarga</label>
+                        <select aria-label="Sistema de Descarga" value={state.denaturation.incinerador.sistema_descarga} onChange={(e) => updateDenaturation('incinerador.sistema_descarga', e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500">
                           {OPCIONES_INCINERADOR.sistema_descarga.map(o => <option key={o}>{o}</option>)}
                         </select>
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Disposición Final</label>
-                        <select value={state.denaturation.incinerador.disposicion_final} onChange={(e) => updateDenaturation('incinerador.disposicion_final', e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none">
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Disposición Final</label>
+                        <select aria-label="Disposición Final" value={state.denaturation.incinerador.disposicion_final} onChange={(e) => updateDenaturation('incinerador.disposicion_final', e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500">
                           {OPCIONES_INCINERADOR.disposicion_final.map(o => <option key={o}>{o}</option>)}
                         </select>
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Almacenamiento Gas</label>
-                        <select value={state.denaturation.incinerador.almacenamiento_gas} onChange={(e) => updateDenaturation('incinerador.almacenamiento_gas', e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none">
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Almacenamiento Gas</label>
+                        <select aria-label="Almacenamiento Gas" value={state.denaturation.incinerador.almacenamiento_gas} onChange={(e) => updateDenaturation('incinerador.almacenamiento_gas', e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500">
                           {OPCIONES_INCINERADOR.almacenamiento_gas.map(o => <option key={o}>{o}</option>)}
                         </select>
                       </div>
@@ -7904,11 +7974,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             <FormCard title="Sistema de Incineración">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Incinerador (Catálogo)</label>
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Incinerador (Catálogo)</label>
                 <select 
-                  value={state.denaturation.equipos.id_catalogo_incinerador}
+                  aria-label="Incinerador (Catálogo)" value={state.denaturation.equipos.id_catalogo_incinerador}
                   onChange={(e) => handleSelectIncinerador(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                  className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
                 >
                     <option value="">Seleccionar incinerador...</option>
                     {CATALOGO_DESNATURALIZACION.incineradores.map(i => (
@@ -7943,9 +8013,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Tipo</label>
                     <select
-                      value={gen.tipo}
+                      aria-label="Tipo" value={gen.tipo}
                       onChange={(e) => handleUpdateGenerator(idx, 'tipo', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
                     >
                       <option value="Principal">Principal</option>
                       <option value="Backup">Backup</option>
@@ -7957,9 +8027,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Modelo (Catálogo)</label>
                     <select
-                      value={gen.catalogoId || ''}
+                      aria-label="Modelo (Catálogo)" value={gen.catalogoId || ''}
                       onChange={(e) => handleSelectGenerator(idx, e.target.value)}
-                      className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                      className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
                     >
                       <option value="">Seleccionar...</option>
                       {CATALOGO_GENERADORES.map(g => (
@@ -8065,8 +8135,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <FormCard title="Capacidad de Estanques">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Capacidad Estanque (Catálogo)</label>
-                <select 
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Capacidad Estanque (Catálogo)</label>
+                <select
+                  aria-label="Capacidad Estanque (Catálogo)"
                   value={state.storage.parametros.capacidad_almacenaje_m3}
                   onChange={(e) => updateStorage('parametros.capacidad_almacenaje_m3', parseFloat(e.target.value))}
                   className="w-full px-4 py-2.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-slate-100 font-medium"
@@ -8090,6 +8161,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Cargar desde catálogo</label>
                 <select
+                  aria-label="Cargar desde catálogo"
                   defaultValue=""
                   onChange={(e) => {
                     const p = CATALOGO_PLATAFORMAS.find(p => p.nombre === e.target.value);
@@ -8109,7 +8181,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     }
                     e.target.value = '';
                   }}
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium text-sm"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium text-sm"
                 >
                   <option value="">Seleccionar plataforma conocida…</option>
                   {CATALOGO_PLATAFORMAS.map(p => (
@@ -8119,7 +8191,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <InputField label="Eslora" value={state.storage.infraestructura.eslora_m} onChange={(v) => updateStorage('infraestructura.eslora_m', v)} suffix="m" placeholder="25" />
                 <InputField label="Manga" value={state.storage.infraestructura.manga_m} onChange={(v) => updateStorage('infraestructura.manga_m', v)} suffix="m" placeholder="8" />
                 <InputField label="Puntual" value={state.storage.infraestructura.puntual_m} onChange={(v) => updateStorage('infraestructura.puntual_m', v)} suffix="m" placeholder="1.2" />
@@ -8130,14 +8202,15 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <FormCard title="Infraestructura y Seguridad">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Material Pretil</label>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Material Pretil</label>
                 <select
+                  aria-label="Material Pretil"
                   value={OPCIONES_INFRAESTRUCTURA.pretil_material.includes(state.storage.infraestructura.pretil_material) || state.storage.infraestructura.pretil_material === '' ? state.storage.infraestructura.pretil_material : '__otro__'}
                   onChange={(e) => {
                     if (e.target.value !== '__otro__') updateStorage('infraestructura.pretil_material', e.target.value);
                     else updateStorage('infraestructura.pretil_material', '');
                   }}
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
                 >
                   <option value="">Seleccionar...</option>
                   {OPCIONES_INFRAESTRUCTURA.pretil_material.map(o => <option key={o}>{o}</option>)}
@@ -8149,16 +8222,16 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     value={state.storage.infraestructura.pretil_material}
                     onChange={(e) => updateStorage('infraestructura.pretil_material', e.target.value)}
                     placeholder="Especificar material…"
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-indigo-400 dark:border-indigo-500 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-indigo-400 dark:border-indigo-500 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
                   />
                 )}
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Estado Pretil</label>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Estado Pretil</label>
                 <select
-                  value={state.storage.infraestructura.pretil_estado}
+                  aria-label="Estado Pretil" value={state.storage.infraestructura.pretil_estado}
                   onChange={(e) => updateStorage('infraestructura.pretil_estado', e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
                 >
                   <option value="Bueno">Bueno</option>
                   <option value="Regular">Regular</option>
@@ -8166,44 +8239,44 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Material Piping</label>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Material Piping</label>
                 <select
-                  value={state.storage.infraestructura.piping_material}
+                  aria-label="Material Piping" value={state.storage.infraestructura.piping_material}
                   onChange={(e) => updateStorage('infraestructura.piping_material', e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
                 >
                   <option value="">Seleccionar...</option>
                   {OPCIONES_INFRAESTRUCTURA.piping_material.map(o => <option key={o}>{o}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Diámetro Piping</label>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Diámetro Piping</label>
                 <select
-                  value={state.storage.infraestructura.piping_diametro}
+                  aria-label="Diámetro Piping" value={state.storage.infraestructura.piping_diametro}
                   onChange={(e) => updateStorage('infraestructura.piping_diametro', e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
                 >
                   <option value="">Seleccionar...</option>
                   {OPCIONES_INFRAESTRUCTURA.piping_diametro.map(o => <option key={o}>{o}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Válvulas Piping</label>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Válvulas Piping</label>
                 <select
-                  value={state.storage.infraestructura.piping_valvulas}
+                  aria-label="Válvulas Piping" value={state.storage.infraestructura.piping_valvulas}
                   onChange={(e) => updateStorage('infraestructura.piping_valvulas', e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
                 >
                   <option value="">Seleccionar...</option>
                   {OPCIONES_INFRAESTRUCTURA.piping_valvulas.map(o => <option key={o}>{o}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Estado Piping</label>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Estado Piping</label>
                 <select
-                  value={state.storage.infraestructura.piping_estado}
+                  aria-label="Estado Piping" value={state.storage.infraestructura.piping_estado}
                   onChange={(e) => updateStorage('infraestructura.piping_estado', e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-slate-100 font-medium"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
                 >
                   <option value="Bueno">Bueno</option>
                   <option value="Regular">Regular</option>
@@ -8300,7 +8373,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             )}
             <div className="flex flex-col gap-1 shrink-0">
               <select
-                value={logoClienteUrl ?? ''}
+                aria-label="Logo del cliente" value={logoClienteUrl ?? ''}
                 onChange={e => {
                   const url = e.target.value || null;
                   const nombre = url ? (Object.keys(logosEmpresas).find(n => logosEmpresas[n] === url) ?? null) : null;
@@ -8645,11 +8718,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         )}
                       </div>
                     )}
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Sección</label>
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest">Sección</label>
                         <select
-                          value={img.seccion}
+                          aria-label="Sección de la foto" value={img.seccion}
                           onChange={(e) => updateImage(img.id, { seccion: e.target.value as ImageSeccion })}
                           className="w-full text-xs font-medium bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 outline-none text-slate-900 dark:text-slate-100"
                         >
@@ -8669,9 +8742,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Estado</label>
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest">Estado</label>
                         <select
-                          value={img.estado}
+                          aria-label="Estado del equipo" value={img.estado}
                           onChange={(e) => updateImage(img.id, { estado: e.target.value as any })}
                           className="w-full text-xs font-medium bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 outline-none text-slate-900 dark:text-slate-100"
                         >
@@ -8691,7 +8764,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                             state.images.some(i => i.seccion === 'Ubicación Espacial' && i.id !== img.id && i.slotUbicacion === slot);
                           return (
                             <select
-                              value={img.slotUbicacion ?? ''}
+                              aria-label="Ubicación en el informe" value={img.slotUbicacion ?? ''}
                               onChange={(e) => {
                                 const v = e.target.value;
                                 updateImage(img.id, { slotUbicacion: (v || undefined) as 'top' | 'left' | 'right' | 'bottom' | undefined });
@@ -9017,7 +9090,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex font-sans text-slate-900 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900 selection:text-indigo-900 dark:selection:text-indigo-100 transition-colors duration-500">
+    <div className="min-h-screen bg-canvas dark:bg-slate-950 flex font-sans text-slate-900 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900 selection:text-indigo-900 dark:selection:text-indigo-100 transition-colors duration-500">
       <MarineBackground />
       <AnimatePresence>
         {showWelcome && <WelcomeScreen setUserRole={setUserRole} setShowWelcome={setShowWelcome} setAquaPhase={setLoginAquaPhase} logoProvider={tema.logo} skipSplash={wasLoggedOut} />}
@@ -9028,7 +9101,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         {loginAquaPhase !== 'idle' && (
           <motion.div
             key="aqua-transition"
-            style={{ position: 'fixed', inset: 0, zIndex: 9999, overflow: 'hidden', pointerEvents: 'none' }}
+            style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-max)', overflow: 'hidden', pointerEvents: 'none' }}
             initial={{ opacity: 0 }}
             animate={{ opacity: loginAquaPhase === 'out' ? 0 : 1 }}
             exit={{ opacity: 0 }}
@@ -9103,16 +9176,38 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       </AnimatePresence>
 
       {!showWelcome && (<>
+      {/* Backdrop del drawer en móvil */}
+      {mobileSidebarOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+          onClick={() => setMobileSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
       {/* Sidebar Navigation */}
       <aside className={cn(
-        "bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col sticky top-0 h-screen transition-all duration-500 z-50 shadow-2xl shadow-slate-200/40 dark:shadow-none",
-        isSidebarCollapsed ? "w-24" : "w-80"
+        "bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shadow-sm dark:shadow-none",
+        // Móvil: drawer off-canvas
+        "fixed inset-y-0 left-0 z-50 w-80 max-w-[85vw] transition-transform duration-300",
+        mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
+        // Escritorio: sticky con colapso
+        "md:sticky md:top-0 md:h-screen md:max-w-none md:translate-x-0 md:z-40 md:transition-[width] md:duration-500",
+        isSidebarCollapsed ? "md:w-24" : "md:w-80"
       )}>
-        <div className={cn("p-6 border-b border-slate-100 dark:border-slate-800 relative", isSidebarCollapsed ? "px-4 py-8" : "p-10")}>
+        <div className={cn("p-6 border-b border-slate-100 dark:border-slate-800 relative", isSidebarCollapsed ? "md:px-4 md:py-8" : "md:p-10")}>
+          {/* Cerrar drawer (solo móvil) */}
+          <button
+            onClick={() => setMobileSidebarOpen(false)}
+            aria-label="Cerrar menú"
+            className="md:hidden absolute right-3 top-3 w-11 h-11 flex items-center justify-center rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <X size={22} />
+          </button>
           <Logo collapsed={isSidebarCollapsed} tema={tema} />
-          <button 
+          <button
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-md z-10"
+            aria-label={isSidebarCollapsed ? "Expandir menú lateral" : "Colapsar menú lateral"}
+            className="hidden md:flex absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full items-center justify-center text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-md z-10"
           >
             {isSidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>
@@ -9123,7 +9218,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           {/* ── Grupo 1: Flujo de trabajo ── */}
           <div className="space-y-1">
             {!isSidebarCollapsed && (
-              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 pb-1">Inspección</p>
+              <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest px-3 pb-1">Inspección</p>
             )}
             <NavItem active={activeTab === 'general'}      onClick={() => setActiveTab('general')}      icon={LayoutDashboard} label="General"           collapsed={isSidebarCollapsed} />
             <NavItem active={activeTab === 'extraction'}   onClick={() => setActiveTab('extraction')}   icon={Waves}           label="Extracción"        collapsed={isSidebarCollapsed} />
@@ -9135,7 +9230,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           {/* ── Grupo 2: Documentos ── */}
           <div className="space-y-1">
             {!isSidebarCollapsed && (
-              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 pb-1">Documentos</p>
+              <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest px-3 pb-1">Documentos</p>
             )}
             <NavItem active={activeTab === 'issue'}   onClick={() => setActiveTab('issue')}   icon={ShieldCheck} label="Certificado" collapsed={isSidebarCollapsed} variant="emerald" />
             <NavItem active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={History}     label="Históricos"  collapsed={isSidebarCollapsed} />
@@ -9147,7 +9242,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           {/* ── Grupo 3: Gestión de datos ── */}
           <div className="space-y-1">
             {!isSidebarCollapsed && (
-              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 pb-1">Datos</p>
+              <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest px-3 pb-1">Datos</p>
             )}
             <button
               onClick={exportDraft}
@@ -9261,7 +9356,19 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 p-8 md:p-12 overflow-y-auto relative z-10">
+      <main className="flex-1 p-5 sm:p-8 md:p-12 overflow-y-auto relative z-10">
+          {/* Barra superior móvil con botón de menú */}
+          <div className="md:hidden flex items-center gap-3 mb-6">
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              aria-label="Abrir menú"
+              aria-expanded={mobileSidebarOpen}
+              className="w-11 h-11 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-indigo-300 hover:text-indigo-600 transition-colors shadow-sm"
+            >
+              <Menu size={22} />
+            </button>
+            <Logo collapsed tema={tema} />
+          </div>
           {/* Toast de error de guardado */}
           <AnimatePresence>
             {saveError && (
@@ -9269,7 +9376,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="fixed top-4 right-4 z-[200] flex items-center gap-3 px-5 py-3 bg-rose-600 text-white rounded-2xl shadow-xl font-semibold text-sm"
+                className="fixed top-4 right-4 z-[var(--z-toast)] flex items-center gap-3 px-5 py-3 bg-rose-600 text-white rounded-2xl shadow-xl font-semibold text-sm"
               >
                 <XCircle size={18} />
                 {saveError}
@@ -9313,25 +9420,79 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           general: 'General', extraction: 'Extracción', denaturation: 'Desnaturalización',
           storage: 'Almacenamiento', report: 'Informe',
         };
+
+        const onHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+          // No iniciar arrastre desde el botón de minimizar
+          if ((e.target as HTMLElement).closest('[data-no-drag]')) return;
+          const panel = e.currentTarget.parentElement as HTMLElement | null;
+          if (!panel) return;
+          const rect = panel.getBoundingClientRect();
+          checklistDragRef.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+          setChecklistPos({ x: rect.left, y: rect.top });
+          e.currentTarget.setPointerCapture(e.pointerId);
+        };
+        const onHeaderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+          const drag = checklistDragRef.current;
+          if (!drag) return;
+          const w = 288; // w-72
+          const x = Math.min(Math.max(8, e.clientX - drag.dx), window.innerWidth - w - 8);
+          const y = Math.min(Math.max(8, e.clientY - drag.dy), window.innerHeight - 48);
+          setChecklistPos({ x, y });
+        };
+        const onHeaderPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+          checklistDragRef.current = null;
+          try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+        };
+
+        const dragged = checklistPos !== null;
+        const posStyle: React.CSSProperties | undefined = dragged
+          ? { left: checklistPos!.x, top: checklistPos!.y, right: 'auto', bottom: 'auto' }
+          : undefined;
+
         return (
-          <div className="fixed bottom-6 right-5 z-50 w-72 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm overflow-hidden select-none">
-            <div className={`flex items-center justify-between px-3 py-2.5 font-semibold text-white text-xs ${allOk ? 'bg-emerald-600' : 'bg-[#0f2d5e]'}`}>
-              <span>Checklist · {sectionLabel[activeTab]}</span>
-              <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${allOk ? 'bg-emerald-400 text-emerald-900' : 'bg-white/20'}`}>{done}/{total}</span>
+          <div
+            style={posStyle}
+            className={`fixed ${dragged ? '' : 'bottom-6 right-5'} z-50 w-72 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm overflow-hidden select-none`}
+          >
+            <div
+              onPointerDown={onHeaderPointerDown}
+              onPointerMove={onHeaderPointerMove}
+              onPointerUp={onHeaderPointerUp}
+              className={`flex items-center justify-between gap-2 px-3 py-2.5 font-semibold text-white text-xs cursor-move touch-none ${allOk ? 'bg-emerald-600' : 'bg-[#0f2d5e]'}`}
+            >
+              <span className="flex items-center gap-1.5 min-w-0">
+                <Move size={13} className="opacity-60 flex-shrink-0" />
+                <span className="truncate">Checklist · {sectionLabel[activeTab]}</span>
+              </span>
+              <span className="flex items-center gap-1.5 flex-shrink-0">
+                <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${allOk ? 'bg-emerald-400 text-emerald-900' : 'bg-white/20'}`}>{done}/{total}</span>
+                <button
+                  data-no-drag
+                  type="button"
+                  onClick={() => setChecklistMin(m => !m)}
+                  title={checklistMin ? 'Expandir checklist' : 'Minimizar checklist'}
+                  aria-label={checklistMin ? 'Expandir checklist' : 'Minimizar checklist'}
+                  className="p-0.5 rounded hover:bg-white/20 transition-colors"
+                >
+                  {checklistMin ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                </button>
+              </span>
             </div>
-            <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-              {sectionItems.map(item => (
-                <li key={item.id} className="flex items-center gap-2 px-3 py-2">
-                  <span className={`flex-shrink-0 font-bold text-base leading-none ${item.ok ? 'text-emerald-500' : item.required ? 'text-red-500' : 'text-amber-400'}`}>
-                    {item.ok ? '✓' : item.required ? '✗' : '○'}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-xs truncate ${item.ok ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{item.label}</p>
-                    {!item.ok && <p className="text-[10px] text-slate-400 truncate">{item.detail}</p>}
-                  </div>
-                </li>
-              ))}
-            </ul>
+            {!checklistMin && (
+              <ul className="divide-y divide-slate-100 dark:divide-slate-700 max-h-[60vh] overflow-y-auto">
+                {sectionItems.map(item => (
+                  <li key={item.id} className="flex items-center gap-2 px-3 py-2">
+                    <span className={`flex-shrink-0 font-bold text-base leading-none ${item.ok ? 'text-emerald-500' : item.required ? 'text-red-500' : 'text-amber-400'}`}>
+                      {item.ok ? '✓' : item.required ? '✗' : '○'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs truncate ${item.ok ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{item.label}</p>
+                      {!item.ok && <p className="text-[10px] text-slate-400 truncate">{item.detail}</p>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         );
       })()}
@@ -9344,7 +9505,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 z-[var(--z-drawer)] flex items-center justify-center bg-black/40 backdrop-blur-sm"
           >
             <motion.div
               initial={{ scale: 0.92, y: 16 }}
@@ -9416,8 +9577,30 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       {/* ── Modal "Novedades" paso a paso ── */}
       {showChangelog && !showWelcome && (() => {
         const closeChangelog = () => { setShowChangelog(false); localStorage.setItem('certimar-changelog-seen', CHANGELOG_VERSION); };
-        const neverShowChangelog = () => closeChangelog();
+        const neverShowChangelog = () => { localStorage.setItem('certimar-changelog-never', 'true'); closeChangelog(); };
         const steps: { Icon: React.ElementType; color: string; titulo: string; descripcion: string; detalle: string[] }[] = [
+          {
+            Icon: AlertTriangle,
+            color: '#2d5a8e',
+            titulo: 'Corrección: popup de confirmación dejó de interferir',
+            descripcion: 'El aviso "Datos generales completos" ya no reaparece cada vez que escribes.',
+            detalle: [
+              'Antes: tras confirmar, cualquier tecla en Datos Generales reabría el popup.',
+              'Ahora: la confirmación se solicita una sola vez al completar los datos.',
+              'Editar campos después de confirmar ya no interrumpe la escritura.',
+            ],
+          },
+          {
+            Icon: AlertTriangle,
+            color: '#2d5a8e',
+            titulo: 'Corrección: observaciones de Almacenamiento en el acta',
+            descripcion: 'El texto del campo "Observaciones" de Almacenamiento ahora se refleja en la Sección G del acta.',
+            detalle: [
+              'Antes: el acta mostraba siempre el texto fijo del template, ignorando lo escrito en el formulario.',
+              'Ahora: se usa el texto ingresado en Observaciones de Almacenamiento.',
+              'Si el campo queda vacío, el acta muestra "N/A".',
+            ],
+          },
           {
             Icon: ClipboardList,
             color: '#1f497d',
@@ -9533,12 +9716,49 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               'Sin recorte manual, el PDF aplica un recorte central automático sin deformar la imagen.',
             ],
           },
+          {
+            Icon: FlaskConical,
+            color: '#1f497d',
+            titulo: 'Múltiples ollas y N° de sistemas de ensilaje',
+            descripcion: 'La capacidad diaria de desnaturalización ahora escala con la cantidad de ollas trituradoras, y el acta detalla por separado el número de sistemas de ensilaje.',
+            detalle: [
+              'Nuevo campo "Cantidad Ollas Trituradoras" en Desnaturalización: multiplica la capacidad diaria (ollas en paralelo).',
+              'Nuevo campo "Cantidad Sistemas de Ensilaje" que alimenta la celda correspondiente del acta.',
+              'El acta y el informe muestran ambos valores; la observación automática refleja el factor por ollas.',
+              'Por defecto ambos valores son 1, por lo que los cálculos previos no cambian.',
+            ],
+          },
+          {
+            Icon: Bookmark,
+            color: '#d97706',
+            titulo: 'Borradores: guarda y retoma registros sin perder trabajo',
+            descripcion: 'Ahora puedes guardar un registro como borrador para avanzar con otro, y retomarlo después desde el Histórico.',
+            detalle: [
+              'Nuevo botón "Guardar borrador" en Datos Generales.',
+              'Al "Comenzar Registro" o "Continuar" otro, el registro actual se guarda automáticamente como borrador (ya no se pierden los cambios).',
+              'El Histórico tiene un filtro Todos / Borradores / Finalizados, y las tarjetas de borrador muestran su avance y qué secciones faltan.',
+              'El botón de la tarjeta dice "Continuar" en borradores y "Cargar" en registros finalizados.',
+            ],
+          },
+          {
+            Icon: LayoutGrid,
+            color: '#0f766e',
+            titulo: 'Mejoras de uso en móvil, accesibilidad y legibilidad',
+            descripcion: 'La herramienta se adapta mejor a tablet y celular para el trabajo en terreno, con textos más legibles y mejor soporte para teclado y lectores de pantalla.',
+            detalle: [
+              'En celular y tablet el menú lateral se abre como panel deslizable, dejando todo el ancho de la pantalla para los formularios.',
+              'Los campos en dos columnas se apilan en una sola columna en pantallas angostas.',
+              'Mayor contraste en etiquetas y títulos de sección para leerlos con más facilidad.',
+              'Todos los campos y listas desplegables tienen etiqueta accesible y un indicador de foco más visible al navegar con teclado.',
+              'Se respeta la preferencia de "movimiento reducido" del dispositivo y la animación de fondo se pausa cuando la pestaña no está visible.',
+            ],
+          },
         ];
         const step = steps[changelogStep];
         const isLast = changelogStep === steps.length - 1;
         const StepIcon = step.Icon;
         return (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[var(--z-modal)] flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-300 border border-white/10">
 
               {/* Header — Certimar navy gradient */}
@@ -9670,7 +9890,7 @@ const NavItem = ({ active, onClick, icon: Icon, label, collapsed, variant = "ind
       {!collapsed && active && <motion.div layoutId="active-pill" className={cn("ml-auto w-1.5 h-1.5 rounded-full", variant === "indigo" ? "bg-indigo-600" : "bg-emerald-600")} />}
       
       {collapsed && (
-        <div className="absolute left-full ml-4 px-2 py-1 bg-slate-900 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100]">
+        <div className="absolute left-full ml-4 px-2 py-1 bg-slate-900 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[var(--z-tooltip)]">
           {label}
         </div>
       )}

@@ -76,7 +76,8 @@ export interface ExtractionData {
 
 export interface DenaturationData {
   equipos: {
-    cantidad_sistemas: number;
+    cantidad_sistemas: number;       // N° de sistemas de ensilaje (descriptivo, requerido por el acta)
+    cantidad_ollas: number;          // N° de ollas/trituradoras en paralelo — multiplica la capacidad diaria
     id_catalogo_trituradora: string;
     id_catalogo_incinerador: string;
     marca_modelo: string;
