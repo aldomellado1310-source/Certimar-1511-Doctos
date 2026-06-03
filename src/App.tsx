@@ -154,6 +154,7 @@ import {
 import { generateActaPdf, buildActaHtml, patchOklch } from './domain/actaHtml';
 import { inferCatalogoId } from './domain/generators';
 import { validarOrdenFechas } from './domain/validation';
+import { draftStatus } from './domain/draftStatus';
 import {
   OPERACION_MINIMA_EXTRACTION,
   OPERACION_MINIMA_BATCH_INDEX,
@@ -2132,39 +2133,64 @@ export default function App() {
     return { registroId: `REG-${String(next).padStart(3, '0')}`, nextCounter: next };
   };
 
-  const comenzarRegistro = () => {
-    if (window.confirm(
-      '¿Comenzar un nuevo registro?\nSe asignará un correlativo y se limpiarán los datos del centro, extracción, desnaturalización, almacenamiento e imágenes.\nLos datos del certificador se conservan.'
-    )) {
-      logEvento('crear_registro');
-      idbClear();
-      const { registroId, nextCounter } = getNextCorrelativo();
-      localStorage.setItem('certimar-correlativo-counter', String(nextCounter));
-      setState(prev => ({
-        ...DEFAULT_STATE,
-        registroId,
-        general: {
-          ...DEFAULT_STATE.general,
-          certificador: prev.general.certificador,
-          fechas: { evaluacion_documental: "", inspeccion_terreno: "", emision_certificado: "" },
-          revisionConfirmada: false,
-        },
-      }));
-      setActiveTab('general');
-    }
+  /** Hay datos del registro actual dignos de guardar como borrador. */
+  const hasDraftableData = (): boolean => {
+    const cc = state.general.centro_cultivo;
+    return !!state.registroId && (!!cc.codigo_centro.trim() || !!cc.nombre_centro.trim());
   };
 
-  const handleGuardar = async (section: string) => {
-    if (guardandoSection) return; // evitar doble-click
-    setGuardandoSection(section);
-    setSaveError(null);
-    let firestoreOk = false;
+  /**
+   * Guarda el registro actual como borrador antes de descartarlo. Devuelve true
+   * si se puede continuar (guardado OK, nada que guardar, o el usuario aceptó
+   * continuar pese al fallo de guardado).
+   */
+  const autosaveBeforeSwitch = async (): Promise<boolean> => {
+    if (!hasDraftableData()) return true;
+    const ok = await persistDraft('auto');
+    if (ok) return true;
+    return window.confirm(
+      'No se pudo guardar el borrador actual (sin conexión).\n' +
+      '¿Continuar de todas formas y descartar los cambios no guardados?'
+    );
+  };
+
+  const comenzarRegistro = async () => {
+    if (!window.confirm(
+      '¿Comenzar un nuevo registro?\n' +
+      'El registro actual se guardará automáticamente como borrador y podrás retomarlo desde el Histórico.\n' +
+      'Se asignará un correlativo y se limpiarán los datos del centro, extracción, desnaturalización, almacenamiento e imágenes.\n' +
+      'Los datos del certificador se conservan.'
+    )) return;
+    if (!(await autosaveBeforeSwitch())) return;
+    logEvento('crear_registro');
+    idbClear();
+    const { registroId, nextCounter } = getNextCorrelativo();
+    localStorage.setItem('certimar-correlativo-counter', String(nextCounter));
+    setState(prev => ({
+      ...DEFAULT_STATE,
+      registroId,
+      general: {
+        ...DEFAULT_STATE.general,
+        certificador: prev.general.certificador,
+        fechas: { evaluacion_documental: "", inspeccion_terreno: "", emision_certificado: "" },
+        revisionConfirmada: false,
+      },
+    }));
+    setActiveTab('general');
+  };
+
+  /**
+   * Guarda el estado actual en Firestore (registros/{id}) y hace upsert de la
+   * entrada de histórico como borrador (esBorrador:true), sin degradar registros
+   * que ya generaron documentos. Devuelve true si Firestore respondió OK.
+   * `motivo` solo se registra en el doc registros para depuración.
+   */
+  const persistDraft = async (motivo: 'manual' | 'auto' | 'section'): Promise<boolean> => {
     try {
       const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
       const { db } = await import('./firebase');
       const cc = state.general.centro_cultivo;
       const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
-      // Excluir base64/blob — solo se guarda la URL de Storage (https://) para que otros usuarios puedan cargarlas
       const imagesMetadata = state.images.map(img => ({
         ...img,
         url: img.url?.startsWith('https://') ? img.url : '',
@@ -2176,9 +2202,8 @@ export default function App() {
         __version: 'v3',
         __savedAt: serverTimestamp(),
         __savedBy: state.general.certificador.nombre || 'desconocido',
-        __section: section,
+        __section: motivo,
       });
-      // Upsert entrada borrador en historico (no sobreescribe esBorrador:false si ya hay docs generados)
       const calcExt = calculatedExtraction;
       const calcDen = calculatedDenaturation;
       const calcSto = calculatedStorage;
@@ -2229,16 +2254,25 @@ export default function App() {
           return idx >= 0 ? prev.map(e => e.id === docId ? updated : e) : [updated, ...prev];
         });
       }
-      firestoreOk = true;
-    } catch (err: any) {
-      console.error('Error guardando en Firestore:', err);
-      setSaveError('No se pudo guardar en la nube. Verifica tu conexión.');
-      setTimeout(() => setSaveError(null), 4000);
+      return true;
+    } catch (err) {
+      console.error('Error guardando borrador en Firestore:', err);
+      return false;
     }
-    if (firestoreOk) {
+  };
+
+  const handleGuardar = async (section: string) => {
+    if (guardandoSection) return; // evitar doble-click
+    setGuardandoSection(section);
+    setSaveError(null);
+    const ok = await persistDraft('section');
+    if (ok) {
       exportDraft();
       setGuardadoSection(section);
       setTimeout(() => setGuardadoSection(null), 2500);
+    } else {
+      setSaveError('No se pudo guardar en la nube. Verifica tu conexión.');
+      setTimeout(() => setSaveError(null), 4000);
     }
     setGuardandoSection(null);
   };
@@ -2438,7 +2472,7 @@ export default function App() {
   const loadFromHistorico = async (entry: RegistroHistorico) => {
     if (!window.confirm(
       `¿Cargar los datos de ${entry.nombreCentro} (${entry.codigoCentro}) en el formulario?\n` +
-      'Los cambios no guardados del formulario actual se perderán.'
+      'El registro actual se guardará automáticamente como borrador antes de continuar.'
     )) return;
 
     // Verificar bloqueo antes de abrir
@@ -2458,6 +2492,7 @@ export default function App() {
 
     // Liberar bloqueo anterior si había un registro abierto
     if (state.registroId) await releaseLock(state.registroId);
+    if (!(await autosaveBeforeSwitch())) return;
 
     logEvento('abrir_registro', { codigoCentro: entry.codigoCentro, nombreCentro: entry.nombreCentro, titular: entry.titular });
 
@@ -3714,6 +3749,7 @@ Se despide atentamente`;
   const cropModalImg = cropModalId ? (state.images.find(i => i.id === cropModalId) ?? null) : null;
 
   const [historicoEntries, setHistoricoEntries] = useState<RegistroHistorico[]>([]);
+  const [historicoFiltro, setHistoricoFiltro] = useState<'todos' | 'borradores' | 'finalizados'>('todos');
   const [historicoLoading, setHistoricoLoading] = useState(false);
   const [selectedHistoricoEntry, setSelectedHistoricoEntry] = useState<RegistroHistorico | null>(null);
   const [resubirLoadingId, setResubirLoadingId] = useState<string | null>(null); // "docId-tipo"
@@ -6085,6 +6121,30 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               Comenzar Registro
             </button>
             <button
+              onClick={async () => {
+                if (guardandoSection) return;
+                setGuardandoSection('borrador');
+                const ok = await persistDraft('manual');
+                setGuardandoSection(null);
+                if (ok) {
+                  setGuardadoSection('borrador');
+                  setTimeout(() => setGuardadoSection(null), 2500);
+                } else {
+                  setSaveError('No se pudo guardar el borrador. Verifica tu conexión.');
+                  setTimeout(() => setSaveError(null), 4000);
+                }
+              }}
+              disabled={!!guardandoSection || !hasDraftableData()}
+              className="flex items-center gap-2 px-5 py-2.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 font-bold text-sm rounded-xl transition-all"
+            >
+              {guardandoSection === 'borrador'
+                ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}><Save size={16} /></motion.div> Guardando…</>
+                : guardadoSection === 'borrador'
+                  ? <><CheckCircle2 size={16} /> Borrador guardado</>
+                  : <><Bookmark size={16} /> Guardar borrador</>
+              }
+            </button>
+            <button
               onClick={() => handleGuardar('general')}
               disabled={!!guardandoSection}
               className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 disabled:opacity-60 disabled:cursor-wait text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-emerald-500/30"
@@ -6924,6 +6984,28 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         </div>
 
         {/* ── Registros desde Firestore ── */}
+        {!historicoLoading && historicoEntries.length > 0 && (
+          <div className="flex items-center gap-1.5 mb-3">
+            {([
+              { id: 'todos' as const, label: 'Todos', n: historicoEntries.length },
+              { id: 'borradores' as const, label: 'Borradores', n: historicoEntries.filter(e => e.esBorrador === true).length },
+              { id: 'finalizados' as const, label: 'Finalizados', n: historicoEntries.filter(e => e.esBorrador !== true).length },
+            ]).map(({ id, label, n }) => (
+              <button
+                key={id}
+                onClick={() => setHistoricoFiltro(id)}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border',
+                  historicoFiltro === id
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-indigo-300'
+                )}
+              >
+                {label} <span className="opacity-70">({n})</span>
+              </button>
+            ))}
+          </div>
+        )}
         <FormCard className="p-0 overflow-hidden">
           {historicoLoading && (
             <div className="flex items-center gap-3 px-6 py-5 text-sm text-slate-500 dark:text-slate-400">
@@ -6940,12 +7022,22 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           )}
           {!historicoLoading && historicoEntries.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
-              {historicoEntries.map((entry) => {
+              {historicoEntries
+                .filter(e =>
+                  historicoFiltro === 'todos' ? true :
+                  historicoFiltro === 'borradores' ? e.esBorrador === true :
+                  e.esBorrador !== true)
+                .map((entry) => {
                 const docs = entry.documentosGenerados ?? [];
                 const urls = entry.documentUrls ?? {};
                 const m = entry.metricas;
                 return (
-                  <div key={entry.id} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 flex flex-col gap-3 hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-colors">
+                  <div key={entry.id} className={cn(
+                    'bg-white dark:bg-slate-800 rounded-2xl p-5 flex flex-col gap-3 transition-colors border',
+                    entry.esBorrador
+                      ? 'border-2 border-dashed border-amber-300 dark:border-amber-500/40 hover:border-amber-400'
+                      : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500/50'
+                  )}>
                     {/* Header */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -6983,6 +7075,26 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         ))}
                       </div>
                     )}
+
+                    {entry.esBorrador && (() => {
+                      const ds = draftStatus(entry.snapshot, entry.metricas);
+                      return (
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide">
+                            Avance {ds.completados}/{ds.total}
+                          </span>
+                          {ds.pendientes.length > 0 && (
+                            <div className="flex gap-1 flex-wrap">
+                              {ds.pendientes.map(p => (
+                                <span key={p} className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30">
+                                  Falta: {p}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Doc badges — clickeable para descargar con confirmación de Inspector */}
                     <div className="flex gap-1 flex-wrap">
@@ -7025,9 +7137,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       <button
                         onClick={() => loadFromHistorico(entry)}
                         title="Cargar datos en el formulario"
-                        className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors border border-slate-200 dark:border-slate-600"
+                        className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors border border-slate-200 dark:border-slate-600 flex items-center gap-1.5 text-xs font-bold"
                       >
                         <Pencil size={12} />
+                        {entry.esBorrador ? 'Continuar' : 'Cargar'}
                       </button>
                     </div>
                   </div>
