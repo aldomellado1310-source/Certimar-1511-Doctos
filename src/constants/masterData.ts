@@ -1,3 +1,5 @@
+import type { IncineradorCompleto } from '../domain/incineradorCatalogo';
+
 export const CATALOGO_EXTRACCION = {
   sistemas: [
     { id: 'novatech-8', marca: 'Novatech', modelo: '8"', capacidad_kg_h: 2400 },
@@ -550,3 +552,7 @@ export const OPCIONES_INCINERADOR = {
   disposicion_final: ['VERTEDERO MUNICIPAL PTA ARENAS', 'N/A'],
   almacenamiento_gas: ['4000L X 2 = 8.000L GAS GLP', '4000L X 4 = 16.000L GAS GLP', 'N/A'],
 };
+
+/** Vista tipada de los incineradores del catálogo estático para el resolver. */
+export const INCINERADORES_ESTATICOS: Array<IncineradorCompleto & { id: string }> =
+  CATALOGO_DESNATURALIZACION.incineradores;
