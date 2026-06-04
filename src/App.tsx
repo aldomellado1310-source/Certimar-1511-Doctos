@@ -2409,29 +2409,52 @@ export default function App() {
     //  que re-parenta el contenido al documento principal y filtraba el oklch de Tailwind.)
     const ANCHO_PX = 816; // 215,9mm a 96dpi ≈ ancho de página Oficio
     const iframe = document.createElement('iframe');
-    iframe.style.cssText = `position:fixed;left:-20000px;top:0;width:${ANCHO_PX}px;height:1200px;border:none;visibility:hidden;`;
+    // El iframe debe renderizarse REALMENTE (no `visibility:hidden` ni fuera de pantalla):
+    // los iframes ocultos/desplazados no completan la maquetación del contenido alto y el
+    // acta salía recortada (sin las secciones G y H). Lo dejamos en pantalla pero
+    // transparente y alto desde el inicio para que el navegador lo maquete completo.
+    iframe.style.cssText = `position:fixed;left:0;top:0;width:${ANCHO_PX}px;height:2400px;border:none;opacity:0;pointer-events:none;z-index:-1;`;
+    // Cargar vía srcdoc (navegación real) en vez de document.write: este último tiene
+    // quirks de maquetación que dejaban las últimas tablas (G y H) con altura ~0.
+    iframe.srcdoc = html;
     document.body.appendChild(iframe);
     try {
-      const iframeDoc = iframe.contentDocument!;
-      iframeDoc.open();
-      iframeDoc.write(html);
-      iframeDoc.close();
       await new Promise<void>((resolve) => {
-        if (iframeDoc.readyState === 'complete') resolve();
-        else iframe.addEventListener('load', () => resolve(), { once: true });
+        iframe.addEventListener('load', () => resolve(), { once: true });
       });
-      // Esperar a que las fuentes y el layout estén listos antes de capturar.
+      const iframeDoc = iframe.contentDocument!;
+      // Envolver TODO el contenido en un div que se ajusta a su contenido (shrink-wrap).
+      // El <body> se estira a la altura del iframe, por lo que su scrollHeight no es
+      // fiable para medir; un <div> en flujo normal sí reporta la altura real → así
+      // html2canvas captura el acta completa (incluidas las secciones G y H).
+      const root = iframeDoc.createElement('div');
+      root.id = 'acta-capture-root';
+      while (iframeDoc.body.firstChild) root.appendChild(iframeDoc.body.firstChild);
+      iframeDoc.body.appendChild(root);
+
+      // Normalizar el ancho: el template (export de Google Docs) trae un padding-right
+      // enorme (85pt) que deja el contenido pegado a la izquierda. Lo igualamos para que
+      // la tabla llene el ancho como en el acta de referencia.
+      const capStyle = iframeDoc.createElement('style');
+      capStyle.textContent =
+        '.c90{max-width:none !important;padding:0 !important;}' +
+        'html,body{margin:0 !important;background:#fff !important;}' +
+        '#acta-capture-root{width:' + ANCHO_PX + 'px;background:#fff;padding:14pt 12pt;box-sizing:border-box;}';
+      iframeDoc.head.appendChild(capStyle);
+
+      // El iframe debe ser más alto que el contenido para que el navegador lo maquete
+      // y pinte por completo antes de capturar.
+      iframe.style.height = '4000px';
       try { await (iframeDoc as any).fonts?.ready; } catch { /* */ }
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, 250));
 
-      const html2canvas = (await import('html2canvas')).default;
-      const target = iframeDoc.body;
-      const captureW = Math.max(target.scrollWidth, ANCHO_PX);
-      const captureH = Math.max(target.scrollHeight, iframeDoc.documentElement.scrollHeight);
+      const html2canvas = (await import('html2canvas-pro')).default;
+      const captureW = Math.max(root.scrollWidth, ANCHO_PX);
+      const captureH = root.scrollHeight; // altura real del contenido envuelto
 
-      const canvas = await html2canvas(target, {
+      const canvas = await html2canvas(root, {
         backgroundColor: '#ffffff',
-        scale: 2,
+        scale: 3, // ~290 DPI sobre Oficio → texto nítido pese a ser raster
         width: captureW,
         height: captureH,
         windowWidth: captureW,
@@ -2441,25 +2464,26 @@ export default function App() {
       });
 
       const PAGE_W = 215.9, PAGE_H = 355.6; // Oficio (mm)
-      const imgW = PAGE_W;
-      const imgH = (canvas.height * imgW) / canvas.width;
+      // Márgenes que replican el layout de impresión del template (body { margin: 10mm 8mm }).
+      const MARGIN_X = 8, MARGIN_TOP = 8, MARGIN_BOTTOM = 8;
+      const availW = PAGE_W - 2 * MARGIN_X;
+      const availH = PAGE_H - MARGIN_TOP - MARGIN_BOTTOM;
+      // Ajustar el acta completa a UNA sola página Oficio conservando la proporción
+      // (equivale al `zoom: 0.80` que aplicaba la impresión para que entrara en una hoja).
+      const ratio = canvas.width / canvas.height;
+      let imgW = availW;
+      let imgH = imgW / ratio;
+      if (imgH > availH) {
+        imgH = availH;
+        imgW = imgH * ratio;
+      }
+      const x = (PAGE_W - imgW) / 2;
+      const y = MARGIN_TOP;
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
       await ensurePdfLibs();
       const doc = new JsPDFCtor({ format: [PAGE_W, PAGE_H], unit: 'mm', compress: true });
-      if (imgH <= PAGE_H + 1) {
-        doc.addImage(imgData, 'JPEG', 0, 0, imgW, imgH, undefined, 'FAST');
-      } else {
-        // Contenido más alto que una página → repartir en varias páginas Oficio.
-        let page = 0;
-        let heightLeft = imgH;
-        while (heightLeft > 0) {
-          if (page > 0) doc.addPage([PAGE_W, PAGE_H]);
-          doc.addImage(imgData, 'JPEG', 0, -(PAGE_H * page), imgW, imgH, undefined, 'FAST');
-          heightLeft -= PAGE_H;
-          page++;
-        }
-      }
+      doc.addImage(imgData, 'JPEG', x, y, imgW, imgH, undefined, 'FAST');
       return doc.output('blob');
     } finally {
       document.body.removeChild(iframe);
@@ -2957,7 +2981,7 @@ export default function App() {
   const [loginAquaPhase, setLoginAquaPhase] = useState<'idle' | 'in' | 'hold' | 'out'>('idle');
   const [wasLoggedOut, setWasLoggedOut] = useState(false);
 
-  const CHANGELOG_VERSION = '2026-06-03-v15';
+  const CHANGELOG_VERSION = '2026-06-04-v1';
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelogStep, setChangelogStep] = useState(0);
   const [pendingGenerate, setPendingGenerate] = useState<'certificado' | 'informe' | null>(null);
@@ -9730,8 +9754,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             descripcion: 'Al generar el acta, el archivo PDF se descarga al instante, sin pasar por el diálogo «Imprimir» del navegador.',
             detalle: [
               'Antes: se abría el diálogo de impresión y había que elegir "Guardar como PDF" y desactivar encabezados/pies.',
-              'Ahora: el PDF (tamaño Oficio) se genera y descarga automáticamente con el nombre del centro y la fecha.',
-              'Aplica tanto al botón "Generar Acta" como a la re-descarga desde el Histórico.',
+              'Ahora: el PDF (tamaño Oficio, una sola página) se genera y descarga automáticamente con el nombre del centro y la fecha.',
+              'Incluye el acta completa de la A a la H (certificación y firma); aplica al botón "Generar Acta" y a la re-descarga desde el Histórico.',
             ],
           },
           {

@@ -22,7 +22,8 @@
       "Bash(git update-index *)",
       "Bash(npx tsc *)",
       "Bash(git checkout *)",
-      "Bash(git -C ../Certimar-1511-Integrado log --format=\"%h %ad %s\" --date=format:\"%Y-%m-%d %H:%M\" -10)"
+      "Bash(git -C ../Certimar-1511-Integrado log --format=\"%h %ad %s\" --date=format:\"%Y-%m-%d %H:%M\" -10)",
+      "Bash(certutil -hashfile \"C:\\\\Users\\\\aldon\\\\Documents\\\\Proyectos\\\\Certimar-1511-Doctos\\\\dist\\\\assets\\\\index-BuBmnDui.js\" SHA256)"
     ],
     "additionalDirectories": [
       "c:\\Users\\aldon\\Documents\\Proyectos\\Certimar-1511-Doctos",
