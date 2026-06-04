@@ -571,7 +571,7 @@ const MarineBackground = () => {
     {[{ left: 8, top: 60, dur: 14, delay: 0 }, { left: 90, top: 40, dur: 18, delay: 7 }].map((a, i) => (
       <motion.div
         key={`anchor-${i}`}
-        className="absolute text-slate-400/15 dark:text-slate-300/10"
+        className="absolute text-slate-500/15 dark:text-slate-300/10"
         style={{ left: `${a.left}%`, top: `${a.top}%` }}
         animate={{ y: [0, -18, 0], rotate: [-5, 5, -5], opacity: [0.3, 0.6, 0.3] }}
         transition={{ duration: a.dur, repeat: Infinity, ease: "easeInOut", delay: a.delay }}
@@ -754,7 +754,7 @@ const InputField = ({
         )}
       />
       {suffix && (
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm font-medium">
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-500 text-sm font-medium">
           {suffix}
         </div>
       )}
@@ -986,7 +986,7 @@ const ImageAnnotator: React.FC<{
           {saveError}
         </div>
       )}
-      <p className="text-xs text-slate-400">Clic y arrastra para dibujar · Limpiar elimina todas las marcas</p>
+      <p className="text-xs text-slate-500">Clic y arrastra para dibujar · Limpiar elimina todas las marcas</p>
     </div>
   );
 };
@@ -1072,7 +1072,7 @@ const CenterCodeAutocomplete = ({
                   <span className="font-bold text-indigo-600 dark:text-indigo-400 text-sm">{c.codigo}</span>
                   <span className="text-slate-700 dark:text-slate-200 text-sm truncate">{c.nombre}</span>
                 </div>
-                <div className="text-xs text-slate-400 dark:text-slate-500 truncate">{c.titular}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-500 truncate">{c.titular}</div>
               </button>
             ))}
           </div>
@@ -1817,11 +1817,11 @@ const CropModal: React.FC<{
             <button
               onClick={() => setTutStep(0)}
               title="Ver tutorial"
-              className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-sky-600 transition-colors"
+              className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-sky-600 transition-colors"
             >
               <Info size={16} />
             </button>
-            <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
               <X size={18} />
             </button>
           </div>
@@ -1868,7 +1868,7 @@ const CropModal: React.FC<{
         </div>
 
         {/* Quick tips bar */}
-        <div className="flex items-center gap-4 px-1 text-[11px] text-slate-400 dark:text-slate-500">
+        <div className="flex items-center gap-4 px-1 text-[11px] text-slate-500 dark:text-slate-500">
           <span className="flex items-center gap-1"><Move size={11} /> Arrastra el recuadro</span>
           <span className="text-slate-200 dark:text-slate-700">·</span>
           <span className="flex items-center gap-1"><MousePointer2 size={11} /> Esquina para redimensionar</span>
@@ -1919,7 +1919,7 @@ const AerialPreview: React.FC<{
       {img?.croppedUrl || img?.url ? (
         <img src={img.croppedUrl ?? img.url} alt={img.leyenda} className="w-full h-full object-cover absolute inset-0" />
       ) : (
-        <span className="text-[9px] text-slate-400 dark:text-slate-500 z-10 px-1 text-center">{label}</span>
+        <span className="text-[9px] text-slate-500 dark:text-slate-500 z-10 px-1 text-center">{label}</span>
       )}
       {img && (
         <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-1 py-0.5 truncate text-[9px] text-white text-center">
@@ -2391,11 +2391,15 @@ export default function App() {
   };
 
   const generateActaBlob = async (st: AppState = state): Promise<Blob> => {
-    const html = buildActaHtml(st);
-    // Usamos un iframe aislado para evitar que html2canvas herede el CSS de Tailwind v4
-    // (que usa oklch(), no soportado por html2canvas)
+    // patchOklch sobre el HTML completo elimina cualquier oklch() del template/estilos inline.
+    const html = patchOklch(buildActaHtml(st));
+    // Iframe aislado: su documento solo contiene el CSS del template (sin Tailwind v4),
+    // por lo que html2canvas nunca encuentra oklch() al leer los estilos computados.
+    // (Importante: se invoca html2canvas DIRECTAMENTE sobre el iframe, no vía jsPDF.html,
+    //  que re-parenta el contenido al documento principal y filtraba el oklch de Tailwind.)
+    const ANCHO_PX = 816; // 215,9mm a 96dpi ≈ ancho de página Oficio
     const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'position:fixed;left:-20000px;top:0;width:816px;height:1200px;border:none;visibility:hidden;';
+    iframe.style.cssText = `position:fixed;left:-20000px;top:0;width:${ANCHO_PX}px;height:1200px;border:none;visibility:hidden;`;
     document.body.appendChild(iframe);
     try {
       const iframeDoc = iframe.contentDocument!;
@@ -2406,32 +2410,45 @@ export default function App() {
         if (iframeDoc.readyState === 'complete') resolve();
         else iframe.addEventListener('load', () => resolve(), { once: true });
       });
-      // Patch getComputedStyle in the iframe so html2canvas never sees oklch() values
-      const iframeWin = iframe.contentWindow as any;
-      const origGCS = iframeWin.getComputedStyle.bind(iframeWin);
-      iframeWin.getComputedStyle = (el: Element, pseudo?: string | null) => {
-        const cs = origGCS(el, pseudo);
-        return new Proxy(cs, {
-          get(t: any, p: string | symbol) {
-            const v = t[p];
-            if (typeof p === 'string' && typeof v === 'string' && v.includes('oklch')) {
-              return patchOklch(v);
-            }
-            return typeof v === 'function' ? v.bind(t) : v;
-          },
-        });
-      };
-      const doc = new jsPDF({ format: [215.9, 355.6], unit: 'mm' });
-      await new Promise<void>((resolve, reject) => {
-        (doc as any).html(iframeDoc.body, {
-          callback: () => resolve(),
-          x: 0, y: 0,
-          width: 215.9,
-          windowWidth: 816,
-          autoPaging: 'text',
-        });
-        setTimeout(() => reject(new Error('html2canvas timeout after 20s')), 20000);
+      // Esperar a que las fuentes y el layout estén listos antes de capturar.
+      try { await (iframeDoc as any).fonts?.ready; } catch { /* */ }
+      await new Promise((r) => setTimeout(r, 150));
+
+      const html2canvas = (await import('html2canvas')).default;
+      const target = iframeDoc.body;
+      const captureW = Math.max(target.scrollWidth, ANCHO_PX);
+      const captureH = Math.max(target.scrollHeight, iframeDoc.documentElement.scrollHeight);
+
+      const canvas = await html2canvas(target, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        width: captureW,
+        height: captureH,
+        windowWidth: captureW,
+        windowHeight: captureH,
+        useCORS: true,
+        logging: false,
       });
+
+      const PAGE_W = 215.9, PAGE_H = 355.6; // Oficio (mm)
+      const imgW = PAGE_W;
+      const imgH = (canvas.height * imgW) / canvas.width;
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+      const doc = new jsPDF({ format: [PAGE_W, PAGE_H], unit: 'mm', compress: true });
+      if (imgH <= PAGE_H + 1) {
+        doc.addImage(imgData, 'JPEG', 0, 0, imgW, imgH, undefined, 'FAST');
+      } else {
+        // Contenido más alto que una página → repartir en varias páginas Oficio.
+        let page = 0;
+        let heightLeft = imgH;
+        while (heightLeft > 0) {
+          if (page > 0) doc.addPage([PAGE_W, PAGE_H]);
+          doc.addImage(imgData, 'JPEG', 0, -(PAGE_H * page), imgW, imgH, undefined, 'FAST');
+          heightLeft -= PAGE_H;
+          page++;
+        }
+      }
       return doc.output('blob');
     } finally {
       document.body.removeChild(iframe);
@@ -2929,18 +2946,7 @@ export default function App() {
   const [loginAquaPhase, setLoginAquaPhase] = useState<'idle' | 'in' | 'hold' | 'out'>('idle');
   const [wasLoggedOut, setWasLoggedOut] = useState(false);
 
-  // [REPRO TEMPORAL] Reproduce la transición login→app sin Google con ?repro=1
-  useEffect(() => {
-    if (!new URLSearchParams(window.location.search).has('repro')) return;
-    if (savedSession) return;
-    localStorage.setItem('certimar-session', JSON.stringify({ role: 'editor', email: 'repro@certimar.cl', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
-    setLoginAquaPhase('in');
-    setTimeout(() => setLoginAquaPhase('hold'), 600);
-    setTimeout(() => { setUserRole('editor'); setShowWelcome(false); }, 1100);
-    setTimeout(() => setLoginAquaPhase('out'), 1700);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const CHANGELOG_VERSION = '2026-06-03-v14';
+  const CHANGELOG_VERSION = '2026-06-03-v15';
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelogStep, setChangelogStep] = useState(0);
   const [pendingGenerate, setPendingGenerate] = useState<'certificado' | 'informe' | null>(null);
@@ -5961,7 +5967,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <div className="text-3xl font-bold text-slate-800 dark:text-white">{value}</div>
               <div>
                 <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{label}</div>
-                <div className="text-xs text-slate-400 dark:text-slate-500">{desc}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-500">{desc}</div>
               </div>
             </div>
           ))}
@@ -5974,7 +5980,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <TrendingUp size={16} className="text-emerald-500" />
               Tasa de adopción
             </div>
-            <div className="text-4xl font-bold text-slate-800 dark:text-white">{tasaAdopcion}<span className="text-xl text-slate-400">%</span></div>
+            <div className="text-4xl font-bold text-slate-800 dark:text-white">{tasaAdopcion}<span className="text-xl text-slate-500">%</span></div>
             <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700">
               <div className="h-2 rounded-full bg-emerald-500 transition-all" style={{ width: `${tasaAdopcion}%` }} />
             </div>
@@ -5986,7 +5992,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <CheckCircle2 size={16} className="text-sky-500" />
               Tasa de completitud
             </div>
-            <div className="text-4xl font-bold text-slate-800 dark:text-white">{tasaCompletitud}<span className="text-xl text-slate-400">%</span></div>
+            <div className="text-4xl font-bold text-slate-800 dark:text-white">{tasaCompletitud}<span className="text-xl text-slate-500">%</span></div>
             <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700">
               <div className="h-2 rounded-full bg-sky-500 transition-all" style={{ width: `${tasaCompletitud}%` }} />
             </div>
@@ -6023,7 +6029,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2">
             <Activity size={16} className="text-indigo-500" />
             Actividad diaria
-            <span className="text-xs font-normal text-slate-400 dark:text-slate-500 ml-1">— apilado por tipo de documento</span>
+            <span className="text-xs font-normal text-slate-500 dark:text-slate-500 ml-1">— apilado por tipo de documento</span>
           </h2>
           <div className="flex items-end gap-1 h-32 overflow-x-auto">
             {porDia.map(({ fecha, cert, informe, acta, otros }) => {
@@ -6041,7 +6047,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     </div>
                   </div>
                   {(filtro === '7d' || (filtro === '30d' && porDia.indexOf(porDia.find(d => d.fecha === fecha)!) % 3 === 0)) && (
-                    <span className="text-[8px] text-slate-400 dark:text-slate-500 rotate-45 origin-left w-8">{label}</span>
+                    <span className="text-[8px] text-slate-500 dark:text-slate-500 rotate-45 origin-left w-8">{label}</span>
                   )}
                 </div>
               );
@@ -6060,7 +6066,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2">
             <Clock size={16} className="text-amber-500" />
             Horario de uso
-            <span className="text-xs font-normal text-slate-400 dark:text-slate-500 ml-1">— distribución de actividad por hora del día</span>
+            <span className="text-xs font-normal text-slate-500 dark:text-slate-500 ml-1">— distribución de actividad por hora del día</span>
           </h2>
           <div className="flex items-end gap-1 h-20">
             {porHora.map(({ hora, count }) => (
@@ -6070,7 +6076,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     style={{ height: `${Math.max((count / maxHora) * 100, count > 0 ? 8 : 2)}%` }} />
                 </div>
                 {hora % 6 === 0 && (
-                  <span className="text-[9px] text-slate-400 dark:text-slate-500">{hora}h</span>
+                  <span className="text-[9px] text-slate-500 dark:text-slate-500">{hora}h</span>
                 )}
               </div>
             ))}
@@ -6083,10 +6089,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
               <Anchor size={16} className="text-sky-500" />
               <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200">Centros inspeccionados</h2>
-              <span className="ml-auto text-xs text-slate-400">{porCentro.length} centros</span>
+              <span className="ml-auto text-xs text-slate-500">{porCentro.length} centros</span>
             </div>
             {porCentro.length === 0 ? (
-              <div className="px-6 py-8 text-center text-sm text-slate-400 dark:text-slate-500">Sin datos para el período</div>
+              <div className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-500">Sin datos para el período</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
@@ -6104,7 +6110,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       <tr key={codigo} className="border-b border-slate-50 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                         <td className="px-4 py-2.5">
                           <div className="font-semibold text-slate-700 dark:text-slate-200 truncate max-w-[160px]">{v.nombreCentro}</div>
-                          <div className="text-slate-400 dark:text-slate-500">{codigo}</div>
+                          <div className="text-slate-500 dark:text-slate-500">{codigo}</div>
                         </td>
                         <td className="px-2 py-2.5 text-center">
                           <span className={cn("px-1.5 py-0.5 rounded-md font-bold", v.cert > 0 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" : "text-slate-300 dark:text-slate-600")}>{v.cert}</span>
@@ -6131,10 +6137,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
               <Users size={16} className="text-violet-500" />
               <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200">Actividad por usuario</h2>
-              <span className="ml-auto text-xs text-slate-400">{porUsuario.length} usuarios</span>
+              <span className="ml-auto text-xs text-slate-500">{porUsuario.length} usuarios</span>
             </div>
             {porUsuario.length === 0 ? (
-              <div className="px-6 py-8 text-center text-sm text-slate-400 dark:text-slate-500">Sin datos para el período</div>
+              <div className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-500">Sin datos para el período</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
@@ -6185,7 +6191,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
             <AlertTriangle size={16} className="text-amber-500" />
             <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200">Log de actividad reciente</h2>
-            <span className="ml-auto text-xs text-slate-400">Últimos {recenteEventos.length} eventos</span>
+            <span className="ml-auto text-xs text-slate-500">Últimos {recenteEventos.length} eventos</span>
           </div>
           <div className="overflow-x-auto max-h-96 overflow-y-auto">
             <table className="w-full text-xs">
@@ -6213,7 +6219,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   </tr>
                 ))}
                 {recenteEventos.length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500">Sin actividad en el período</td></tr>
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500 dark:text-slate-500">Sin actividad en el período</td></tr>
                 )}
               </tbody>
             </table>
@@ -6242,7 +6248,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 {state.registroId}
               </span>
             ) : (
-              <span className="text-xs text-slate-400 dark:text-slate-500 italic">Sin registro activo</span>
+              <span className="text-xs text-slate-500 dark:text-slate-500 italic">Sin registro activo</span>
             )}
           </div>
           <div className="flex items-center gap-3">
@@ -6510,10 +6516,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:border-slate-300 dark:hover:border-slate-600"
       )}
     >
-      {Icon && <Icon size={20} className={value ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"} />}
+      {Icon && <Icon size={20} className={value ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500"} />}
       <div className="flex-1 min-w-0">
         <p className={cn("font-bold text-sm", value ? "text-indigo-700 dark:text-indigo-300" : "text-slate-700 dark:text-slate-200")}>{label}</p>
-        {description && <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{description}</p>}
+        {description && <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">{description}</p>}
       </div>
       <div className={cn("w-10 h-6 rounded-full transition-all relative shrink-0", value ? "bg-indigo-500" : "bg-slate-200 dark:bg-slate-700")}>
         <div className={cn("absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all", value ? "left-4" : "left-0.5")} />
@@ -6546,7 +6552,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Olas en el PDF</p>
-              <p className="text-xs text-slate-400 mt-0.5">Intensidad de las líneas decorativas en el informe y certificado</p>
+              <p className="text-xs text-slate-500 mt-0.5">Intensidad de las líneas decorativas en el informe y certificado</p>
             </div>
             <span className="text-xs font-bold text-slate-500 dark:text-slate-400 w-10 text-right">
               {Math.round(wavesOpacity * 100)}%
@@ -6559,7 +6565,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             onChange={e => setWavesOpacity(parseFloat(e.target.value))}
             className="w-full accent-indigo-600"
           />
-          <div className="flex justify-between text-[10px] text-slate-400">
+          <div className="flex justify-between text-[10px] text-slate-500">
             <span>Sin olas</span>
             <span>Muy visibles</span>
           </div>
@@ -6570,7 +6576,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Logo empresa en portada</p>
-              <p className="text-xs text-slate-400 mt-0.5">Opacidad de la marca de agua vertical del logo seleccionado</p>
+              <p className="text-xs text-slate-500 mt-0.5">Opacidad de la marca de agua vertical del logo seleccionado</p>
             </div>
             <span className="text-xs font-bold text-slate-500 dark:text-slate-400 w-10 text-right">
               {Math.round(logoPortadaOpacity * 100)}%
@@ -6584,7 +6590,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             onPointerUp={e => saveLogoPortadaOpacity(parseFloat((e.target as HTMLInputElement).value))}
             className="w-full accent-violet-600"
           />
-          <div className="flex justify-between text-[10px] text-slate-400">
+          <div className="flex justify-between text-[10px] text-slate-500">
             <span>Invisible</span>
             <span>Opaco</span>
           </div>
@@ -6673,7 +6679,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 px-5 py-4 space-y-4">
           <div>
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Logo empresa — watermark portada</p>
-            <p className="text-xs text-slate-400 mt-0.5">Posición, tamaño y rotación del logo de la empresa</p>
+            <p className="text-xs text-slate-500 mt-0.5">Posición, tamaño y rotación del logo de la empresa</p>
           </div>
 
           {/* Vista preliminar página completa */}
@@ -6780,7 +6786,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       ? accent === 'indigo' ? "text-indigo-700 dark:text-indigo-300" : "text-orange-700 dark:text-orange-300"
                       : "text-slate-600 dark:text-slate-300"
                     )}>{label}</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">{desc}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5 leading-tight">{desc}</p>
                   </div>
                   {isActive && (
                     <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full",
@@ -6920,7 +6926,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           </div>
 
           {Object.keys(logosEmpresas).length === 0 ? (
-            <p className="text-xs text-slate-400 dark:text-slate-500">Sin logos cargados. Sube los logos de tus empresas clientes para que aparezcan en la portada del informe.</p>
+            <p className="text-xs text-slate-500 dark:text-slate-500">Sin logos cargados. Sube los logos de tus empresas clientes para que aparezcan en la portada del informe.</p>
           ) : (() => {
             const portadaEntries = Object.entries(logosEmpresas).filter(([n]) => logosPortada.has(n));
             const restEntries    = Object.entries(logosEmpresas).filter(([n]) => !logosPortada.has(n));
@@ -6947,7 +6953,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     />
                     <div className="flex gap-2">
                       <button onClick={() => renameLogo(name, renameValue)} className="text-[10px] text-indigo-500 hover:text-indigo-700 font-semibold transition-colors">Guardar</button>
-                      <button onClick={() => setRenamingLogo(null)} className="text-[10px] text-slate-400 hover:text-slate-600 transition-colors">Cancelar</button>
+                      <button onClick={() => setRenamingLogo(null)} className="text-[10px] text-slate-500 hover:text-slate-600 transition-colors">Cancelar</button>
                     </div>
                   </div>
                 ) : (
@@ -6965,7 +6971,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       "text-[10px] font-semibold transition-colors",
                       logosPortada.has(name)
                         ? "text-violet-500 hover:text-violet-700"
-                        : "text-slate-400 hover:text-violet-500"
+                        : "text-slate-500 hover:text-violet-500"
                     )}
                   >
                     {logosPortada.has(name) ? '★ Portada' : '☆ Portada'}
@@ -6994,7 +7000,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 {restEntries.length > 0 && (
                   <div className="space-y-2">
                     {portadaEntries.length > 0 && (
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Todas las empresas</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Todas las empresas</p>
                     )}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {restEntries.map(([name, url]) => <LogoCard key={name} name={name} url={url} />)}
@@ -7029,7 +7035,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       {/* ── Sistema ── */}
       <section className="space-y-3">
         <div className="flex items-center gap-2 mb-1">
-          <SlidersHorizontal size={16} className="text-slate-400" />
+          <SlidersHorizontal size={16} className="text-slate-500" />
           <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Sistema</h2>
         </div>
         <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 divide-y divide-slate-100 dark:divide-slate-700">
@@ -7064,7 +7070,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             ? 'bg-slate-50 dark:bg-slate-900 text-slate-300 dark:text-slate-700 border-slate-100 dark:border-slate-800 cursor-not-allowed'
             : active
               ? colorOn
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700 hover:border-slate-400'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-600 border-slate-200 dark:border-slate-700 hover:border-slate-400'
         )}
       >
         {active ? labelOn : labelOff}
@@ -7150,10 +7156,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             </div>
           )}
           {!historicoLoading && historicoEntries.length === 0 && (
-            <div className="px-6 py-16 text-center text-slate-400 dark:text-slate-500">
+            <div className="px-6 py-16 text-center text-slate-500 dark:text-slate-500">
               <History size={32} className="mx-auto mb-3 opacity-30" />
               <p className="text-sm font-medium">Aún no hay registros generados.</p>
-              <p className="text-xs mt-1 text-slate-400">Aparecerán aquí cuando generes el primer documento.</p>
+              <p className="text-xs mt-1 text-slate-500">Aparecerán aquí cuando generes el primer documento.</p>
             </div>
           )}
           {!historicoLoading && historicoEntries.length > 0 && (
@@ -7178,7 +7184,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="font-bold text-slate-900 dark:text-white text-sm truncate">{entry.nombreCentro || '—'}</p>
-                        <p className="text-[10px] font-mono text-slate-400 dark:text-slate-500">{entry.codigoCentro} · {entry.registroId}</p>
+                        <p className="text-[10px] font-mono text-slate-500 dark:text-slate-500">{entry.codigoCentro} · {entry.registroId}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         {entry.esBorrador && (
@@ -7190,7 +7196,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       </div>
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{entry.titular || '—'}</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 font-mono">{entry.fechaInspeccion || '—'}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-500 font-mono">{entry.fechaInspeccion || '—'}</p>
 
                     {/* Compliance badges */}
                     {m && (
@@ -7391,7 +7397,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-900 z-10">
                   <div className="min-w-0">
                     <p className="font-bold text-slate-900 dark:text-white text-base truncate">{entry.nombreCentro || '—'}</p>
-                    <p className="text-xs font-mono text-slate-400">{entry.codigoCentro} · {entry.registroId}</p>
+                    <p className="text-xs font-mono text-slate-500">{entry.codigoCentro} · {entry.registroId}</p>
                   </div>
                   <button onClick={() => setSelectedHistoricoEntry(null)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 shrink-0">
                     <X size={16} />
@@ -7401,7 +7407,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 <div className="flex flex-col gap-6 px-6 py-5 flex-1">
                   {/* Info */}
                   <div className="space-y-1.5">
-                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Centro</p>
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Centro</p>
                     <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-semibold">Titular:</span> {entry.titular || '—'}</p>
                     <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-semibold">Fecha inspección:</span> {entry.fechaInspeccion || '—'}</p>
                     <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-semibold">Certificador:</span> {snap.general?.certificador?.nombre || '—'}</p>
@@ -7412,7 +7418,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
                   {/* Métricas técnicas */}
                   <div className="space-y-3">
-                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Métricas técnicas</p>
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Métricas técnicas</p>
                     <div className="flex flex-col gap-2">
                       {([
                         { label: 'Cap. Extracción',       val: m.capExtraccion,       cumple: m.cumpleExtraccion,       unit: 'TN/día' },
@@ -7440,7 +7446,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
                   {/* Documentos */}
                   <div className="space-y-3">
-                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Documentos</p>
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Documentos</p>
                     <div className="flex flex-col gap-2">
                       {ALL_DOC_TYPES.filter(d => docs.includes(d)).map(tipo => {
                         const url = urls[tipo];
@@ -7460,7 +7466,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                                   loadFromHistorico(entry);
                                   setTimeout(() => alert('Registro cargado. Genera los documentos para subirlos a la nube.'), 300);
                                 }}
-                                className="text-xs text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors"
+                                className="text-xs text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors"
                               >
                                 Regenerar →
                               </button>
@@ -7468,7 +7474,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                           </div>
                         );
                       })}
-                      {docs.length === 0 && <p className="text-xs text-slate-400 italic">Sin documentos generados.</p>}
+                      {docs.length === 0 && <p className="text-xs text-slate-500 italic">Sin documentos generados.</p>}
                     </div>
                   </div>
                 </div>
@@ -7527,7 +7533,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         <FormCard title="Métodos y Equipos" className="lg:col-span-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="space-y-6">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sistemas de Apoyo</h4>
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Sistemas de Apoyo</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <CheckboxField label="Buceo" checked={state.extraction.sistemas_apoyo.buceo} onChange={(v) => updateExtraction('sistemas_apoyo.buceo', v)} />
                 <CheckboxField label="ROV" checked={state.extraction.sistemas_apoyo.rov} onChange={(v) => updateExtraction('sistemas_apoyo.rov', v)} />
@@ -7605,7 +7611,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             </div>
 
             <div className="space-y-4">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Parámetros Técnicos</h4>
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Parámetros Técnicos</h4>
               <div className={`grid gap-4 ${state.general.modo_operacion_minima ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <InputField label="Total Jaulas" type="number" value={state.extraction.parametros.numero_total_jaulas} onChange={(v) => updateExtraction('parametros.numero_total_jaulas', v)} />
                 {!state.general.modo_operacion_minima && (
@@ -7624,7 +7630,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               )}
               {state.extraction.sistemas_apoyo.buceo && (
                 <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Equipo de Buceo</h4>
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Equipo de Buceo</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <InputField label="N° Teams" type="number" value={state.extraction.parametros.n_teams_buceo} onChange={(v) => updateExtraction('parametros.n_teams_buceo', v)} />
                     <InputField label="N° Buzos/Team" type="number" value={state.extraction.parametros.n_buzos_por_team} onChange={(v) => updateExtraction('parametros.n_buzos_por_team', v)} />
@@ -7689,12 +7695,12 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       <FormCard title="Equipos de Extracción">
         <div className="space-y-4">
           {(state.extraction.equipos_extraccion ?? []).length === 0 && (
-            <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-2">Sin equipos registrados.</p>
+            <p className="text-sm text-slate-500 dark:text-slate-500 text-center py-2">Sin equipos registrados.</p>
           )}
           {(state.extraction.equipos_extraccion ?? []).map((equipo, idx) => (
             <div key={idx} className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
               <div className="md:col-span-2 flex items-center justify-between gap-2">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Equipo {idx + 1}</span>
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Equipo {idx + 1}</span>
                 <button onClick={() => handleRemoveExtractionEquipo(idx)} className="text-xs text-red-400 hover:text-red-600 transition-colors">✕ Quitar</button>
               </div>
               <div className="space-y-1.5">
@@ -7731,7 +7737,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           ))}
           <button
             onClick={handleAddExtractionEquipo}
-            className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500 hover:border-indigo-400 hover:text-indigo-500 transition-colors text-sm font-medium"
+            className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-500 hover:border-indigo-400 hover:text-indigo-500 transition-colors text-sm font-medium"
           >
             + Agregar Equipo de Extracción
           </button>
@@ -7898,7 +7904,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                               {Math.round(state.denaturation.equipos.factor_eficiencia_prepicador * 100)}%
                             </span>
                           </div>
-                          <p className="text-[10px] text-slate-400">
+                          <p className="text-[10px] text-slate-500">
                             Reduce el tiempo de procesamiento en un {Math.round((1 - state.denaturation.equipos.factor_eficiencia_prepicador) * 100)}%
                           </p>
                         </div>
@@ -7985,7 +7991,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                           <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
                             {((state.denaturation.incinerador.capacidad_carga_kg_h * state.denaturation.incinerador.horas_funcionamiento_dia) / 1000).toFixed(2)}
                           </span>
-                          <span className="text-xs text-slate-400 ml-auto">TN/Día</span>
+                          <span className="text-xs text-slate-500 ml-auto">TN/Día</span>
                         </div>
                       </div>
                       {(state.denaturation.incinerador.id_catalogo || state.denaturation.incinerador.activo) && (
@@ -8030,7 +8036,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       </div>
                       <div className="md:col-span-2 flex items-center justify-end gap-3 pt-2">
                         {findIncineradorDuplicado(catalogoCustom, state.denaturation.incinerador.marca_modelo) && (
-                          <span className="text-xs text-slate-400">Ya existe: se actualizará el guardado.</span>
+                          <span className="text-xs text-slate-500">Ya existe: se actualizará el guardado.</span>
                         )}
                         <button
                           type="button"
@@ -8095,12 +8101,12 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <FormCard title="Generación Eléctrica">
             <div className="space-y-4">
               {state.denaturation.generacion_electrica.length === 0 && (
-                <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-2">Sin generadores registrados.</p>
+                <p className="text-sm text-slate-500 dark:text-slate-500 text-center py-2">Sin generadores registrados.</p>
               )}
               {state.denaturation.generacion_electrica.map((gen, idx) => (
                 <div key={idx} className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
                   <div className="md:col-span-2 flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Generador {idx + 1}</span>
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Generador {idx + 1}</span>
                     <button onClick={() => handleRemoveGenerator(idx)} className="text-xs text-red-400 hover:text-red-600 transition-colors">✕ Quitar</button>
                   </div>
 
@@ -8154,7 +8160,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
               <button
                 onClick={handleAddGenerator}
-                className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500 hover:border-indigo-400 hover:text-indigo-500 transition-colors text-sm font-medium"
+                className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-500 hover:border-indigo-400 hover:text-indigo-500 transition-colors text-sm font-medium"
               >
                 + Agregar Generador
               </button>
@@ -8166,23 +8172,23 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <FormCard title="Resultados" className="bg-slate-900 border-slate-800">
             <div className="space-y-6 text-white">
               <div>
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Duración Batch</p>
+                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Duración Batch</p>
                 <p className="text-4xl font-mono font-bold tracking-tighter">{state.denaturation.resultados.duracion_total_batch_min} <span className="text-xl text-slate-500">MIN</span></p>
               </div>
               <div>
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Batches por Día</p>
+                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Batches por Día</p>
                 <p className="text-4xl font-mono font-bold tracking-tighter">{state.denaturation.resultados.numero_batches_dia}</p>
               </div>
               <div className="pt-6 border-t border-slate-800">
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Capacidad Diaria</p>
+                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Capacidad Diaria</p>
                 <div className="flex items-baseline gap-2">
                   <p className="text-5xl font-mono font-bold tracking-tighter text-indigo-400">{state.denaturation.resultados.capacidad_diaria_ton}</p>
-                  <p className="text-slate-400 font-medium">TN/DÍA</p>
+                  <p className="text-slate-500 font-medium">TN/DÍA</p>
                 </div>
               </div>
 
               <div className="pt-6 border-t border-slate-800">
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">Observación Acta (Auto)</p>
+                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-2">Observación Acta (Auto)</p>
                 <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700">
                   <p className="text-[10px] leading-relaxed text-slate-300 font-mono italic">
                     {state.denaturation.resultados.observacion_automatica}
@@ -8452,10 +8458,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         {/* ── Logo del cliente para la portada ── */}
         {userRole !== null && Object.keys(logosEmpresas).length > 0 && (
           <div className="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50">
-            <Building2 size={18} className="text-slate-400 shrink-0" />
+            <Building2 size={18} className="text-slate-500 shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Logo en portada del informe</p>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 {logoClienteUrl
                   ? logoManualOverride
                     ? `Logo seleccionado manualmente`
@@ -8505,7 +8511,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
         {/* Contador por sección — sticky */}
         <div className="sticky top-0 z-30 -mx-8 md:-mx-12 px-8 md:px-12 py-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-3">
-          <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-500 uppercase tracking-wider">
             {total} {total === 1 ? 'imagen' : 'imágenes'}
           </span>
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
@@ -8522,7 +8528,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     ? "bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/30"
                     : count > 0
                       ? "bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 cursor-pointer"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700 cursor-default"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-600 border-slate-200 dark:border-slate-700 cursor-default"
                 )}
               >
                 {label}
@@ -8583,7 +8589,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             <div className="flex items-center gap-4 p-4">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Registro de Visita</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">
                   {registroVisitaProcessing
                     ? `Procesando página… ${registroVisitaProgress}%`
                     : registroVisitaName
@@ -8891,7 +8897,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                           "w-full flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold border transition-all",
                           img.croppedUrl
                             ? "bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-500/40"
-                            : "bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-sky-50 dark:hover:bg-sky-500/10 hover:text-sky-600 hover:border-sky-200"
+                            : "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-sky-50 dark:hover:bg-sky-500/10 hover:text-sky-600 hover:border-sky-200"
                         )}
                       >
                         <SlidersHorizontal size={11} />
@@ -8905,7 +8911,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                           "w-full flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold border transition-all",
                           img.enPortada
                             ? "bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/40"
-                            : "bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-violet-50 dark:hover:bg-violet-500/10 hover:text-violet-600 hover:border-violet-200"
+                            : "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-violet-50 dark:hover:bg-violet-500/10 hover:text-violet-600 hover:border-violet-200"
                         )}
                       >
                         <Star size={11} />
@@ -8988,7 +8994,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   const items = required.filter(i => i.grupo === grupo);
                   return (
                     <div key={grupo} className="space-y-1.5">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 px-1">{grupo}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-500 px-1">{grupo}</p>
                       {items.map(item => (
                         <div key={item.id} className={cn(
                           'flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm',
@@ -9015,7 +9021,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
                 {/* Items recomendados */}
                 <div className="space-y-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 px-1">Recomendados</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-500 px-1">Recomendados</p>
                   {optional.map(item => (
                     <div key={item.id} className={cn(
                       'flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm',
@@ -9149,7 +9155,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               </div>
               <button
                 onClick={() => setShowEmailModal(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                className="text-slate-500 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
               >
                 <X size={18} />
               </button>
@@ -9386,7 +9392,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 localStorage.removeItem('certimar-session');
                 setActiveTab('general'); setWasLoggedOut(true); setUserRole(null); setShowWelcome(true);
               }}
-              className={cn("w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400", isSidebarCollapsed && "justify-center px-0")}
+              className={cn("w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-slate-500 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400", isSidebarCollapsed && "justify-center px-0")}
             >
               <LogOut size={18} />
               {!isSidebarCollapsed && <span className="text-sm font-medium">Cerrar Sesión</span>}
@@ -9411,8 +9417,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           {/* Badge correlativo interno */}
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-2 py-1">
-              <Bookmark size={11} className={cn("shrink-0", state.registroId ? "text-indigo-400" : "text-slate-400 dark:text-slate-600")} />
-              <span className={cn("text-[11px] font-bold tracking-wider", state.registroId ? "text-indigo-400 dark:text-indigo-300" : "text-slate-400 dark:text-slate-600")}>
+              <Bookmark size={11} className={cn("shrink-0", state.registroId ? "text-indigo-400" : "text-slate-500 dark:text-slate-600")} />
+              <span className={cn("text-[11px] font-bold tracking-wider", state.registroId ? "text-indigo-400 dark:text-indigo-300" : "text-slate-500 dark:text-slate-600")}>
                 {state.registroId ?? 'Sin registro'}
               </span>
             </div>
@@ -9435,7 +9441,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
-                  className="text-[10px] text-slate-400 dark:text-slate-500 font-medium"
+                  className="text-[10px] text-slate-500 dark:text-slate-500 font-medium"
                 >
                   {saveAnim ? (
                     <span className="text-emerald-500 dark:text-emerald-400 font-semibold">Guardado</span>
@@ -9600,8 +9606,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       {item.ok ? '✓' : item.required ? '✗' : '○'}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-xs truncate ${item.ok ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{item.label}</p>
-                      {!item.ok && <p className="text-[10px] text-slate-400 truncate">{item.detail}</p>}
+                      <p className={`text-xs truncate ${item.ok ? 'text-slate-500 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{item.label}</p>
+                      {!item.ok && <p className="text-[10px] text-slate-500 truncate">{item.detail}</p>}
                     </div>
                   </li>
                 ))}
@@ -9693,6 +9699,17 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         const closeChangelog = () => { setShowChangelog(false); localStorage.setItem('certimar-changelog-seen', CHANGELOG_VERSION); };
         const neverShowChangelog = () => { localStorage.setItem('certimar-changelog-never', 'true'); closeChangelog(); };
         const steps: { Icon: React.ElementType; color: string; titulo: string; descripcion: string; detalle: string[] }[] = [
+          {
+            Icon: Settings2,
+            color: '#c2410c',
+            titulo: 'Incinerador a medida y reutilizable',
+            descripcion: 'Ahora puedes ingresar un incinerador llenando todos sus campos y guardarlo en el catálogo para reutilizarlo en otras certificaciones.',
+            detalle: [
+              'Nuevo: opción "➕ Nuevo incinerador (manual)" en el selector de Incinerador Secundario.',
+              'Los campos de detalle (cámaras, temperaturas, quemadores, etc.) son editables.',
+              '"Guardar en catálogo" persiste el incinerador; reutilízalo, edítalo o elimínalo desde el panel de equipos.',
+            ],
+          },
           {
             Icon: FileDown,
             color: '#1f6f43',
@@ -9878,6 +9895,27 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               'Se respeta la preferencia de "movimiento reducido" del dispositivo y la animación de fondo se pausa cuando la pestaña no está visible.',
             ],
           },
+          {
+            Icon: AlertTriangle,
+            color: '#2d5a8e',
+            titulo: 'Corrección: pantalla en blanco tras iniciar sesión',
+            descripcion: 'Al entrar con Google ya no aparece una pantalla en blanco que obligaba a recargar la página.',
+            detalle: [
+              'Antes: después del login la aplicación quedaba en blanco y había que recargar manualmente para usarla.',
+              'Ahora: la app carga directamente tras iniciar sesión, sin recargar.',
+              'Además, si en el futuro ocurriera cualquier error de carga, verás un aviso con un botón para reintentar en lugar de una página vacía.',
+            ],
+          },
+          {
+            Icon: Palette,
+            color: '#0e7490',
+            titulo: 'Texto secundario más legible en modo claro',
+            descripcion: 'Subimos el contraste de etiquetas, unidades y textos de apoyo en todas las secciones para leerlos con claridad sobre fondo claro.',
+            detalle: [
+              'Las etiquetas de sección, unidades (TN/Día, %) y textos de ayuda pasan a un gris más oscuro que cumple el estándar de contraste AA.',
+              'El modo oscuro se mantiene igual.',
+            ],
+          },
         ];
         const step = steps[changelogStep];
         const isLast = changelogStep === steps.length - 1;
@@ -9968,7 +10006,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 </div>
                 </div>
                 <div className="text-center">
-                  <button onClick={neverShowChangelog} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors underline underline-offset-2">
+                  <button onClick={neverShowChangelog} className="text-xs text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors underline underline-offset-2">
                     No volver a mostrar novedades
                   </button>
                 </div>
@@ -9989,13 +10027,13 @@ const NavItem = ({ active, onClick, icon: Icon, label, collapsed, variant = "ind
       active: "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 shadow-sm ring-1 ring-indigo-100 dark:ring-indigo-500/20",
       inactive: "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white",
       iconActive: "text-indigo-600 dark:text-indigo-400",
-      iconInactive: "text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300"
+      iconInactive: "text-slate-500 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300"
     },
     emerald: {
       active: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 shadow-sm ring-1 ring-emerald-100 dark:ring-emerald-500/20",
       inactive: "text-slate-500 dark:text-slate-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-500/10 hover:text-emerald-700 dark:hover:text-emerald-400",
       iconActive: "text-emerald-600 dark:text-emerald-400",
-      iconInactive: "text-slate-400 dark:text-slate-500 group-hover:text-emerald-500 dark:group-hover:text-emerald-400"
+      iconInactive: "text-slate-500 dark:text-slate-500 group-hover:text-emerald-500 dark:group-hover:text-emerald-400"
     }
   };
 
