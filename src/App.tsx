@@ -8695,7 +8695,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         <div
           {...dropzoneRootProps()}
           className={cn(
-            "border-2 border-dashed rounded-3xl p-12 text-center transition-all cursor-pointer",
+            "border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer",
             isDragActive
               ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10"
               : "border-slate-300 dark:border-slate-700 hover:border-indigo-400 bg-slate-50 dark:bg-slate-800/50"
@@ -9046,7 +9046,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           })()}
         </FormCard>
 
-        <div className="flex flex-col justify-center items-center p-12 bg-indigo-600 rounded-3xl text-white text-center space-y-6 shadow-xl shadow-indigo-500/20">
+        <div className="flex flex-col justify-center items-center p-12 bg-indigo-600 rounded-2xl text-white text-center space-y-6 shadow-xl shadow-indigo-500/20">
           <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
             <FileDown size={48} />
           </div>
