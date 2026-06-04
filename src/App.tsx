@@ -161,7 +161,7 @@ import {
   buildInformeTecnicoData,
   buildActaInspeccionData,
 } from './domain/documents';
-import { generateActaPdf, buildActaHtml, patchOklch } from './domain/actaHtml';
+import { buildActaHtml, patchOklch } from './domain/actaHtml';
 import { inferCatalogoId } from './domain/generators';
 import { validarOrdenFechas } from './domain/validation';
 import { draftStatus } from './domain/draftStatus';
@@ -1988,6 +1988,7 @@ export default function App() {
 
   // Catálogo de equipos personalizados (persiste en Firestore, visible para admin)
   const [catalogoCustom, setCatalogoCustom] = useState<CatalogoCustomEntry[]>([]);
+  const [guardandoInc, setGuardandoInc] = useState<'idle' | 'guardando' | 'guardado'>('idle');
   const [pendingCustomEquipo, setPendingCustomEquipo] = useState<{ marca_modelo: string; tipo: TipoEquipoCatalogo } | null>(null);
 
   // Bloqueo optimista de registros
@@ -2385,8 +2386,8 @@ export default function App() {
     return getDownloadURL(storageRef);
   };
 
-  const generateActaBlob = async (): Promise<Blob> => {
-    const html = buildActaHtml(state);
+  const generateActaBlob = async (st: AppState = state): Promise<Blob> => {
+    const html = buildActaHtml(st);
     // Usamos un iframe aislado para evitar que html2canvas herede el CSS de Tailwind v4
     // (que usa oklch(), no soportado por html2canvas)
     const iframe = document.createElement('iframe');
@@ -2431,6 +2432,29 @@ export default function App() {
     } finally {
       document.body.removeChild(iframe);
     }
+  };
+
+  /**
+   * Genera el acta como PDF real y lo descarga directamente al equipo del usuario
+   * (sin pasar por el diálogo «Imprimir → Guardar como PDF» del navegador).
+   * Devuelve el blob para poder reutilizarlo (p. ej. subirlo a Storage) sin regenerarlo.
+   */
+  const downloadActaPdf = async (st: AppState = state): Promise<Blob> => {
+    const blob = await generateActaBlob(st);
+    const cc = st.general.centro_cultivo;
+    const [anio = '', mesStr = '', diaStr = ''] =
+      st.general.fechas.emision_certificado.split('-');
+    const filename = `${cc.codigo_centro}_${diaStr}_${mesStr}_${anio}-ACTA.pdf`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Liberar el object URL tras dar tiempo a que el navegador inicie la descarga.
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return blob;
   };
 
   const logEvento = async (
@@ -2900,6 +2924,17 @@ export default function App() {
   const [userRole, setUserRole] = useState<'admin' | 'editor' | 'reader' | null>(savedSession?.role ?? null);
   const [loginAquaPhase, setLoginAquaPhase] = useState<'idle' | 'in' | 'hold' | 'out'>('idle');
   const [wasLoggedOut, setWasLoggedOut] = useState(false);
+
+  // [REPRO TEMPORAL] Reproduce la transición login→app sin Google con ?repro=1
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('repro')) return;
+    if (savedSession) return;
+    localStorage.setItem('certimar-session', JSON.stringify({ role: 'editor', email: 'repro@certimar.cl', expiry: Date.now() + 8 * 60 * 60 * 1000 }));
+    setLoginAquaPhase('in');
+    setTimeout(() => setLoginAquaPhase('hold'), 600);
+    setTimeout(() => { setUserRole('editor'); setShowWelcome(false); }, 1100);
+    setTimeout(() => setLoginAquaPhase('out'), 1700);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const CHANGELOG_VERSION = '2026-06-03-v13';
   const [showChangelog, setShowChangelog] = useState(false);
@@ -3590,6 +3625,42 @@ Se despide atentamente`;
       setPendingCustomEquipo(null);
     } catch (err) {
       console.error('Error guardando equipo personalizado:', err);
+    }
+  };
+
+  const handleGuardarIncinerador = async () => {
+    const inc = state.denaturation.incinerador;
+    if (!inc.marca_modelo.trim()) {
+      alert('Ingresa la marca/modelo del incinerador antes de guardarlo.');
+      return;
+    }
+    setGuardandoInc('guardando');
+    try {
+      const { collection, addDoc, doc, updateDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db, auth } = await import('./firebase');
+      const user = (auth as any).currentUser;
+      const payload = buildIncineradorEntry(
+        inc,
+        state.denaturation.parametros_incineracion,
+        user?.email ?? 'admin',
+        serverTimestamp(),
+      );
+      const dup = findIncineradorDuplicado(catalogoCustom, inc.marca_modelo);
+      if (dup?.id) {
+        await updateDoc(doc(db, 'catalogo_custom', dup.id), payload as any);
+        setCatalogoCustom(prev => prev.map(c => (c.id === dup.id ? { ...payload, id: dup.id, __createdAt: new Date() } : c)));
+        updateDenaturation('incinerador.id_catalogo', `custom:${dup.id}`);
+      } else {
+        const ref = await addDoc(collection(db, 'catalogo_custom'), payload);
+        setCatalogoCustom(prev => [...prev, { ...payload, id: ref.id, __createdAt: new Date() }]);
+        updateDenaturation('incinerador.id_catalogo', `custom:${ref.id}`);
+      }
+      setGuardandoInc('guardado');
+      setTimeout(() => setGuardandoInc('idle'), 2000);
+    } catch (err) {
+      console.error('Error guardando incinerador:', err);
+      setGuardandoInc('idle');
+      alert('Error al guardar el incinerador. Verifica la conexión e intenta nuevamente.');
     }
   };
 
@@ -7241,10 +7312,17 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     if (url) {
                       window.open(url, '_blank');
                     } else if (tipo === 'acta') {
-                      generateActaPdf({
+                      const actaState: AppState = {
                         ...entry.snapshot,
                         images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: img.url ?? '' })),
-                      });
+                      };
+                      setGenerating('acta');
+                      downloadActaPdf(actaState)
+                        .catch(err => {
+                          console.error('Error generando el acta PDF:', err);
+                          alert('No se pudo generar el acta en PDF. Inténtalo nuevamente.');
+                        })
+                        .finally(() => setGenerating(null));
                     } else {
                       // Sin PDF guardado: cargar snapshot y regenerar automáticamente
                       setState({
@@ -7944,6 +8022,19 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       </div>
                       <div className="space-y-1.5 md:col-span-2">
                         <InputField label="Observaciones" value={state.denaturation.incinerador.observaciones} onChange={(v) => updateDenaturation('incinerador.observaciones', v)} />
+                      </div>
+                      <div className="md:col-span-2 flex items-center justify-end gap-3 pt-2">
+                        {findIncineradorDuplicado(catalogoCustom, state.denaturation.incinerador.marca_modelo) && (
+                          <span className="text-xs text-slate-400">Ya existe: se actualizará el guardado.</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleGuardarIncinerador}
+                          disabled={guardandoInc === 'guardando' || !state.denaturation.incinerador.marca_modelo.trim()}
+                          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                        >
+                          {guardandoInc === 'guardando' ? 'Guardando…' : guardandoInc === 'guardado' ? 'Guardado ✓' : 'Guardar en catálogo'}
+                        </button>
                       </div>
                     </div>
                   )}
@@ -8991,13 +9082,22 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <button
             disabled={generating !== null || (!isAdmin && !isEditor)}
             onClick={async () => {
-              generateActaPdf(state);
-              setShowEmailModal(true);
+              setGenerating('acta');
               const actaDocId = state.registroId ?? `sin-reg_${state.general.centro_cultivo.codigo_centro || 'borrador'}`;
-              generateActaBlob()
-                .then(blob => uploadDocToStorage(blob, actaDocId, 'acta'))
-                .then(url => saveToHistorico('acta', url))
-                .catch(() => saveToHistorico('acta'));
+              try {
+                // Genera el PDF real una sola vez: se descarga al usuario y se reutiliza para subirlo.
+                const blob = await downloadActaPdf(state);
+                setShowEmailModal(true);
+                uploadDocToStorage(blob, actaDocId, 'acta')
+                  .then(url => saveToHistorico('acta', url))
+                  .catch(() => saveToHistorico('acta'));
+              } catch (err) {
+                console.error('Error generando el acta PDF:', err);
+                alert('No se pudo generar el acta en PDF. Inténtalo nuevamente.');
+                saveToHistorico('acta');
+              } finally {
+                setGenerating(null);
+              }
               logEvento('generar_acta', { codigoCentro: state.general.centro_cultivo.codigo_centro, nombreCentro: state.general.centro_cultivo.nombre_centro, titular: state.general.centro_cultivo.titular });
             }}
             className={cn(
