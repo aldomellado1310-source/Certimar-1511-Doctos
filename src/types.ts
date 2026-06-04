@@ -222,6 +222,22 @@ export type TipoEquipoCatalogo =
   | 'linea_extraccion'
   | 'compresor';
 
+export interface IncineradorDetalle {
+  horas_funcionamiento: number;
+  camara_primaria: string;
+  num_quemadores_primaria: number;
+  temperatura_camara_primaria_c: number;
+  camara_secundaria: string;
+  num_quemadores_secundaria: number;
+  temperatura_camara_secundaria_c: number;
+  requerimiento_energetico: string;
+  sistema_carga: string;
+  sistema_descarga: string;
+  disposicion_final: string;
+  almacenamiento_gas: string;
+  observaciones: string;
+}
+
 export interface CatalogoCustomEntry {
   id?: string;                          // Firestore document ID (para eliminación)
   tipo: TipoEquipoCatalogo;
@@ -235,6 +251,7 @@ export interface CatalogoCustomEntry {
   configuraciones_batch?: Array<{ label: string; kilos: number; t_proceso: number; t_pausa: number }>;
   // Campos incinerador
   capacidad_carga_kg_h?: number;
+  incinerador_detalle?: IncineradorDetalle;
   // Campos prepicador / linea_extraccion / compresor
   rendimiento_kg_h?: number;
   potencia_kw?: number;
