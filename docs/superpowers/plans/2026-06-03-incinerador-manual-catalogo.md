@@ -901,10 +901,10 @@ git commit -m "feat: admin de catálogo con formulario completo de incinerador y
 
 - [ ] **Step 1: Subir la versión**
 
-En `src/App.tsx` (~línea 2897) cambia:
+En `src/App.tsx` (~línea 2897) cambia (v13 ya está usado por el release de borradores):
 
 ```ts
-  const CHANGELOG_VERSION = '2026-06-03-v13';
+  const CHANGELOG_VERSION = '2026-06-03-v14';
 ```
 
 - [ ] **Step 2: Añadir el paso al modal**
@@ -936,7 +936,7 @@ Expected: lint sin errores; todos los tests PASS.
 
 ```bash
 git add src/App.tsx
-git commit -m "chore: changelog v13 — incinerador manual + catálogo"
+git commit -m "chore: changelog v14 — incinerador manual + catálogo"
 ```
 
 ---
