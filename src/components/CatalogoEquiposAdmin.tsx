@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Plus, Trash2, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
-import { CatalogoCustomEntry, TipoEquipoCatalogo } from '../types';
+import { Plus, Trash2, ChevronDown, ChevronUp, Loader2, Pencil } from 'lucide-react';
+import { CatalogoCustomEntry, TipoEquipoCatalogo, IncineradorDetalle } from '../types';
 
 const TIPO_LABELS: Record<TipoEquipoCatalogo, string> = {
   trituradora:      'Trituradora / Ensilaje',
@@ -38,6 +38,19 @@ interface FormState {
   cfm: string;
   material: string;
   notas: string;
+  // Detalle incinerador
+  horas_funcionamiento: string;
+  camara_primaria: string;
+  num_quemadores_primaria: string;
+  temperatura_camara_primaria_c: string;
+  camara_secundaria: string;
+  num_quemadores_secundaria: string;
+  temperatura_camara_secundaria_c: string;
+  requerimiento_energetico: string;
+  sistema_carga: string;
+  sistema_descarga: string;
+  disposicion_final: string;
+  almacenamiento_gas: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -52,16 +65,30 @@ const EMPTY_FORM: FormState = {
   cfm: '',
   material: '',
   notas: '',
+  horas_funcionamiento: '',
+  camara_primaria: '',
+  num_quemadores_primaria: '',
+  temperatura_camara_primaria_c: '',
+  camara_secundaria: '',
+  num_quemadores_secundaria: '',
+  temperatura_camara_secundaria_c: '',
+  requerimiento_energetico: '',
+  sistema_carga: '',
+  sistema_descarga: '',
+  disposicion_final: '',
+  almacenamiento_gas: '',
 };
 
 interface Props {
   catalogoCustom: CatalogoCustomEntry[];
   onAdd: (entry: CatalogoCustomEntry) => void;
+  onUpdate: (entry: CatalogoCustomEntry) => void;
   onDelete: (id: string) => void;
 }
 
-export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props) {
+export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onUpdate, onDelete }: Props) {
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -105,9 +132,35 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
         __createdAt: serverTimestamp(),
       };
 
-      const ref = await addDoc(collection(db, 'catalogo_custom'), payload);
-      onAdd({ ...payload, id: ref.id, __createdAt: new Date() });
+      if (form.tipo === 'incinerador') {
+        const detalle: IncineradorDetalle = {
+          horas_funcionamiento: Number(form.horas_funcionamiento) || 8,
+          camara_primaria: form.camara_primaria.trim(),
+          num_quemadores_primaria: Number(form.num_quemadores_primaria) || 0,
+          temperatura_camara_primaria_c: Number(form.temperatura_camara_primaria_c) || 0,
+          camara_secundaria: form.camara_secundaria.trim(),
+          num_quemadores_secundaria: Number(form.num_quemadores_secundaria) || 0,
+          temperatura_camara_secundaria_c: Number(form.temperatura_camara_secundaria_c) || 0,
+          requerimiento_energetico: form.requerimiento_energetico.trim(),
+          sistema_carga: form.sistema_carga.trim() || 'N/A',
+          sistema_descarga: form.sistema_descarga.trim() || 'N/A',
+          disposicion_final: form.disposicion_final.trim() || 'N/A',
+          almacenamiento_gas: form.almacenamiento_gas.trim() || 'N/A',
+          observaciones: form.notas.trim(),
+        };
+        (payload as Omit<CatalogoCustomEntry, 'id'>).incinerador_detalle = detalle;
+      }
+
+      if (editingId) {
+        const { doc, updateDoc } = await import('firebase/firestore');
+        await updateDoc(doc(db, 'catalogo_custom', editingId), payload as any);
+        onUpdate({ ...payload, id: editingId, __createdAt: new Date() });
+      } else {
+        const ref = await addDoc(collection(db, 'catalogo_custom'), payload);
+        onAdd({ ...payload, id: ref.id, __createdAt: new Date() });
+      }
       setForm(EMPTY_FORM);
+      setEditingId(null);
       setShowForm(false);
     } catch (err) {
       setError('Error al guardar. Verifica la conexión y vuelve a intentarlo.');
@@ -134,6 +187,38 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
     }
   };
 
+  const startEdit = (entry: CatalogoCustomEntry) => {
+    const d = entry.incinerador_detalle;
+    setForm({
+      ...EMPTY_FORM,
+      tipo: entry.tipo,
+      marca_modelo: entry.marca_modelo,
+      fabricante: entry.fabricante ?? '',
+      material: entry.material ?? '',
+      notas: entry.tipo === 'incinerador' ? (d?.observaciones ?? '') : (entry.notas ?? ''),
+      capacidad_nominal_kg_h: entry.capacidad_nominal_kg_h?.toString() ?? '',
+      almacenamiento_l: entry.almacenamiento_l?.toString() ?? '',
+      capacidad_carga_kg_h: entry.capacidad_carga_kg_h?.toString() ?? '',
+      rendimiento_kg_h: entry.rendimiento_kg_h?.toString() ?? '',
+      potencia_kw: entry.potencia_kw?.toString() ?? '',
+      cfm: entry.cfm?.toString() ?? '',
+      horas_funcionamiento: d?.horas_funcionamiento?.toString() ?? '',
+      camara_primaria: d?.camara_primaria ?? '',
+      num_quemadores_primaria: d?.num_quemadores_primaria?.toString() ?? '',
+      temperatura_camara_primaria_c: d?.temperatura_camara_primaria_c?.toString() ?? '',
+      camara_secundaria: d?.camara_secundaria ?? '',
+      num_quemadores_secundaria: d?.num_quemadores_secundaria?.toString() ?? '',
+      temperatura_camara_secundaria_c: d?.temperatura_camara_secundaria_c?.toString() ?? '',
+      requerimiento_energetico: d?.requerimiento_energetico ?? '',
+      sistema_carga: d?.sistema_carga ?? '',
+      sistema_descarga: d?.sistema_descarga ?? '',
+      disposicion_final: d?.disposicion_final ?? '',
+      almacenamiento_gas: d?.almacenamiento_gas ?? '',
+    });
+    setEditingId(entry.id ?? null);
+    setShowForm(true);
+  };
+
   const inputCls = 'w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all';
   const labelCls = 'block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1';
 
@@ -145,7 +230,7 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
           Equipos Personalizados ({catalogoCustom.length})
         </h4>
         <button
-          onClick={() => setShowForm(v => !v)}
+          onClick={() => { setShowForm(v => !v); if (showForm) { setEditingId(null); setForm(EMPTY_FORM); } }}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors"
         >
           {showForm ? <ChevronUp size={13} /> : <Plus size={13} />}
@@ -242,6 +327,59 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
             />
           </div>
 
+          {form.tipo === 'incinerador' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="inc-horas" className={labelCls}>Horas funcionamiento/día</label>
+                <input id="inc-horas" type="number" min={0} max={24} value={form.horas_funcionamiento} onChange={e => set('horas_funcionamiento', e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="inc-req" className={labelCls}>Requerimiento energético</label>
+                <input id="inc-req" type="text" placeholder="Ej. 390 kWh" value={form.requerimiento_energetico} onChange={e => set('requerimiento_energetico', e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="inc-cp" className={labelCls}>Cámara primaria (dim.)</label>
+                <input id="inc-cp" type="text" placeholder="Ej. 1.450 m diámetro interior" value={form.camara_primaria} onChange={e => set('camara_primaria', e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="inc-qp" className={labelCls}>N° quemadores primaria</label>
+                <input id="inc-qp" type="number" min={0} max={10} value={form.num_quemadores_primaria} onChange={e => set('num_quemadores_primaria', e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="inc-tp" className={labelCls}>Temp. cámara primaria (°C)</label>
+                <input id="inc-tp" type="number" min={0} max={2000} value={form.temperatura_camara_primaria_c} onChange={e => set('temperatura_camara_primaria_c', e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="inc-cs" className={labelCls}>Cámara secundaria (dim.)</label>
+                <input id="inc-cs" type="text" placeholder="Ej. 2 m Diámetro Interior" value={form.camara_secundaria} onChange={e => set('camara_secundaria', e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="inc-qs" className={labelCls}>N° quemadores secundaria</label>
+                <input id="inc-qs" type="number" min={0} max={10} value={form.num_quemadores_secundaria} onChange={e => set('num_quemadores_secundaria', e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="inc-ts" className={labelCls}>Temp. cámara secundaria (°C)</label>
+                <input id="inc-ts" type="number" min={0} max={2000} value={form.temperatura_camara_secundaria_c} onChange={e => set('temperatura_camara_secundaria_c', e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="inc-carga" className={labelCls}>Sistema de carga</label>
+                <input id="inc-carga" type="text" placeholder="Ej. CARGA MANUAL TACHOS 60L" value={form.sistema_carga} onChange={e => set('sistema_carga', e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="inc-descarga" className={labelCls}>Sistema de descarga</label>
+                <input id="inc-descarga" type="text" placeholder="Ej. MANUAL HACIA MAXISACOS" value={form.sistema_descarga} onChange={e => set('sistema_descarga', e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="inc-disp" className={labelCls}>Disposición final</label>
+                <input id="inc-disp" type="text" placeholder="Ej. VERTEDERO MUNICIPAL PTA ARENAS" value={form.disposicion_final} onChange={e => set('disposicion_final', e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="inc-gas" className={labelCls}>Almacenamiento gas</label>
+                <input id="inc-gas" type="text" placeholder="Ej. 4000L X 2 = 8.000L GAS GLP" value={form.almacenamiento_gas} onChange={e => set('almacenamiento_gas', e.target.value)} className={inputCls} />
+              </div>
+            </div>
+          )}
+
           <div>
             <label htmlFor="field-notas" className={labelCls}>Notas / Especificaciones adicionales</label>
             <textarea
@@ -262,7 +400,7 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors"
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
-            {saving ? 'Guardando…' : 'Guardar equipo'}
+            {saving ? 'Guardando…' : editingId ? 'Actualizar equipo' : 'Guardar equipo'}
           </button>
         </div>
       )}
@@ -319,6 +457,16 @@ export function CatalogoEquiposAdmin({ catalogoCustom, onAdd, onDelete }: Props)
                       {entry.material ?? '—'}
                     </td>
                     <td className="px-3 py-2.5">
+                      {entry.id && (
+                        <button
+                          onClick={() => startEdit(entry)}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors mr-1"
+                          title="Editar"
+                          aria-label={`Editar ${entry.marca_modelo}`}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
                       {entry.id && (
                         <button
                           onClick={() => handleDelete(entry)}

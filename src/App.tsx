@@ -1998,6 +1998,10 @@ export default function App() {
     setCatalogoCustom(prev => [...prev, entry]);
   };
 
+  const handleUpdateEquipo = (entry: CatalogoCustomEntry) => {
+    setCatalogoCustom(prev => prev.map(e => (e.id === entry.id ? entry : e)));
+  };
+
   const handleDeleteEquipo = (id: string) => {
     setCatalogoCustom(prev => prev.filter(e => e.id !== id));
   };
@@ -2936,7 +2940,7 @@ export default function App() {
     setTimeout(() => setLoginAquaPhase('out'), 1700);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const CHANGELOG_VERSION = '2026-06-03-v13';
+  const CHANGELOG_VERSION = '2026-06-03-v14';
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelogStep, setChangelogStep] = useState(0);
   const [pendingGenerate, setPendingGenerate] = useState<'certificado' | 'informe' | null>(null);
@@ -7016,6 +7020,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           <CatalogoEquiposAdmin
             catalogoCustom={catalogoCustom}
             onAdd={handleAddEquipo}
+            onUpdate={handleUpdateEquipo}
             onDelete={handleDeleteEquipo}
           />
         </div>
@@ -9107,7 +9112,9 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 : "bg-indigo-400 text-indigo-200 cursor-not-allowed"
             )}
           >
-            <><ShieldCheck size={20} /> Descargar Acta de Inspección</>
+            {generating === 'acta'
+              ? <><span className="animate-spin inline-block w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full" /> Generando PDF...</>
+              : <><ShieldCheck size={20} /> Descargar Acta de Inspección</>}
           </button>
 
           {!canEmit && (
@@ -9187,6 +9194,14 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
     </div>
   );
 
+  // StatsView llama hooks internamente y DEBE invocarse en cada render, no solo
+  // cuando !showWelcome. Si su llamada quedara dentro del bloque {!showWelcome && …},
+  // al pasar de la pantalla de bienvenida a la app tras el login aparecerían hooks
+  // nuevos a mitad de render ("Rendered more hooks than during the previous render")
+  // y, sin error boundary, la app colapsaría a pantalla blanca (obligando a recargar).
+  // StatsView retorna null salvo en el tab 'stats' de un admin, así que llamarla
+  // siempre es visualmente inocuo y mantiene el orden de hooks estable.
+  const statsViewNode = StatsView();
 
   return (
     <div className="min-h-screen bg-canvas dark:bg-slate-950 flex font-sans text-slate-900 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900 selection:text-indigo-900 dark:selection:text-indigo-100 transition-colors duration-500">
@@ -9504,7 +9519,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             {activeTab === 'issue' && IssueView()}
             {activeTab === 'history' && HistoryView()}
             {activeTab === 'config' && ConfigView()}
-            {StatsView()}
+            {statsViewNode}
           </AnimatePresence>
         </div>
       </main>
@@ -9678,6 +9693,17 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         const closeChangelog = () => { setShowChangelog(false); localStorage.setItem('certimar-changelog-seen', CHANGELOG_VERSION); };
         const neverShowChangelog = () => { localStorage.setItem('certimar-changelog-never', 'true'); closeChangelog(); };
         const steps: { Icon: React.ElementType; color: string; titulo: string; descripcion: string; detalle: string[] }[] = [
+          {
+            Icon: FileDown,
+            color: '#1f6f43',
+            titulo: 'El acta ahora se descarga directamente en PDF',
+            descripcion: 'Al generar el acta, el archivo PDF se descarga al instante, sin pasar por el diálogo «Imprimir» del navegador.',
+            detalle: [
+              'Antes: se abría el diálogo de impresión y había que elegir "Guardar como PDF" y desactivar encabezados/pies.',
+              'Ahora: el PDF (tamaño Oficio) se genera y descarga automáticamente con el nombre del centro y la fecha.',
+              'Aplica tanto al botón "Generar Acta" como a la re-descarga desde el Histórico.',
+            ],
+          },
           {
             Icon: AlertTriangle,
             color: '#2d5a8e',
