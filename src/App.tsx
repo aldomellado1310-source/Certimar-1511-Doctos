@@ -122,8 +122,18 @@ const BG_ROCKS = [
   { x: 93, w: 55,  h: 30 },
 ];
 import { useDropzone } from 'react-dropzone';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import type { jsPDF } from 'jspdf';
+// jsPDF + jspdf-autotable se cargan de forma diferida (import dinámico) para que no
+// entren en el bundle inicial; solo se descargan al generar el primer documento.
+let JsPDFCtor: typeof import('jspdf').jsPDF;
+let autoTable: typeof import('jspdf-autotable').default;
+async function ensurePdfLibs() {
+  if (!JsPDFCtor) {
+    const [m1, m2] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+    JsPDFCtor = m1.jsPDF;
+    autoTable = m2.default;
+  }
+}
 import { cn } from './lib/utils';
 import { AppState, ReportImage, RegistroHistorico, EventoUso, CatalogoCustomEntry, TipoEquipoCatalogo } from './types';
 import {
@@ -2435,7 +2445,8 @@ export default function App() {
       const imgH = (canvas.height * imgW) / canvas.width;
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
-      const doc = new jsPDF({ format: [PAGE_W, PAGE_H], unit: 'mm', compress: true });
+      await ensurePdfLibs();
+      const doc = new JsPDFCtor({ format: [PAGE_W, PAGE_H], unit: 'mm', compress: true });
       if (imgH <= PAGE_H + 1) {
         doc.addImage(imgData, 'JPEG', 0, 0, imgW, imgH, undefined, 'FAST');
       } else {
@@ -4301,7 +4312,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       const fmtC = (c: boolean) => c ? 'CUMPLE' : 'NO CUMPLE';
       const colC = (c: boolean): [number,number,number] => c ? VERDE : ROJO;
 
-      const doc = new jsPDF({ compress: true });
+      await ensurePdfLibs();
+      const doc = new JsPDFCtor({ compress: true });
 
       // Header: solo banda arcilla
       doc.setFillColor(...AZUL);
@@ -4735,7 +4747,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       const GRIS_FILA:   [number,number,number] = isEngelbert ? [255, 248, 242] : [245, 247, 250];
       const BORDE_TABLA: [number,number,number] = isEngelbert ? [240, 170,  90] : [221, 227, 234];
 
-      const doc = new jsPDF({ format: 'letter', compress: true });
+      await ensurePdfLibs();
+      const doc = new JsPDFCtor({ format: 'letter', compress: true });
       const PW = 215.9, PH = 279.4;
 
       // Dibuja olas de marca de agua en la página actual — llamar ANTES del contenido
