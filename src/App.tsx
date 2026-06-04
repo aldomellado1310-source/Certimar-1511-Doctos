@@ -127,6 +127,12 @@ import autoTable from 'jspdf-autotable';
 import { cn } from './lib/utils';
 import { AppState, ReportImage, RegistroHistorico, EventoUso, CatalogoCustomEntry, TipoEquipoCatalogo } from './types';
 import {
+  ID_NUEVO_INCINERADOR,
+  resolverIncinerador,
+  buildIncineradorEntry,
+  findIncineradorDuplicado,
+} from './domain/incineradorCatalogo';
+import {
   CATALOGO_EXTRACCION,
   CATALOGO_DESNATURALIZACION,
   CATALOGO_GENERADORES,
@@ -137,6 +143,7 @@ import {
   TAMANOS_JAULAS_CONOCIDOS,
   NOMBRES_AN_CONOCIDOS,
   OPCIONES_INCINERADOR,
+  INCINERADORES_ESTATICOS,
   OPCIONES_INFRAESTRUCTURA,
   EMPRESA_HINTS,
   CATALOGO_CENTROS,
@@ -3630,36 +3637,22 @@ Se despide atentamente`;
     }
   };
 
-  const handleSelectIncineradorSecundario = (id: string) => {
-    const inc = CATALOGO_DESNATURALIZACION.incineradores.find(i => i.id === id);
+  const handleSelectIncineradorSecundario = (value: string) => {
+    const { incinerador, parametros_incineracion } = resolverIncinerador(
+      value,
+      INCINERADORES_ESTATICOS,
+      catalogoCustom,
+    );
     setState(prev => ({
       ...prev,
       denaturation: {
         ...prev.denaturation,
-        parametros_incineracion: inc ? {
-          capacidad_carga_kg_h: inc.capacidad_carga_kg_h,
-          temperatura_operacion: `${inc.temperatura_camara_primaria_c}°C / ${inc.temperatura_camara_secundaria_c}°C`,
-          camara_primaria: inc.camara_primaria,
-          camara_secundaria: inc.camara_secundaria,
-        } : prev.denaturation.parametros_incineracion,
+        parametros_incineracion,
         incinerador: {
-          ...prev.denaturation.incinerador,
-          id_catalogo: id,
-          marca_modelo:              inc?.marca_modelo              ?? '',
-          capacidad_carga_kg_h:      inc?.capacidad_carga_kg_h      ?? 0,
-          horas_funcionamiento_dia:  inc?.horas_funcionamiento      ?? 8,
-          num_quemadores_primaria:      inc?.num_quemadores_primaria      ?? 0,
-          num_quemadores_secundaria:    inc?.num_quemadores_secundaria    ?? 0,
-          temperatura_camara_primaria_c:   inc?.temperatura_camara_primaria_c   ?? 0,
-          temperatura_camara_secundaria_c: inc?.temperatura_camara_secundaria_c ?? 0,
-          requerimiento_energetico:     inc?.requerimiento_energetico     ?? '',
-          sistema_carga:             inc?.sistema_carga             ?? 'N/A',
-          sistema_descarga:          inc?.sistema_descarga          ?? 'N/A',
-          disposicion_final:         inc?.disposicion_final         ?? 'N/A',
-          almacenamiento_gas:        inc?.almacenamiento_gas        ?? 'N/A',
-          observaciones:             inc?.observaciones             ?? '',
-        }
-      }
+          ...incinerador,
+          activo: prev.denaturation.incinerador.activo,
+        },
+      },
     }));
   };
 
@@ -7887,9 +7880,19 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                           className="w-full px-4 py-2.5 bg-orange-50 dark:bg-orange-500/10 border border-orange-100 dark:border-orange-500/20 rounded-xl outline-none focus:ring-2 focus:ring-orange-500/20 text-slate-900 dark:text-slate-100 font-medium"
                         >
                           <option value="">Seleccionar incinerador...</option>
-                          {CATALOGO_DESNATURALIZACION.incineradores.map(i => (
-                            <option key={i.id} value={i.id}>{i.marca_modelo} — {i.capacidad_carga_kg_h} kg/h</option>
-                          ))}
+                          <optgroup label="— Catálogo estándar —">
+                            {CATALOGO_DESNATURALIZACION.incineradores.map(i => (
+                              <option key={i.id} value={i.id}>{i.marca_modelo} — {i.capacidad_carga_kg_h} kg/h</option>
+                            ))}
+                          </optgroup>
+                          {catalogoCustom.filter(c => c.tipo === 'incinerador').length > 0 && (
+                            <optgroup label="— Guardados —">
+                              {catalogoCustom.filter(c => c.tipo === 'incinerador').map(c => (
+                                <option key={c.id} value={`custom:${c.id}`}>{c.marca_modelo} — {c.capacidad_carga_kg_h ?? 0} kg/h</option>
+                              ))}
+                            </optgroup>
+                          )}
+                          <option value={ID_NUEVO_INCINERADOR}>➕ Nuevo incinerador (manual)</option>
                         </select>
                       </div>
                       <InputField label="Horas Operación" type="number" value={state.denaturation.incinerador.horas_funcionamiento_dia} onChange={(v) => updateDenaturation('incinerador.horas_funcionamiento_dia', v)} suffix="Hrs/Día" min={1} max={24} />
@@ -7902,26 +7905,19 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                           <span className="text-xs text-slate-400 ml-auto">TN/Día</span>
                         </div>
                       </div>
-                      {state.denaturation.incinerador.id_catalogo && (() => {
-                        const inc = state.denaturation.incinerador;
-                        const ReadOnly = ({ label, value }: { label: string; value: string | number }) => (
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
-                            <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-700 dark:text-slate-300 font-mono">
-                              {value || 'N/A'}
-                            </div>
-                          </div>
-                        );
-                        return (
-                          <>
-                            <ReadOnly label="Cámara Primaria (Dimensiones)" value={inc.num_quemadores_primaria ? `${state.denaturation.parametros_incineracion.camara_primaria} — ${inc.num_quemadores_primaria} quemador(es)` : ''} />
-                            <ReadOnly label="Temperatura Cámara Primaria" value={inc.temperatura_camara_primaria_c ? `${inc.temperatura_camara_primaria_c}°C` : ''} />
-                            <ReadOnly label="Cámara Secundaria (Dimensiones)" value={inc.num_quemadores_secundaria ? `${state.denaturation.parametros_incineracion.camara_secundaria} — ${inc.num_quemadores_secundaria} quemador(es)` : ''} />
-                            <ReadOnly label="Temperatura Cámara Secundaria" value={inc.temperatura_camara_secundaria_c ? `${inc.temperatura_camara_secundaria_c}°C` : ''} />
-                            <ReadOnly label="Requerimiento Energético" value={inc.requerimiento_energetico} />
-                          </>
-                        );
-                      })()}
+                      {(state.denaturation.incinerador.id_catalogo || state.denaturation.incinerador.activo) && (
+                        <>
+                          <InputField label="Marca / Modelo" value={state.denaturation.incinerador.marca_modelo} onChange={(v) => updateDenaturation('incinerador.marca_modelo', v)} />
+                          <InputField label="Capacidad Carga" type="number" value={state.denaturation.incinerador.capacidad_carga_kg_h} onChange={(v) => updateDenaturation('incinerador.capacidad_carga_kg_h', v)} suffix="kg/h" min={0} max={5000} />
+                          <InputField label="Cámara Primaria (Dimensiones)" value={state.denaturation.parametros_incineracion.camara_primaria} onChange={(v) => updateDenaturation('parametros_incineracion.camara_primaria', v)} />
+                          <InputField label="N° Quemadores Primaria" type="number" value={state.denaturation.incinerador.num_quemadores_primaria} onChange={(v) => updateDenaturation('incinerador.num_quemadores_primaria', v)} min={0} max={10} />
+                          <InputField label="Temp. Cámara Primaria" type="number" value={state.denaturation.incinerador.temperatura_camara_primaria_c} onChange={(v) => updateDenaturation('incinerador.temperatura_camara_primaria_c', v)} suffix="°C" min={0} max={2000} />
+                          <InputField label="Cámara Secundaria (Dimensiones)" value={state.denaturation.parametros_incineracion.camara_secundaria} onChange={(v) => updateDenaturation('parametros_incineracion.camara_secundaria', v)} />
+                          <InputField label="N° Quemadores Secundaria" type="number" value={state.denaturation.incinerador.num_quemadores_secundaria} onChange={(v) => updateDenaturation('incinerador.num_quemadores_secundaria', v)} min={0} max={10} />
+                          <InputField label="Temp. Cámara Secundaria" type="number" value={state.denaturation.incinerador.temperatura_camara_secundaria_c} onChange={(v) => updateDenaturation('incinerador.temperatura_camara_secundaria_c', v)} suffix="°C" min={0} max={2000} />
+                          <InputField label="Requerimiento Energético" value={state.denaturation.incinerador.requerimiento_energetico} onChange={(v) => updateDenaturation('incinerador.requerimiento_energetico', v)} />
+                        </>
+                      )}
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Sistema de Carga</label>
                         <select aria-label="Sistema de Carga" value={state.denaturation.incinerador.sistema_carga} onChange={(e) => updateDenaturation('incinerador.sistema_carga', e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500">
