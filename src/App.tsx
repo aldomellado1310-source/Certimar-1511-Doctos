@@ -7248,7 +7248,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     if (url) {
                       window.open(url, '_blank');
                     } else if (tipo === 'acta') {
-                      generateActaPdf(entry.snapshot);
+                      generateActaPdf({
+                        ...entry.snapshot,
+                        images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: img.url ?? '' })),
+                      });
                     } else {
                       // Sin PDF guardado: cargar snapshot y regenerar automáticamente
                       setState({
