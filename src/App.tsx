@@ -3432,6 +3432,42 @@ export default function App() {
 
   const normalizeCampo = (v: string) => v.toUpperCase().trim().replace(/\s+/g, '_');
 
+  const [normalizandoHistorico, setNormalizandoHistorico] = useState<'idle' | 'running' | 'done'>('idle');
+  const normalizarHistorico = async () => {
+    if (!window.confirm('¿Normalizar todos los registros del histórico?\nSe aplicará MAYÚSCULAS + espacios→_ a codigoCentro, nombreCentro y titular en Firestore.')) return;
+    setNormalizandoHistorico('running');
+    try {
+      const { collection, getDocs, doc, writeBatch } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      const snap = await getDocs(collection(db, 'historico'));
+      const batch = writeBatch(db);
+      let count = 0;
+      snap.docs.forEach(d => {
+        const data = d.data();
+        const codigoCentro  = normalizeCampo(data.codigoCentro  ?? '');
+        const nombreCentro  = normalizeCampo(data.nombreCentro  ?? '');
+        const titular       = normalizeCampo(data.titular       ?? '');
+        if (codigoCentro !== data.codigoCentro || nombreCentro !== data.nombreCentro || titular !== data.titular) {
+          batch.update(doc(db, 'historico', d.id), { codigoCentro, nombreCentro, titular });
+          count++;
+        }
+      });
+      if (count > 0) await batch.commit();
+      setHistoricoEntries(prev => prev.map(e => ({
+        ...e,
+        codigoCentro: normalizeCampo(e.codigoCentro ?? ''),
+        nombreCentro: normalizeCampo(e.nombreCentro ?? ''),
+        titular:      normalizeCampo(e.titular      ?? ''),
+      })));
+      setNormalizandoHistorico('done');
+      setTimeout(() => setNormalizandoHistorico('idle'), 3000);
+    } catch (err) {
+      console.error('Error normalizando histórico:', err);
+      alert('No se pudo completar la normalización. Verifica tu conexión.');
+      setNormalizandoHistorico('idle');
+    }
+  };
+
   const handleCenterCodeChange = (code: string, center?: ConcesionCentro) => {
     if (center) {
       // center.nombre = descripción geográfica del sector (ej. "CANAL MORALEDA, AL ESTE DE ISLA AUCHILE")
@@ -6999,6 +7035,25 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           description="Muestra autocompletado con datos históricos al escribir en campos del formulario"
           icon={Info}
         />
+
+        {/* Normalizar histórico */}
+        {isAdmin && (
+          <button
+            onClick={normalizarHistorico}
+            disabled={normalizandoHistorico === 'running'}
+            className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 disabled:opacity-60 disabled:cursor-wait transition-all text-left"
+          >
+            {normalizandoHistorico === 'running'
+              ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}><RefreshCw size={20} className="shrink-0" /></motion.div>
+              : <RefreshCw size={20} className="shrink-0" />}
+            <div>
+              <p className="font-bold text-sm">
+                {normalizandoHistorico === 'running' ? 'Normalizando…' : normalizandoHistorico === 'done' ? 'Histórico normalizado ✓' : 'Normalizar Histórico'}
+              </p>
+              <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">Aplica MAYÚSCULAS + espacios→_ a todos los registros en Firestore</p>
+            </div>
+          </button>
+        )}
 
         {/* Borrar borrador — zona peligrosa */}
         {isAdmin && (
