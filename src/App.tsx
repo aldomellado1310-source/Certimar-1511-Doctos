@@ -2266,7 +2266,7 @@ export default function App() {
       const calcDen = calculatedDenaturation;
       const calcSto = calculatedStorage;
       const existingEntry = historicoEntries.find(e => e.id === docId);
-      const keepNonBorrador = existingEntry && existingEntry.esBorrador === false;
+      const keepNonBorrador = motivo !== 'manual' && existingEntry && existingEntry.esBorrador === false;
       if (!keepNonBorrador) {
         const esEntradaNueva = !existingEntry?.creadoEn;
         await setDoc(doc(db, 'historico', docId), {
@@ -2617,6 +2617,11 @@ export default function App() {
     if (state.registroId) await releaseLock(state.registroId);
     if (!(await autosaveBeforeSwitch())) return;
 
+    // Limpiar el Registro de Visita del registro anterior antes de cargar el nuevo
+    registroVisitaRef.current = null;
+    setRegistroVisitaName(null);
+    idbDeleteRegistroVisita().catch(() => {});
+
     logEvento('abrir_registro', { codigoCentro: entry.codigoCentro, nombreCentro: entry.nombreCentro, titular: entry.titular });
 
     // Primera pasada: cargar snapshot tal como viene (puede tener url vacía en registros antiguos)
@@ -2654,6 +2659,44 @@ export default function App() {
         }));
       }
     } catch { /* IDB no crítico */ }
+
+    // Auto-cargar el RV guardado en Storage para este registro
+    if (entry.documentUrls?.registro_visita) {
+      const rvUrl = entry.documentUrls.registro_visita;
+      const rvName = `RV-${entry.codigoCentro || entry.registroId}`;
+      setRegistroVisitaProcessing(true);
+      setRegistroVisitaProgress(0);
+      (async () => {
+        try {
+          const resp = await fetch(rvUrl);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const arrayBuffer = await resp.arrayBuffer();
+          const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist');
+          GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+          const pdf = await getDocument({ data: arrayBuffer }).promise;
+          const snapshots: string[] = [];
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const ctx = canvas.getContext('2d')!;
+            await page.render({ canvasContext: ctx as any, canvas, viewport }).promise;
+            snapshots.push(canvas.toDataURL('image/jpeg', 0.80));
+            setRegistroVisitaProgress(Math.round((i / pdf.numPages) * 100));
+          }
+          registroVisitaRef.current = snapshots;
+          setRegistroVisitaName(rvName);
+          idbSaveRegistroVisita(rvName, snapshots).catch(() => {});
+        } catch {
+          // RV no disponible — el usuario puede adjuntarlo manualmente
+        } finally {
+          setRegistroVisitaProcessing(false);
+          setRegistroVisitaProgress(0);
+        }
+      })();
+    }
 
     setActiveTab('general');
   };
@@ -7225,7 +7268,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         {entry.esBorrador && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-bold uppercase border border-slate-300 dark:border-slate-600">Borrador</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold uppercase border border-amber-300 dark:border-amber-500/50 tracking-wide">Borrador</span>
                         )}
                         {entry.metricas?.modoOperacionMinima && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold uppercase">Op. Min.</span>
