@@ -2592,6 +2592,22 @@ export default function App() {
     }
   };
 
+  const deleteFromHistorico = async (entry: RegistroHistorico) => {
+    if (!window.confirm(
+      `¿Eliminar el registro de ${entry.nombreCentro || entry.codigoCentro} (${entry.registroId})?\n\nEsta acción es permanente y no se puede deshacer.`
+    )) return;
+    try {
+      const { doc, deleteDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      await deleteDoc(doc(db, 'historico', entry.id!));
+      await deleteDoc(doc(db, 'registros', entry.id!)).catch(() => {});
+      setHistoricoEntries(prev => prev.filter(e => e.id !== entry.id));
+    } catch (err) {
+      console.error('Error eliminando registro del histórico:', err);
+      alert('No se pudo eliminar el registro. Verifica tu conexión.');
+    }
+  };
+
   const loadFromHistorico = async (entry: RegistroHistorico) => {
     if (!window.confirm(
       `¿Cargar los datos de ${entry.nombreCentro} (${entry.codigoCentro}) en el formulario?\n` +
@@ -7363,6 +7379,13 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       >
                         <Pencil size={12} />
                         {entry.esBorrador ? 'Continuar' : 'Cargar'}
+                      </button>
+                      <button
+                        onClick={() => deleteFromHistorico(entry)}
+                        title="Eliminar registro"
+                        className="px-2.5 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-500 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors border border-rose-200 dark:border-rose-500/30"
+                      >
+                        <Trash2 size={12} />
                       </button>
                     </div>
                   </div>
