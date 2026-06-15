@@ -3430,6 +3430,8 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildObservacionSistema]);
 
+  const normalizeCampo = (v: string) => v.toUpperCase().trim().replace(/\s+/g, '_');
+
   const handleCenterCodeChange = (code: string, center?: ConcesionCentro) => {
     if (center) {
       // center.nombre = descripción geográfica del sector (ej. "CANAL MORALEDA, AL ESTE DE ISLA AUCHILE")
@@ -3444,16 +3446,16 @@ export default function App() {
           ...prev.general,
           centro_cultivo: {
             ...prev.general.centro_cultivo,
-            codigo_centro: center.codigo,
-            nombre_centro: center.nombre_centro ?? "",  // el usuario lo completa
-            titular: center.titular,
+            codigo_centro: normalizeCampo(center.codigo),
+            nombre_centro: normalizeCampo(center.nombre_centro ?? ""),
+            titular: normalizeCampo(center.titular),
             acs: center.acs,
             ubicacion: ubicacionCompleta
           }
         }
       }));
     } else {
-      updateGeneral('centro_cultivo.codigo_centro', code);
+      updateGeneral('centro_cultivo.codigo_centro', normalizeCampo(code));
     }
   };
 
@@ -6471,7 +6473,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <input
                 list="titulares-list"
                 value={state.general.centro_cultivo.titular}
-                onChange={(e) => updateGeneral('centro_cultivo.titular', e.target.value)}
+                onChange={(e) => updateGeneral('centro_cultivo.titular', normalizeCampo(e.target.value))}
                 placeholder="Ej. EXPORTADORA LOS FIORDOS LTDA."
                 className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium text-sm"
               />
@@ -6483,7 +6485,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             <InputField
               label="Nombre Centro"
               value={state.general.centro_cultivo.nombre_centro}
-              onChange={(v) => updateGeneral('centro_cultivo.nombre_centro', v)}
+              onChange={(v) => updateGeneral('centro_cultivo.nombre_centro', normalizeCampo(v))}
               placeholder="Ej. PUNTA LARGA"
             />
             <InputField
