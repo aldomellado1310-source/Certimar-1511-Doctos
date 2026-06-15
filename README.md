@@ -9,31 +9,34 @@ Resolución Exenta N°1511/2021 — D.S. N°320 — Sernapesca / Subpesca
 
 CERTIMAR 1511 es una aplicación web que automatiza el proceso de certificación de sistemas de manejo de mortalidad en centros de cultivo de peces (salmónidos). Calcula y valida el cumplimiento de los tres umbrales críticos exigidos por la normativa chilena:
 
-| Sistema | Umbral Mínimo |
+| Sistema | Umbral mínimo |
 |---|---|
 | Extracción de mortalidad (jaulas → superficie) | ≥ 15 TN/día |
 | Desnaturalización (ensilaje o incineración) | ≥ 15 TN/día |
 | Almacenamiento de biomasa desnaturalizada | ≥ 20 TN |
 
-El output del proceso son los documentos legales requeridos por Sernapesca:
-- Acta de Certificación
-- Certificado de Sistemas de Mortalidad
-- Informe Técnico fotográfico con semáforo normativo (Verde / Amarillo / Rojo)
+Los documentos legales generados son:
+- **Certificado de Sistemas de Mortalidad** (PDF)
+- **Informe Técnico fotográfico** con semáforo normativo Verde / Amarillo / Rojo (PDF)
+- **Acta de Inspección** (PDF)
+- **Registro de Visita** adjunto al informe (PDF externo procesado y embebido)
 
 ---
 
 ## Stack tecnológico
 
-| Capa | Tecnología | Versión |
-|---|---|---|
-| Framework UI | React | 19.0.0 |
-| Lenguaje | TypeScript | 5.8.2 |
-| Build tool | Vite | 6.2.0 |
-| Estilos | Tailwind CSS | 4.1.14 |
-| Generación PDF | jsPDF + jspdf-autotable | 4.2.0 / 5.0.7 |
-| Animaciones | Motion (Framer Motion) | 12.23.24 |
-| Drag & Drop | react-dropzone | 15.0.0 |
-| Iconos | lucide-react | 0.546.0 |
+| Capa | Tecnología |
+|---|---|
+| Framework UI | React 19 + TypeScript 5 |
+| Build | Vite 6 |
+| Estilos | Tailwind CSS 4 |
+| Animaciones | Motion (Framer Motion) |
+| Iconos | lucide-react |
+| Backend / Auth | Firebase (Firestore, Storage, Hosting, Auth con Google) |
+| Generación PDF | jsPDF + jspdf-autotable (lazy-load) |
+| Render PDF → imágenes | pdfjs-dist (Web Worker) |
+| Captura HTML→PDF | html2canvas-pro |
+| Persistencia local | localStorage + IndexedDB |
 
 ---
 
@@ -41,75 +44,106 @@ El output del proceso son los documentos legales requeridos por Sernapesca:
 
 - Node.js 18 o superior
 - npm 9 o superior
-
----
-
-## Instalación y uso
-
-```bash
-# Clonar el repositorio
-git clone <url-del-repositorio>
-cd Certimar-1511-Doctos
-
-# Instalar dependencias
-npm install
-
-# Iniciar servidor de desarrollo
-npm run dev
-
-# Compilar para producción
-npm run build
-
-# Previsualizar build de producción
-npm run preview
-```
-
-La aplicación estará disponible en `http://localhost:5173` por defecto.
+- Proyecto Firebase con Firestore, Storage y Authentication habilitados
+- Firebase CLI instalada globalmente (`npm i -g firebase-tools`)
 
 ---
 
 ## Variables de entorno
 
-Crear un archivo `.env` en la raíz del proyecto basándose en `.env.example`:
+Crear `.env` en la raíz del proyecto (no commitear):
 
 ```env
-GEMINI_API_KEY="tu_api_key_aqui"   # Opcional — integración futura con IA
-APP_URL="http://localhost:5173"
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=certimar-1511-doctos
+VITE_FIREBASE_STORAGE_BUCKET=certimar-1511-doctos-storage
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+VITE_GOOGLE_CLIENT_ID=...   # OAuth client ID para autenticación Google
+VITE_ADMIN_PIN=...          # PIN de acceso a funciones de administración
 ```
 
 ---
 
-## Flujo de certificación
+## Instalación y desarrollo
 
-El proceso sigue un flujo secuencial de 6 pasos:
+```bash
+npm install
+npm run dev          # http://localhost:3000
+npm run build        # Build de producción en /dist
+npm run lint         # Chequeo TypeScript sin emitir
+npm run test         # Suite de tests unitarios (vitest)
+```
+
+---
+
+## Deploy
+
+```bash
+npm run build
+firebase deploy --only hosting
+```
+
+URL de producción: **https://certimar-1511-doctos.web.app**
+
+---
+
+## Arquitectura y flujo de datos
+
+### Autenticación
+Login con Google OAuth. Los usuarios autenticados acceden al sistema completo; el PIN de admin habilita la gestión del catálogo de equipos.
+
+### Flujo de certificación
 
 ```
 1. Datos Generales
-   └─ Identificación del centro de cultivo, fechas y datos del certificador
+   └─ Centro de cultivo, fechas, certificador
 
-2. Sistema de Extracción
-   └─ Selección de equipo (LIFT-UP, Mortex HW, ROV, Yoma)
-   └─ Parámetros: jaulas, personal, profundidad, talla de pez, horas efectivas
-   └─ Cálculo automático de capacidad diaria (TN/día)
+2. Extracción
+   └─ Sistema principal (LIFT-UP / Mortex HW / ROV / Succión Yoma)
+   └─ Parámetros: jaulas, profundidad, talla de pez, horas efectivas, compresores
+   └─ Modo Operación Mínima (override de parámetros de producción)
 
 3. Desnaturalización
-   └─ Modo Ensilaje: ollas trituradoras, ciclos batch (kg/batch, tiempos)
-   └─ Modo Incineración: capacidad de carga kg/h
-   └─ Cálculo automático de capacidad diaria (TN/día)
+   └─ Modo Ensilaje: trituradoras, ciclos batch, prepicador
+   └─ Modo Incineración: capacidad kg/h, cámaras, temperaturas
+   └─ Generadores eléctricos asociados
 
 4. Almacenamiento
-   └─ Capacidad del estanque (m³) × densidad ácido fórmico (1.2 TN/m³)
-   └─ Infraestructura: pretil, piping, válvulas
+   └─ Capacidad (m³ × densidad ácido fórmico)
+   └─ Infraestructura: pretil, piping, A/N Pontón
 
-5. Informe Técnico
-   └─ Carga fotográfica por sección (Extracción / Desnaturalización / Almacenamiento)
-   └─ Semáforo normativo por imagen: Verde / Amarillo / Rojo
-   └─ Leyendas y observaciones
+5. Registro fotográfico
+   └─ Imágenes por sección con semáforo normativo
+   └─ Slot de ubicación espacial (con recorte manual)
+   └─ Adjunto del Registro de Visita (PDF → páginas JPEG)
 
-6. Emisión del Certificado
-   └─ Validación de los tres umbrales + registro fotográfico
-   └─ Generación de documentos PDF
+6. Generación de documentos
+   └─ Revisión de umbrales → emisión de Certificado, Informe y Acta en PDF
 ```
+
+### Persistencia
+
+| Capa | Qué guarda |
+|---|---|
+| **localStorage** | Auto-guardado continuo del estado del formulario activo |
+| **IndexedDB** | URLs de imágenes (blob / base64) y páginas del Registro de Visita |
+| **Firestore `registros/{id}`** | Snapshot completo del estado al guardar (borrador o final) |
+| **Firestore `historico/{id}`** | Metadatos + snapshot + métricas de cumplimiento + estado de gestión |
+| **Firebase Storage** | PDFs de documentos generados y Registro de Visita original |
+
+### Borradores y histórico
+
+- Cada registro recibe un correlativo `REG-NNN` al iniciar con "Comenzar Registro".
+- "Guardar borrador" persiste el estado en Firestore con `esBorrador: true` y lo muestra en la pestaña Histórico con badge ámbar.
+- Al cargar un registro desde el Histórico, el Registro de Visita asociado se recupera automáticamente desde Firebase Storage.
+- "Continuar" (borradores) y "Cargar" (finalizados) muestran el estado exacto en que quedó el registro.
+- Los registros finalizados (con documentos generados) no se degradan a borrador por el autosave; solo el guardado manual explícito puede cambiar su estado.
+
+### Catálogo de equipos
+
+Administrado desde el panel de Admin (requiere PIN). Incluye trituradoras, incineradores, prepicadores, compresores, líneas de extracción, generadores y bombas. Los ítems del catálogo personalizado se almacenan en `Firestore/catalogo_custom` y se fusionan con el catálogo estático en `constants/masterData.ts`.
 
 ---
 
@@ -117,39 +151,28 @@ El proceso sigue un flujo secuencial de 6 pasos:
 
 ```
 src/
-├── App.tsx                  # Componente principal: estado, cálculos, vistas, PDF
-├── types.ts                 # Interfaces TypeScript del dominio
-├── main.tsx                 # Entry point React
-├── index.css                # Estilos globales (Tailwind + fuentes)
+├── App.tsx                   # Componente principal: estado, lógica, vistas, PDF
+├── types.ts                  # Interfaces TypeScript del dominio
+├── main.tsx                  # Entry point
+├── firebase.ts               # Inicialización Firebase
+├── components/
+│   └── CatalogoEquiposAdmin.tsx  # Panel de administración del catálogo
 ├── constants/
-│   └── masterData.ts        # Catálogos de equipos y datos históricos
+│   └── masterData.ts         # Catálogos estáticos de equipos y centros
+├── data/
+│   └── concesiones.ts        # Base de datos de concesiones acuícolas
+├── domain/
+│   ├── calculations.ts       # Cálculos de capacidad (extracción / den. / alm.)
+│   ├── documents.ts          # Constructores de datos para documentos PDF
+│   ├── actaHtml.ts           # Generador HTML del Acta de Inspección
+│   ├── draftStatus.ts        # Evaluación de completitud de borradores
+│   ├── generators.ts         # Generación de IDs y correlativos
+│   ├── validation.ts         # Validación de fechas y campos
+│   ├── incineradorCatalogo.ts # Lógica de resolución del catálogo de incineradores
+│   └── constants.ts          # Constantes de cálculo normativo
 └── lib/
-    └── utils.ts             # Utilidad cn() para clases Tailwind
+    └── utils.ts              # Utilidad cn() para clases Tailwind
 ```
-
----
-
-## Catálogos de equipos
-
-### Sistemas de extracción
-- Novatech 8" / 10"
-- Polinox 10"
-- Scale AQ 8" / 10"
-- QUO 8"
-
-### Trituradoras (Ensilaje)
-- AQUAINOX 1430 L-EQ (2.500 kg/h)
-- OPTIMO MIX OM 500 (2.100 kg/h)
-- OCEA SW-700 (2.450 kg/h)
-- ACUIMASTER AC-715 LT (1.680 kg/h)
-
-### Incineradores
-- Addfield THUNDER 1000 (150 kg/h, 850–1100°C)
-
-### Compresores
-- Kaeser Mobilair M50E / M50, SK25, M100
-- Atlas Copco XAS 97, XAS 186
-- ABAC B7000
 
 ---
 
@@ -157,33 +180,10 @@ src/
 
 | Documento | Descripción |
 |---|---|
-| **D.S. N°320** | Decreto Supremo que establece los requisitos sanitarios para centros de cultivo acuícola |
-| **Res. Exenta N°1511/2021** | Resolución del Servicio Nacional de Pesca que regula los sistemas de manejo de mortalidad en centros acuícolas |
+| **D.S. N°320** | Decreto Supremo — requisitos sanitarios para centros de cultivo acuícola |
+| **Res. Exenta N°1511/2021** | Regulación Sernapesca sobre sistemas de manejo de mortalidad |
 
-Los umbrales de capacidad (15/15/20 TN) están definidos en la Res. Exenta N°1511/2021 y deben ser verificados por un certificador inscrito en el registro de Sernapesca.
-
----
-
-## Persistencia de datos
-
-El borrador del proceso de certificación se guarda automáticamente en `localStorage` del navegador bajo la clave `certimar-draft-state`. Para iniciar una nueva certificación desde cero, usar el botón **Borrar Borrador** en la barra lateral.
-
-> **Nota:** Los datos no se sincronizan con ningún servidor externo. El sistema es completamente client-side. Para ambientes de producción regulatoria se recomienda implementar un backend con base de datos y control de acceso.
-
----
-
-## Limitaciones conocidas (v2.0)
-
-- Los documentos Acta de Certificación e Informe Técnico fotográfico están en desarrollo; actualmente solo se genera el Certificado básico en PDF.
-- El catálogo de centros de cultivo es de ejemplo; debe reemplazarse con datos reales de Sernapesca.
-- No existe sistema de autenticación ni log de auditoría de emisiones.
-- Los datos históricos mostrados son de referencia y no provienen de una base de datos persistente.
-
----
-
-## Certificador por defecto
-
-La aplicación incluye datos de un certificador de ejemplo para propósitos de desarrollo. Estos deben ser actualizados con los datos reales del certificador inscrito antes de generar documentos legales.
+Los umbrales 15/15/20 TN están definidos en la Res. Exenta N°1511/2021 y deben ser verificados por un certificador inscrito en el registro de Sernapesca.
 
 ---
 
