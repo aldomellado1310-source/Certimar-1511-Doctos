@@ -2194,7 +2194,7 @@ export default function App() {
   /** Hay datos del registro actual dignos de guardar como borrador. */
   const hasDraftableData = (): boolean => {
     const cc = state.general.centro_cultivo;
-    return !!state.registroId && (!!cc.codigo_centro.trim() || !!cc.nombre_centro.trim());
+    return !!(cc.codigo_centro.trim() || cc.nombre_centro.trim());
   };
 
   /**
@@ -2350,6 +2350,8 @@ export default function App() {
         void _crop; // croppedUrl se almacena solo en IDB, no en Firestore
         return { ...imgRest, url: img.url?.startsWith('https://') ? img.url : '' };
       });
+      // JSON.parse/stringify elimina undefined — Firestore v9 lanza error en campos undefined
+      const snapshotClean = JSON.parse(JSON.stringify({ ...state, images: snapshotImgs }));
       const payload: Record<string, any> = {
         registroId: docId,
         codigoCentro: cc.codigo_centro,
@@ -2358,7 +2360,7 @@ export default function App() {
         fechaInspeccion: state.general.fechas.inspeccion_terreno,
         esBorrador: false,
         documentosGenerados: arrayUnion(tipo),
-        snapshot: { ...state, images: snapshotImgs },
+        snapshot: snapshotClean,
         metricas: {
           capExtraccion: calculatedExtraction.capacidad_diaria_ton,
           capDesnaturalizacion: calculatedDenaturation.capacidad_diaria_ton,
@@ -2383,8 +2385,26 @@ export default function App() {
         payload[`documentUrls.${tipo}`] = documentUrl;
       }
       await setDoc(doc(db, 'historico', docId), payload, { merge: true });
+      setHistoricoEntries(prev => {
+        const idx = prev.findIndex(e => e.id === docId);
+        const base = idx >= 0 ? prev[idx] : {};
+        const updated: RegistroHistorico = {
+          ...base,
+          id: docId,
+          registroId: docId,
+          codigoCentro: cc.codigo_centro,
+          nombreCentro: cc.nombre_centro,
+          titular: cc.titular,
+          fechaInspeccion: state.general.fechas.inspeccion_terreno,
+          esBorrador: false,
+          documentosGenerados: [...((base as any).documentosGenerados ?? []), tipo].filter((v, i, a) => a.indexOf(v) === i),
+          snapshot: snapshotClean as any,
+        };
+        return idx >= 0 ? prev.map(e => e.id === docId ? updated : e) : [updated, ...prev];
+      });
     } catch (err) {
       console.error('Error guardando en histórico:', err);
+      alert(`⚠️ El documento se generó, pero no se pudo guardar en el historial.\nError: ${(err as any)?.message ?? String(err)}\n\nCopia el mensaje anterior y repórtalo.`);
     }
   };
 
@@ -3447,6 +3467,89 @@ export default function App() {
   const normalizeCampo = (v: string) => v.toUpperCase().trim().replace(/\s+/g, '_');
 
   const [normalizandoHistorico, setNormalizandoHistorico] = useState<'idle' | 'running' | 'done'>('idle');
+  const [recuperandoRegistros, setRecuperandoRegistros] = useState<'idle' | 'running' | 'done'>('idle');
+  const [registrosHuerfanos, setRegistrosHuerfanos] = useState<Array<{id: string; codigo: string; nombre: string; fecha: string; snapshot: any}>>([]);
+
+  const verificarRegistrosHuerfanos = async () => {
+    setRecuperandoRegistros('running');
+    setRegistrosHuerfanos([]);
+    try {
+      const { collection, getDocs } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      const [regSnap, histSnap] = await Promise.all([
+        getDocs(collection(db, 'registros')),
+        getDocs(collection(db, 'historico')),
+      ]);
+      const histIds = new Set(histSnap.docs.map(d => d.id));
+      const huerfanos = regSnap.docs
+        .filter(d => !histIds.has(d.id))
+        .map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            codigo: (data.general?.centro_cultivo?.codigo_centro ?? '') as string,
+            nombre: (data.general?.centro_cultivo?.nombre_centro ?? '') as string,
+            fecha: (data.general?.fechas?.inspeccion_terreno ?? '') as string,
+            snapshot: data,
+          };
+        })
+        .filter(e => e.codigo || e.nombre);
+      setRegistrosHuerfanos(huerfanos);
+      setRecuperandoRegistros('done');
+    } catch (err) {
+      console.error('Error verificando registros huérfanos:', err);
+      alert('No se pudo verificar los registros. Verifica tu conexión.');
+      setRecuperandoRegistros('idle');
+    }
+  };
+
+  const recuperarRegistroAHistorico = async (huerfano: {id: string; codigo: string; nombre: string; fecha: string; snapshot: any}) => {
+    try {
+      const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      const snap = huerfano.snapshot;
+      const cc = snap.general?.centro_cultivo ?? {};
+      await setDoc(doc(db, 'historico', huerfano.id), {
+        registroId: huerfano.id,
+        codigoCentro: cc.codigo_centro ?? '',
+        nombreCentro: cc.nombre_centro ?? '',
+        titular: cc.titular ?? '',
+        fechaInspeccion: snap.general?.fechas?.inspeccion_terreno ?? '',
+        esBorrador: true,
+        documentosGenerados: [],
+        snapshot: JSON.parse(JSON.stringify(snap)),
+        metricas: {
+          capExtraccion: 0, capDesnaturalizacion: 0, capAlmacenamiento: 0,
+          cumpleExtraccion: false, cumpleDesnaturalizacion: false, cumpleAlmacenamiento: false,
+          sistemaExtraccion: snap.extraction?.parametros?.sistema_principal ?? '',
+          sistemaDesnaturalizacion: snap.denaturation?.equipos?.tipo_sistema ?? '',
+          modoOperacionMinima: snap.general?.modo_operacion_minima ?? false,
+          numJaulas: snap.extraction?.parametros?.numero_total_jaulas ?? 0,
+          jaulas_simultaneas: snap.extraction?.parametros?.jaulas_simultaneas ?? 0,
+          profundidad_m: snap.extraction?.parametros?.profundidad_operacion_m ?? 0,
+        },
+        creadoEn: serverTimestamp(),
+        __updatedAt: serverTimestamp(),
+      });
+      setRegistrosHuerfanos(prev => prev.filter(e => e.id !== huerfano.id));
+      setHistoricoEntries(prev => [{
+        id: huerfano.id,
+        registroId: huerfano.id,
+        codigoCentro: cc.codigo_centro ?? '',
+        nombreCentro: cc.nombre_centro ?? '',
+        titular: cc.titular ?? '',
+        fechaInspeccion: snap.general?.fechas?.inspeccion_terreno ?? '',
+        esBorrador: true,
+        documentosGenerados: [],
+        snapshot: snap,
+      }, ...prev]);
+      alert(`Registro ${huerfano.id} (${huerfano.nombre || huerfano.codigo}) recuperado al histórico como borrador.`);
+    } catch (err) {
+      console.error('Error recuperando registro:', err);
+      alert('No se pudo recuperar el registro. Ver consola para detalles.');
+    }
+  };
+
   const normalizarHistorico = async () => {
     if (!window.confirm('¿Normalizar todos los registros del histórico?\nSe aplicará MAYÚSCULAS + espacios→_ a codigoCentro, nombreCentro y titular en Firestore.')) return;
     setNormalizandoHistorico('running');
@@ -7071,6 +7174,49 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">Aplica MAYÚSCULAS + espacios→_ a todos los registros en Firestore</p>
             </div>
           </button>
+        )}
+
+        {/* Recuperar registros huérfanos */}
+        {isAdmin && (
+          <div className="space-y-3">
+            <button
+              onClick={verificarRegistrosHuerfanos}
+              disabled={recuperandoRegistros === 'running'}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/20 disabled:opacity-60 disabled:cursor-wait transition-all text-left"
+            >
+              {recuperandoRegistros === 'running'
+                ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}><Database size={20} className="shrink-0" /></motion.div>
+                : <Database size={20} className="shrink-0" />}
+              <div>
+                <p className="font-bold text-sm">
+                  {recuperandoRegistros === 'running' ? 'Verificando…' : 'Verificar Registros Huérfanos'}
+                </p>
+                <p className="text-xs text-amber-500 dark:text-amber-500 mt-0.5">Busca en Firestore/registros documentos que no están en el Histórico</p>
+              </div>
+            </button>
+            {recuperandoRegistros === 'done' && registrosHuerfanos.length === 0 && (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 px-1">✓ Todos los registros guardados están en el histórico</p>
+            )}
+            {registrosHuerfanos.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-amber-700 dark:text-amber-300 px-1">{registrosHuerfanos.length} registro(s) encontrado(s) — no están en el histórico:</p>
+                {registrosHuerfanos.map(h => (
+                  <div key={h.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-500/30">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-amber-800 dark:text-amber-300 truncate">{h.nombre || '(sin nombre)'}</p>
+                      <p className="text-xs text-amber-600 dark:text-amber-400">{h.id} · {h.codigo || '—'} · {h.fecha || 'sin fecha'}</p>
+                    </div>
+                    <button
+                      onClick={() => recuperarRegistroAHistorico(h)}
+                      className="shrink-0 text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold rounded-lg transition-colors"
+                    >
+                      Recuperar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Borrar borrador — zona peligrosa */}
