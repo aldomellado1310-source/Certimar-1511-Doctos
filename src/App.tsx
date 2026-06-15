@@ -3277,16 +3277,30 @@ export default function App() {
     }
   }, [showWelcome]);
 
-  // Carga el histórico cuando el usuario activa la pestaña
+  // Carga el histórico cuando el usuario activa la pestaña.
+  // Se usa getDocs sin orderBy para incluir registros que no tengan __updatedAt
+  // (Firestore excluye silenciosamente esos docs cuando se usa orderBy en el campo).
+  // El ordenamiento se hace en cliente por __updatedAt → creadoEn → '' desc.
   useEffect(() => {
     if (activeTab !== 'history') return;
     logEvento('ver_historico');
     setHistoricoLoading(true);
-    import('firebase/firestore').then(async ({ collection, getDocs, orderBy, query }) => {
+    import('firebase/firestore').then(async ({ collection, getDocs }) => {
       const { db } = await import('./firebase');
-      const q = query(collection(db, 'historico'), orderBy('__updatedAt', 'desc'));
-      const snap = await getDocs(q);
-      setHistoricoEntries(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<RegistroHistorico, 'id'>) })));
+      const snap = await getDocs(collection(db, 'historico'));
+      const entries = snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<RegistroHistorico, 'id'>) }));
+      const toMs = (ts: any): number => {
+        if (!ts) return 0;
+        if (ts?.toDate) return ts.toDate().getTime();
+        if (ts?.seconds) return ts.seconds * 1000;
+        return 0;
+      };
+      entries.sort((a, b) => {
+        const ta = toMs((a as any).__updatedAt) || toMs((a as any).creadoEn);
+        const tb = toMs((b as any).__updatedAt) || toMs((b as any).creadoEn);
+        return tb - ta;
+      });
+      setHistoricoEntries(entries);
     }).catch(console.error).finally(() => setHistoricoLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
@@ -3437,7 +3451,7 @@ export default function App() {
     if (!window.confirm('¿Normalizar todos los registros del histórico?\nSe aplicará MAYÚSCULAS + espacios→_ a codigoCentro, nombreCentro y titular en Firestore.')) return;
     setNormalizandoHistorico('running');
     try {
-      const { collection, getDocs, doc, writeBatch } = await import('firebase/firestore');
+      const { collection, getDocs, doc, writeBatch, serverTimestamp } = await import('firebase/firestore');
       const { db } = await import('./firebase');
       const snap = await getDocs(collection(db, 'historico'));
       const batch = writeBatch(db);
@@ -3447,8 +3461,12 @@ export default function App() {
         const codigoCentro  = normalizeCampo(data.codigoCentro  ?? '');
         const nombreCentro  = normalizeCampo(data.nombreCentro  ?? '');
         const titular       = normalizeCampo(data.titular       ?? '');
-        if (codigoCentro !== data.codigoCentro || nombreCentro !== data.nombreCentro || titular !== data.titular) {
-          batch.update(doc(db, 'historico', d.id), { codigoCentro, nombreCentro, titular });
+        const needsNorm     = codigoCentro !== data.codigoCentro || nombreCentro !== data.nombreCentro || titular !== data.titular;
+        const needsTs       = !data.__updatedAt;
+        if (needsNorm || needsTs) {
+          const patch: Record<string, any> = { codigoCentro, nombreCentro, titular };
+          if (needsTs) patch.__updatedAt = serverTimestamp();
+          batch.update(doc(db, 'historico', d.id), patch);
           count++;
         }
       });
