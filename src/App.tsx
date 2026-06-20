@@ -2119,6 +2119,7 @@ export default function App() {
 
   // Auto-guardado en localStorage — SIN URLs (van en IndexedDB)
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [savedBy, setSavedBy] = useState<string | null>(null);
   const [saveAnim, setSaveAnim] = useState(false);
   const [guardadoSection, setGuardadoSection] = useState<string | null>(null);
   const [guardandoSection, setGuardandoSection] = useState<string | null>(null);
@@ -2137,6 +2138,7 @@ export default function App() {
       localStorage.setItem('certimar-draft-state', JSON.stringify(stateForStorage));
     } catch { /* quota — no crítico, imágenes están en IndexedDB */ }
     setSavedAt(new Date());
+    setSavedBy(state.general.certificador.nombre.trim() || null);
     setSaveAnim(true);
     const t = setTimeout(() => setSaveAnim(false), 1800);
     return () => clearTimeout(t);
@@ -7468,6 +7470,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             { label: 'N° Registro SERNAPESCA', value: state.general.certificador.numero_registro },
             { label: 'Tema activo', value: `Logo: ${tema.logo === 'engelbert' ? 'Engelbert' : 'Certimar'} · Paleta: ${tema.palette === 'engelbert' ? 'Naranja' : 'Azul'}` },
             { label: 'Último borrador guardado', value: savedAt ? formatSavedAt(savedAt) : '—' },
+            { label: 'Última modificación por', value: savedBy ?? '—' },
           ].map(({ label, value }) => (
             <div key={label} className="flex items-center justify-between px-5 py-3.5">
               <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
@@ -10003,15 +10006,22 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 </span>
               </div>
               <AnimatePresence mode="wait">
-                <motion.span
+                <motion.div
                   key={savedAt?.getTime() ?? 0}
                   initial={{ opacity: 0, y: 2 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -2 }}
-                  className="text-[11px] font-mono text-slate-500 dark:text-slate-400 pl-3.5"
+                  className="pl-3.5 flex flex-col gap-0"
                 >
-                  {savedAt ? formatSavedAt(savedAt) : '—'}
-                </motion.span>
+                  <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                    {savedAt ? formatSavedAt(savedAt) : '—'}
+                  </span>
+                  {savedBy && (
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                      por {savedBy}
+                    </span>
+                  )}
+                </motion.div>
               </AnimatePresence>
             </div>
           )}
