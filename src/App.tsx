@@ -378,6 +378,15 @@ const RAY_DATA = [
   { left: 90, skew: 10,  h: 40, dur: 7,  delay: 6 },
 ];
 
+function formatSavedAt(date: Date): string {
+  const dd  = String(date.getDate()).padStart(2, '0');
+  const mm  = String(date.getMonth() + 1).padStart(2, '0');
+  const HH  = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  const ss  = String(date.getSeconds()).padStart(2, '0');
+  return `${dd}-${mm} ${HH}:${min}:${ss}`;
+}
+
 const MarineBackground = () => {
   const reduceMotion = useReducedMotion();
 
@@ -2144,15 +2153,6 @@ export default function App() {
     return () => clearTimeout(t);
   }, [state]);
 
-  const formatSavedAt = useCallback((date: Date) => {
-    const dd  = String(date.getDate()).padStart(2, '0');
-    const mm  = String(date.getMonth() + 1).padStart(2, '0');
-    const HH  = String(date.getHours()).padStart(2, '0');
-    const min = String(date.getMinutes()).padStart(2, '0');
-    const ss  = String(date.getSeconds()).padStart(2, '0');
-    return `${dd}-${mm} ${HH}:${min}:${ss}`;
-  }, []);
-
   const resetState = () => {
     if (window.confirm("¿Está seguro de que desea borrar el borrador actual y comenzar de nuevo?")) {
       if (state.registroId) releaseLock(state.registroId);
@@ -2160,6 +2160,8 @@ export default function App() {
       idbClear();
       setState(DEFAULT_STATE);
       localStorage.removeItem('certimar-draft-state');
+      setSavedAt(null);
+      setSavedBy(null);
       setActiveTab('general');
     }
   };
@@ -2182,6 +2184,8 @@ export default function App() {
           },
         },
       }));
+      setSavedAt(null);
+      setSavedBy(null);
       setActiveTab('general');
     }
   };
@@ -2237,6 +2241,8 @@ export default function App() {
         revisionConfirmada: false,
       },
     }));
+    setSavedAt(null);
+    setSavedBy(null);
     setActiveTab('general');
   };
 
@@ -2367,6 +2373,14 @@ export default function App() {
     }
   };
 
+  const guardarVersionNombrada = () => {
+    if (!nombreVersionInput.trim() || nombrandoVersion || !versionesModal) return;
+    setNombrandoVersion(true);
+    crearRespaldo('version_nombrada', undefined, nombreVersionInput.trim())
+      .then(() => loadVersiones(versionesModal.registroId))
+      .finally(() => { setNombreVersionInput(''); setNombrandoVersion(false); });
+  };
+
   const loadVersiones = async (registroId: string) => {
     setVersionesLoading(true);
     setVersiones([]);
@@ -2394,23 +2408,17 @@ export default function App() {
       if (state.registroId && state.registroId !== targetId) {
         await releaseLock(state.registroId);
       }
+      const urlMap = await idbGetAll();
       const imagesFromVersion = (version.snapshot.images as any[]).map(img => ({
-        ...img, url: img.url ?? '', croppedUrl: '',
+        ...img,
+        url: urlMap[img.id] ?? img.url ?? '',
+        croppedUrl: urlMap[`crop_${img.id}`] ?? '',
       }));
       setState({
         ...(version.snapshot as AppState),
         images: imagesFromVersion,
         registroId: targetId,
       });
-      const urlMap = await idbGetAll();
-      setState(prev => ({
-        ...prev,
-        images: prev.images.map(img => ({
-          ...img,
-          url: urlMap[img.id] ?? img.url,
-          croppedUrl: urlMap[`crop_${img.id}`] ?? img.croppedUrl,
-        }))
-      }));
       await acquireLock(targetId);
       setVersionesModal(null);
       setActiveTab('general');
@@ -7828,25 +7836,12 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   <input
                     value={nombreVersionInput}
                     onChange={e => setNombreVersionInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && nombreVersionInput.trim() && !nombrandoVersion) {
-                        setNombrandoVersion(true);
-                        crearRespaldo('version_nombrada', undefined, nombreVersionInput.trim())
-                          .then(() => loadVersiones(versionesModal.registroId))
-                          .finally(() => { setNombreVersionInput(''); setNombrandoVersion(false); });
-                      }
-                    }}
+                    onKeyDown={e => { if (e.key === 'Enter') guardarVersionNombrada(); }}
                     placeholder="Ej: Antes de corrección SERNAPESCA"
                     className="flex-1 text-sm px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                   <button
-                    onClick={() => {
-                      if (!nombreVersionInput.trim() || nombrandoVersion) return;
-                      setNombrandoVersion(true);
-                      crearRespaldo('version_nombrada', undefined, nombreVersionInput.trim())
-                        .then(() => loadVersiones(versionesModal.registroId))
-                        .finally(() => { setNombreVersionInput(''); setNombrandoVersion(false); });
-                    }}
+                    onClick={guardarVersionNombrada}
                     disabled={!nombreVersionInput.trim() || nombrandoVersion}
                     className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-bold transition-colors"
                   >
@@ -10001,7 +9996,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 />
                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                   {saveAnim ? (
-                    <span className="text-emerald-500 dark:text-emerald-400">Guardando…</span>
+                    <span className="text-emerald-500 dark:text-emerald-400">Guardado ✓</span>
                   ) : 'Último borrador guardado'}
                 </span>
               </div>
