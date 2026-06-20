@@ -303,3 +303,16 @@ export interface RegistroHistorico {
   __updatedAt?: any;
   creadoEn?: any;
 }
+
+export interface RespaldoVersion {
+  id?: string;
+  savedAt: any;
+  usuario: { nombre: string; email: string };
+  motivo: 'guardado_manual' | 'documento_generado' | 'version_nombrada';
+  documentoTipo?: 'certificado' | 'informe' | 'acta';
+  nombreVersion?: string;
+  snapshot: Omit<AppState, 'images'> & {
+    images: Array<Omit<ReportImage, 'url'> & { url?: string }>;
+  };
+  __version: string;
+}

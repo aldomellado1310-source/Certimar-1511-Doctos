@@ -135,7 +135,7 @@ async function ensurePdfLibs() {
   }
 }
 import { cn } from './lib/utils';
-import { AppState, ReportImage, RegistroHistorico, EventoUso, CatalogoCustomEntry, TipoEquipoCatalogo } from './types';
+import { AppState, ReportImage, RegistroHistorico, RespaldoVersion, EventoUso, CatalogoCustomEntry, TipoEquipoCatalogo } from './types';
 import {
   ID_NUEVO_INCINERADOR,
   resolverIncinerador,
@@ -2319,12 +2319,110 @@ export default function App() {
     }
   };
 
+  const crearRespaldo = async (
+    motivo: 'guardado_manual' | 'documento_generado' | 'version_nombrada',
+    documentoTipo?: 'certificado' | 'informe' | 'acta',
+    nombreVersion?: string
+  ) => {
+    try {
+      const { collection, addDoc, serverTimestamp, getDocs, query, orderBy, deleteDoc, doc } = await import('firebase/firestore');
+      const { db, auth } = await import('./firebase');
+      const user = (auth as any).currentUser;
+      const cc = state.general.centro_cultivo;
+      const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
+      const imagesMetadata = state.images.map(img => ({
+        ...img,
+        url: img.url?.startsWith('https://') ? img.url : '',
+        croppedUrl: undefined,
+      }));
+      const snapshotClean = JSON.parse(JSON.stringify({ ...state, images: imagesMetadata }));
+      const versionData: Record<string, any> = {
+        savedAt: serverTimestamp(),
+        usuario: {
+          nombre: state.general.certificador.nombre || user?.email || 'desconocido',
+          email: user?.email || '',
+        },
+        motivo,
+        snapshot: snapshotClean,
+        __version: 'v3',
+      };
+      if (documentoTipo) versionData.documentoTipo = documentoTipo;
+      if (nombreVersion) versionData.nombreVersion = nombreVersion;
+      const versionesRef = collection(db, 'respaldos', docId, 'versiones');
+      await addDoc(versionesRef, versionData);
+      // Mantener máx. 30 versiones automáticas (las nombradas nunca se eliminan)
+      if (motivo !== 'version_nombrada') {
+        const allSnap = await getDocs(query(versionesRef, orderBy('savedAt', 'asc')));
+        const autoVersions = allSnap.docs.filter(d => d.data().motivo !== 'version_nombrada');
+        if (autoVersions.length > 30) {
+          const toDelete = autoVersions.slice(0, autoVersions.length - 30);
+          await Promise.all(toDelete.map(d => deleteDoc(doc(db, 'respaldos', docId, 'versiones', d.id))));
+        }
+      }
+    } catch (err) {
+      console.error('Error creando respaldo de versión:', err);
+    }
+  };
+
+  const loadVersiones = async (registroId: string) => {
+    setVersionesLoading(true);
+    setVersiones([]);
+    try {
+      const { collection, getDocs, query, orderBy } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      const snap = await getDocs(query(collection(db, 'respaldos', registroId, 'versiones'), orderBy('savedAt', 'desc')));
+      setVersiones(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<RespaldoVersion, 'id'>) })));
+    } catch (err) {
+      console.error('Error cargando versiones:', err);
+    } finally {
+      setVersionesLoading(false);
+    }
+  };
+
+  const restaurarVersion = async (version: RespaldoVersion) => {
+    if (!window.confirm(
+      '¿Restaurar esta versión?\n' +
+      'El estado actual se guardará primero como respaldo automático.'
+    )) return;
+    setRestaurandoVersion(true);
+    try {
+      await crearRespaldo('guardado_manual');
+      const targetId = versionesModal!.registroId;
+      if (state.registroId && state.registroId !== targetId) {
+        await releaseLock(state.registroId);
+      }
+      const imagesFromVersion = (version.snapshot.images as any[]).map(img => ({
+        ...img, url: img.url ?? '', croppedUrl: '',
+      }));
+      setState({
+        ...(version.snapshot as AppState),
+        images: imagesFromVersion,
+        registroId: targetId,
+      });
+      const urlMap = await idbGetAll();
+      setState(prev => ({
+        ...prev,
+        images: prev.images.map(img => ({
+          ...img,
+          url: urlMap[img.id] ?? img.url,
+          croppedUrl: urlMap[`crop_${img.id}`] ?? img.croppedUrl,
+        }))
+      }));
+      await acquireLock(targetId);
+      setVersionesModal(null);
+      setActiveTab('general');
+    } finally {
+      setRestaurandoVersion(false);
+    }
+  };
+
   const handleGuardar = async (section: string) => {
     if (guardandoSection) return; // evitar doble-click
     setGuardandoSection(section);
     setSaveError(null);
     const ok = await persistDraft('section');
     if (ok) {
+      crearRespaldo('guardado_manual'); // fire-and-forget, best-effort
       exportDraft();
       setGuardadoSection(section);
       setTimeout(() => setGuardadoSection(null), 2500);
@@ -2385,6 +2483,7 @@ export default function App() {
         payload[`documentUrls.${tipo}`] = documentUrl;
       }
       await setDoc(doc(db, 'historico', docId), payload, { merge: true });
+      crearRespaldo('documento_generado', tipo); // fire-and-forget, best-effort
       setHistoricoEntries(prev => {
         const idx = prev.findIndex(e => e.id === docId);
         const base = idx >= 0 ? prev[idx] : {};
@@ -4147,6 +4246,12 @@ Se despide atentamente`;
   const [resubirLoadingId, setResubirLoadingId] = useState<string | null>(null); // "docId-tipo"
   const [confirmDownload, setConfirmDownload] = useState<{ entry: RegistroHistorico; tipo: string; url?: string } | null>(null);
   const [exportingCSV, setExportingCSV] = useState(false);
+  const [versionesModal, setVersionesModal] = useState<{ registroId: string; entry: RegistroHistorico } | null>(null);
+  const [versiones, setVersiones] = useState<RespaldoVersion[]>([]);
+  const [versionesLoading, setVersionesLoading] = useState(false);
+  const [restaurandoVersion, setRestaurandoVersion] = useState(false);
+  const [nombreVersionInput, setNombreVersionInput] = useState('');
+  const [nombrandoVersion, setNombrandoVersion] = useState(false);
   const resubirPendienteRef = useRef<{ entry: RegistroHistorico; tipo: string } | null>(null);
   const resubirFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -7602,6 +7707,13 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         {entry.esBorrador ? 'Continuar' : 'Cargar'}
                       </button>
                       <button
+                        onClick={() => { setVersionesModal({ registroId: entry.registroId, entry }); loadVersiones(entry.registroId); }}
+                        title="Historial de versiones"
+                        className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors border border-indigo-200 dark:border-indigo-500/30"
+                      >
+                        <Clock size={12} />
+                      </button>
+                      <button
                         onClick={() => deleteFromHistorico(entry)}
                         title="Eliminar registro"
                         className="px-2.5 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-500 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors border border-rose-200 dark:border-rose-500/30"
@@ -7680,6 +7792,129 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   Confirmar y descargar
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Modal historial de versiones ── */}
+        {versionesModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg flex flex-col" style={{ maxHeight: '85vh' }}>
+              {/* Header */}
+              <div className="flex items-start justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <Clock size={16} className="text-indigo-500" />
+                    <p className="font-bold text-slate-900 dark:text-white text-sm">Historial de versiones</p>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">{versionesModal.entry.nombreCentro} · {versionesModal.registroId}</p>
+                </div>
+                <button
+                  onClick={() => { setVersionesModal(null); setNombreVersionInput(''); }}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Guardar versión nombrada */}
+              <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 shrink-0 bg-slate-50 dark:bg-slate-800/50">
+                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Guardar versión nombrada</p>
+                <div className="flex gap-2">
+                  <input
+                    value={nombreVersionInput}
+                    onChange={e => setNombreVersionInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && nombreVersionInput.trim() && !nombrandoVersion) {
+                        setNombrandoVersion(true);
+                        crearRespaldo('version_nombrada', undefined, nombreVersionInput.trim())
+                          .then(() => loadVersiones(versionesModal.registroId))
+                          .finally(() => { setNombreVersionInput(''); setNombrandoVersion(false); });
+                      }
+                    }}
+                    placeholder="Ej: Antes de corrección SERNAPESCA"
+                    className="flex-1 text-sm px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!nombreVersionInput.trim() || nombrandoVersion) return;
+                      setNombrandoVersion(true);
+                      crearRespaldo('version_nombrada', undefined, nombreVersionInput.trim())
+                        .then(() => loadVersiones(versionesModal.registroId))
+                        .finally(() => { setNombreVersionInput(''); setNombrandoVersion(false); });
+                    }}
+                    disabled={!nombreVersionInput.trim() || nombrandoVersion}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-bold transition-colors"
+                  >
+                    {nombrandoVersion ? '…' : 'Guardar'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Lista de versiones */}
+              <div className="overflow-y-auto flex-1 px-4 py-3 flex flex-col gap-2">
+                {versionesLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-10 text-slate-500 text-sm">
+                    <span className="animate-spin w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full" />
+                    Cargando versiones…
+                  </div>
+                ) : versiones.length === 0 ? (
+                  <div className="text-center py-10">
+                    <Clock size={28} className="mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+                    <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Sin versiones guardadas aún.</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Se crean automáticamente al guardar secciones o generar documentos.</p>
+                  </div>
+                ) : (
+                  versiones.map(v => {
+                    const isNamed = v.motivo === 'version_nombrada';
+                    const fecha = v.savedAt?.toDate ? v.savedAt.toDate().toLocaleString('es-CL', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+                    const motivoLabel = v.motivo === 'guardado_manual' ? 'Guardado manual' : v.motivo === 'documento_generado' ? `Documento: ${v.documentoTipo ?? ''}` : 'Versión nombrada';
+                    return (
+                      <div
+                        key={v.id}
+                        className={cn(
+                          'flex items-center gap-3 px-3 py-3 rounded-xl border transition-colors',
+                          isNamed
+                            ? 'border-indigo-200 dark:border-indigo-500/40 bg-indigo-50/70 dark:bg-indigo-500/5'
+                            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
+                        )}
+                      >
+                        <div className="shrink-0 mt-0.5">
+                          {isNamed
+                            ? <Bookmark size={14} className="text-indigo-500" />
+                            : <Clock size={14} className="text-slate-400 dark:text-slate-500" />
+                          }
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {v.nombreVersion && (
+                            <p className="text-xs font-bold text-indigo-700 dark:text-indigo-300 truncate mb-0.5">{v.nombreVersion}</p>
+                          )}
+                          <p className="text-xs text-slate-800 dark:text-slate-200 font-medium">{fecha}</p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                            {v.usuario.nombre} · {motivoLabel}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => restaurarVersion(v)}
+                          disabled={restaurandoVersion}
+                          className="shrink-0 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-indigo-100 hover:text-indigo-700 dark:hover:bg-indigo-500/20 dark:hover:text-indigo-300 transition-colors border border-slate-200 dark:border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {restaurandoVersion ? '…' : 'Restaurar'}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              {versiones.length > 0 && (
+                <div className="px-6 py-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                    Se conservan hasta 30 versiones automáticas · Las versiones nombradas (<Bookmark size={9} className="inline" />) se guardan indefinidamente.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
