@@ -2142,13 +2142,14 @@ export default function App() {
     return () => clearTimeout(t);
   }, [state]);
 
-  const savedLabel = useCallback(() => {
-    if (!savedAt) return null;
-    const diff = Math.floor((Date.now() - savedAt.getTime()) / 1000);
-    if (diff < 5)  return 'ahora mismo';
-    if (diff < 60) return `hace ${diff}s`;
-    return `hace ${Math.floor(diff / 60)}min`;
-  }, [savedAt]);
+  const formatSavedAt = useCallback((date: Date) => {
+    const dd  = String(date.getDate()).padStart(2, '0');
+    const mm  = String(date.getMonth() + 1).padStart(2, '0');
+    const HH  = String(date.getHours()).padStart(2, '0');
+    const min = String(date.getMinutes()).padStart(2, '0');
+    const ss  = String(date.getSeconds()).padStart(2, '0');
+    return `${dd}-${mm} ${HH}:${min}:${ss}`;
+  }, []);
 
   const resetState = () => {
     if (window.confirm("¿Está seguro de que desea borrar el borrador actual y comenzar de nuevo?")) {
@@ -7466,7 +7467,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             { label: 'Certificador', value: state.general.certificador.nombre },
             { label: 'N° Registro SERNAPESCA', value: state.general.certificador.numero_registro },
             { label: 'Tema activo', value: `Logo: ${tema.logo === 'engelbert' ? 'Engelbert' : 'Certimar'} · Paleta: ${tema.palette === 'engelbert' ? 'Naranja' : 'Azul'}` },
-            { label: 'Guardado', value: savedAt ? `Borrador guardado ${savedLabel()}` : 'Sin cambios' },
+            { label: 'Último borrador guardado', value: savedAt ? formatSavedAt(savedAt) : '—' },
           ].map(({ label, value }) => (
             <div key={label} className="flex items-center justify-between px-5 py-3.5">
               <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
@@ -9985,28 +9986,31 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
           {/* Indicador de auto-guardado */}
           {!isSidebarCollapsed && (
-            <div className="flex items-center gap-2 py-1">
-              <motion.div
-                animate={saveAnim ? { scale: [1, 1.4, 1], opacity: [0.6, 1, 0.6] } : {}}
-                transition={{ duration: 0.6 }}
-                className={cn(
-                  "w-1.5 h-1.5 rounded-full transition-colors duration-500",
-                  saveAnim ? "bg-emerald-400" : "bg-slate-300 dark:bg-slate-600"
-                )}
-              />
+            <div className="flex flex-col gap-0.5 py-1">
+              <div className="flex items-center gap-2">
+                <motion.div
+                  animate={saveAnim ? { scale: [1, 1.4, 1], opacity: [0.6, 1, 0.6] } : {}}
+                  transition={{ duration: 0.6 }}
+                  className={cn(
+                    "w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-500",
+                    saveAnim ? "bg-emerald-400" : "bg-slate-300 dark:bg-slate-600"
+                  )}
+                />
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  {saveAnim ? (
+                    <span className="text-emerald-500 dark:text-emerald-400">Guardando…</span>
+                  ) : 'Último borrador guardado'}
+                </span>
+              </div>
               <AnimatePresence mode="wait">
                 <motion.span
                   key={savedAt?.getTime() ?? 0}
-                  initial={{ opacity: 0, y: 4 }}
+                  initial={{ opacity: 0, y: 2 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  className="text-[10px] text-slate-500 dark:text-slate-500 font-medium"
+                  exit={{ opacity: 0, y: -2 }}
+                  className="text-[11px] font-mono text-slate-500 dark:text-slate-400 pl-3.5"
                 >
-                  {saveAnim ? (
-                    <span className="text-emerald-500 dark:text-emerald-400 font-semibold">Guardado</span>
-                  ) : (
-                    savedAt ? `Borrador: ${savedLabel()}` : 'Sin cambios'
-                  )}
+                  {savedAt ? formatSavedAt(savedAt) : '—'}
                 </motion.span>
               </AnimatePresence>
             </div>
