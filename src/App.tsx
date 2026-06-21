@@ -2134,6 +2134,11 @@ export default function App() {
   const [guardandoSection, setGuardandoSection] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Ref para leer el estado más reciente dentro de callbacks sin dependencias
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  // Auto-guardado silencioso en localStorage en cada cambio de estado
   useEffect(() => {
     const stateForStorage = {
       ...state,
@@ -2146,11 +2151,6 @@ export default function App() {
     try {
       localStorage.setItem('certimar-draft-state', JSON.stringify(stateForStorage));
     } catch { /* quota — no crítico, imágenes están en IndexedDB */ }
-    setSavedAt(new Date());
-    setSavedBy(state.general.certificador.nombre.trim() || null);
-    setSaveAnim(true);
-    const t = setTimeout(() => setSaveAnim(false), 1800);
-    return () => clearTimeout(t);
   }, [state]);
 
   const resetState = () => {
@@ -2328,6 +2328,26 @@ export default function App() {
     }
   };
 
+  // Ref para usar siempre la versión más reciente de persistDraft en el intervalo
+  const persistDraftRef = useRef(persistDraft);
+  persistDraftRef.current = persistDraft;
+
+  // Auto-guardado en Firestore cada 30 segundos
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const cc = stateRef.current.general.centro_cultivo;
+      if (!(cc.codigo_centro.trim() || cc.nombre_centro.trim())) return;
+      const ok = await persistDraftRef.current('auto');
+      if (ok) {
+        setSavedAt(new Date());
+        setSavedBy(stateRef.current.general.certificador.nombre.trim() || null);
+        setSaveAnim(true);
+        setTimeout(() => setSaveAnim(false), 1800);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const crearRespaldo = async (
     motivo: 'guardado_manual' | 'documento_generado' | 'version_nombrada',
     documentoTipo?: 'certificado' | 'informe' | 'acta',
@@ -2437,6 +2457,10 @@ export default function App() {
       exportDraft();
       setGuardadoSection(section);
       setTimeout(() => setGuardadoSection(null), 2500);
+      setSavedAt(new Date());
+      setSavedBy(state.general.certificador.nombre.trim() || null);
+      setSaveAnim(true);
+      setTimeout(() => setSaveAnim(false), 1800);
     } else {
       setSaveError('No se pudo guardar en la nube. Verifica tu conexión.');
       setTimeout(() => setSaveError(null), 4000);
@@ -6639,6 +6663,10 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 if (ok) {
                   setGuardadoSection('borrador');
                   setTimeout(() => setGuardadoSection(null), 2500);
+                  setSavedAt(new Date());
+                  setSavedBy(state.general.certificador.nombre.trim() || null);
+                  setSaveAnim(true);
+                  setTimeout(() => setSaveAnim(false), 1800);
                 } else {
                   setSaveError('No se pudo guardar el borrador. Verifica tu conexión.');
                   setTimeout(() => setSaveError(null), 4000);
@@ -9982,22 +10010,35 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             </div>
           )}
 
-          {/* Indicador de auto-guardado */}
+          {/* Indicador de guardado en nube */}
           {!isSidebarCollapsed && (
-            <div className="flex flex-col gap-0.5 py-1">
-              <div className="flex items-center gap-2">
+            <motion.div
+              animate={saveAnim ? { scale: [1, 1.01, 1] } : {}}
+              transition={{ duration: 0.4 }}
+              className={cn(
+                "rounded-xl px-3 py-2.5 border transition-all duration-500",
+                saveAnim
+                  ? "bg-emerald-50 dark:bg-emerald-900/30 border-emerald-300 dark:border-emerald-600/60"
+                  : savedAt
+                    ? "bg-slate-100 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700"
+                    : "bg-slate-50 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-700/40"
+              )}
+            >
+              <div className="flex items-center gap-1.5 mb-1">
                 <motion.div
-                  animate={saveAnim ? { scale: [1, 1.4, 1], opacity: [0.6, 1, 0.6] } : {}}
-                  transition={{ duration: 0.6 }}
-                  className={cn(
-                    "w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-500",
-                    saveAnim ? "bg-emerald-400" : "bg-slate-300 dark:bg-slate-600"
-                  )}
-                />
-                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  {saveAnim ? (
-                    <span className="text-emerald-500 dark:text-emerald-400">Guardado ✓</span>
-                  ) : 'Último borrador guardado'}
+                  animate={saveAnim ? { scale: [1, 1.3, 1] } : {}}
+                  transition={{ duration: 0.5 }}
+                >
+                  <Cloud size={12} className={cn(
+                    "shrink-0 transition-colors duration-500",
+                    saveAnim ? "text-emerald-500 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"
+                  )} />
+                </motion.div>
+                <span className={cn(
+                  "text-[11px] font-bold uppercase tracking-wider transition-colors duration-500",
+                  saveAnim ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"
+                )}>
+                  {saveAnim ? "Guardado en nube ✓" : "Guardado en nube"}
                 </span>
               </div>
               <AnimatePresence mode="wait">
@@ -10006,19 +10047,22 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   initial={{ opacity: 0, y: 2 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -2 }}
-                  className="pl-3.5 flex flex-col gap-0"
+                  className="pl-[22px] flex flex-col gap-0.5"
                 >
-                  <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                    {savedAt ? formatSavedAt(savedAt) : '—'}
+                  <span className={cn(
+                    "text-xs font-mono font-medium transition-colors duration-500",
+                    saveAnim ? "text-emerald-700 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300"
+                  )}>
+                    {savedAt ? formatSavedAt(savedAt) : 'Sin guardar aún'}
                   </span>
                   {savedBy && (
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
                       por {savedBy}
                     </span>
                   )}
                 </motion.div>
               </AnimatePresence>
-            </div>
+            </motion.div>
           )}
 
           <p className={cn("text-[10px] font-bold text-slate-300 dark:text-slate-600 uppercase tracking-widest", isSidebarCollapsed ? "hidden" : "")}>
