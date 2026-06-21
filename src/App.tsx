@@ -4277,6 +4277,10 @@ Se despide atentamente`;
   const [historicoEntries, setHistoricoEntries] = useState<RegistroHistorico[]>([]);
   const [historicoFiltro, setHistoricoFiltro] = useState<'todos' | 'borradores' | 'finalizados'>('todos');
   const [historicoLoading, setHistoricoLoading] = useState(false);
+  const [historicoViewMode, setHistoricoViewMode] = useState<'grid' | 'list'>(
+    () => (localStorage.getItem('certimar_historico_view') as 'grid' | 'list') ?? 'grid'
+  );
+  const [historicoEmpresaFiltro, setHistoricoEmpresaFiltro] = useState('');
   const [selectedHistoricoEntry, setSelectedHistoricoEntry] = useState<RegistroHistorico | null>(null);
   const [resubirLoadingId, setResubirLoadingId] = useState<string | null>(null); // "docId-tipo"
   const [confirmDownload, setConfirmDownload] = useState<{ entry: RegistroHistorico; tipo: string; url?: string } | null>(null);
