@@ -7702,6 +7702,23 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         )}
 
         {/* ── Registros desde Firestore ── */}
+        {(() => {
+          const entriesFiltradas = historicoEntries
+            .filter(e =>
+              historicoFiltro === 'todos' ? true :
+              historicoFiltro === 'borradores' ? e.esBorrador === true :
+              e.esBorrador !== true
+            )
+            .filter(e => {
+              if (!historicoEmpresaFiltro.trim()) return true;
+              const q = historicoEmpresaFiltro.toLowerCase();
+              return (
+                (e.titular?.toLowerCase().includes(q) ?? false) ||
+                (e.nombreCentro?.toLowerCase().includes(q) ?? false)
+              );
+            });
+
+          return (
         <FormCard className="p-0 overflow-hidden">
           {historicoLoading && (
             <div className="flex items-center gap-3 px-6 py-5 text-sm text-slate-500 dark:text-slate-400">
@@ -7716,14 +7733,16 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               <p className="text-xs mt-1 text-slate-500">Aparecerán aquí cuando generes el primer documento.</p>
             </div>
           )}
-          {!historicoLoading && historicoEntries.length > 0 && (
+          {!historicoLoading && historicoEntries.length > 0 && entriesFiltradas.length === 0 && (
+            <div className="px-6 py-10 text-center text-slate-500 dark:text-slate-500">
+              <Search size={28} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-medium">Sin resultados para «{historicoEmpresaFiltro}».</p>
+              <button onClick={() => setHistoricoEmpresaFiltro('')} className="mt-2 text-xs text-indigo-500 hover:underline">Limpiar filtro</button>
+            </div>
+          )}
+          {!historicoLoading && entriesFiltradas.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
-              {historicoEntries
-                .filter(e =>
-                  historicoFiltro === 'todos' ? true :
-                  historicoFiltro === 'borradores' ? e.esBorrador === true :
-                  e.esBorrador !== true)
-                .map((entry) => {
+              {entriesFiltradas.map((entry) => {
                 const docs = entry.documentosGenerados ?? [];
                 const urls = entry.documentUrls ?? {};
                 const m = entry.metricas;
@@ -7859,6 +7878,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             </div>
           )}
         </FormCard>
+          );
+        })()}
 
         {/* ── Modal confirmación descarga Inspector ── */}
         {confirmDownload && (
