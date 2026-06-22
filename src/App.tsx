@@ -61,6 +61,7 @@ import {
   Menu,
   ChevronDown,
   ChevronUp,
+  Search,
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 // ── WelcomeScreen constants (outside component to avoid re-renders) ──
@@ -7628,25 +7629,75 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
         {/* ── Filtro de borradores ── */}
         {!historicoLoading && historicoEntries.length > 0 && (
-          <div className="flex items-center gap-1.5 mb-3">
-            {([
-              { id: 'todos' as const, label: 'Todos', n: historicoEntries.length },
-              { id: 'borradores' as const, label: 'Borradores', n: historicoEntries.filter(e => e.esBorrador === true).length },
-              { id: 'finalizados' as const, label: 'Finalizados', n: historicoEntries.filter(e => e.esBorrador !== true).length },
-            ]).map(({ id, label, n }) => (
-              <button
-                key={id}
-                onClick={() => setHistoricoFiltro(id)}
-                className={cn(
-                  'px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border',
-                  historicoFiltro === id
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-indigo-300'
-                )}
-              >
-                {label} <span className="opacity-70">({n})</span>
-              </button>
-            ))}
+          <div className="flex flex-col gap-2 mb-3">
+            {/* Fila 1: tabs de filtro + toggle Grid/Lista */}
+            <div className="flex items-center gap-1.5">
+              {([
+                { id: 'todos' as const, label: 'Todos', n: historicoEntries.length },
+                { id: 'borradores' as const, label: 'Borradores', n: historicoEntries.filter(e => e.esBorrador === true).length },
+                { id: 'finalizados' as const, label: 'Finalizados', n: historicoEntries.filter(e => e.esBorrador !== true).length },
+              ]).map(({ id, label, n }) => (
+                <button
+                  key={id}
+                  onClick={() => setHistoricoFiltro(id)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border',
+                    historicoFiltro === id
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-indigo-300'
+                  )}
+                >
+                  {label} <span className="opacity-70">({n})</span>
+                </button>
+              ))}
+              <div className="flex-1" />
+              {/* Toggle Grid / Lista */}
+              <div className="flex border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => { setHistoricoViewMode('grid'); localStorage.setItem('certimar_historico_view', 'grid'); }}
+                  title="Vista Grid"
+                  className={cn(
+                    'px-2.5 py-1.5 text-sm transition-colors',
+                    historicoViewMode === 'grid'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+                  )}
+                >
+                  ⊞
+                </button>
+                <button
+                  onClick={() => { setHistoricoViewMode('list'); localStorage.setItem('certimar_historico_view', 'list'); }}
+                  title="Vista Lista"
+                  className={cn(
+                    'px-2.5 py-1.5 text-sm transition-colors border-l border-slate-200 dark:border-slate-700',
+                    historicoViewMode === 'list'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+                  )}
+                >
+                  ☰
+                </button>
+              </div>
+            </div>
+            {/* Fila 2: búsqueda por empresa o centro */}
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={historicoEmpresaFiltro}
+                onChange={e => setHistoricoEmpresaFiltro(e.target.value)}
+                placeholder="Filtrar por empresa o centro…"
+                className="w-full pl-8 pr-8 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-indigo-400 dark:focus:border-indigo-500 transition-colors"
+              />
+              {historicoEmpresaFiltro && (
+                <button
+                  onClick={() => setHistoricoEmpresaFiltro('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
           </div>
         )}
 
