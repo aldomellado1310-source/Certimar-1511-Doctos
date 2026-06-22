@@ -393,13 +393,24 @@ describe('calculateDenaturation (Ensilaje)', () => {
       expect(r.glosa_eficiencia_prepicador).toBe('');
     });
 
-    it('la observación en pantalla incluye la misma glosa (fuente única)', () => {
+    it('la observación en pantalla embebe exactamente la misma glosa (fuente única)', () => {
       const r = calculateDenaturation(
         { ...BASE_EQUIPOS_ENSILAJE, cuenta_con_prepicador: true },
         BASE_BATCH_PARAMS,
         BASE_INCINERACION_PARAMS
       );
-      expect(r.observacion_automatica).toContain('incrementa dicha capacidad de 15,1 a 21,6 TN/día');
+      // Verifica la garantía de fuente única: la observación contiene la glosa verbatim.
+      expect(r.observacion_automatica).toContain(r.glosa_eficiencia_prepicador);
+    });
+
+    it('omite la cláusula de incremento cuando cap_sin redondea a 0 (kilos_por_batch=0)', () => {
+      const r = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cuenta_con_prepicador: true },
+        { ...BASE_BATCH_PARAMS, kilos_por_batch: 0 },
+        BASE_INCINERACION_PARAMS
+      );
+      expect(r.glosa_eficiencia_prepicador).toContain('factor de eficiencia');
+      expect(r.glosa_eficiencia_prepicador).not.toContain('incrementa');
     });
   });
 

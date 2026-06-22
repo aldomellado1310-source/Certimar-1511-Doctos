@@ -203,7 +203,7 @@ export function calculateDenaturation(
     const efectoCap =
       cap_sin > 0
         ? `, lo que incrementa dicha capacidad de ${fmt1(cap_sin)} a ${fmt1(cap_con)} TN/día ` +
-          `(+${fmt1(parseFloat(((cap_con / cap_sin - 1) * 100).toFixed(1)))}%)`
+          `(+${fmt1((cap_con / cap_sin - 1) * 100)}%)`
         : '';
     glosa_eficiencia_prepicador =
       metodo +
