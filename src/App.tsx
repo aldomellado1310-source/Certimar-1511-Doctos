@@ -7741,6 +7741,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             </div>
           )}
           {!historicoLoading && entriesFiltradas.length > 0 && (
+            historicoViewMode === 'grid' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
               {entriesFiltradas.map((entry) => {
                 const docs = entry.documentosGenerados ?? [];
@@ -7876,6 +7877,157 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 );
               })}
             </div>
+            ) : (
+            <div className="flex flex-col gap-1 p-3">
+              {entriesFiltradas.map((entry) => {
+                const docs = entry.documentosGenerados ?? [];
+                const urls = entry.documentUrls ?? {};
+                const m = entry.metricas;
+                const ds = entry.esBorrador ? draftStatus(entry.snapshot, entry.metricas) : null;
+                return (
+                  <div
+                    key={entry.id}
+                    className={cn(
+                      'bg-white dark:bg-slate-800 rounded-xl p-2.5 transition-colors border',
+                      'grid gap-2 items-center',
+                      entry.esBorrador
+                        ? 'border-2 border-dashed border-amber-300 dark:border-amber-500/40 hover:border-amber-400'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500/50'
+                    )}
+                    style={{ gridTemplateColumns: '200px 1fr 90px' }}
+                  >
+                    {/* Columna 1 — Identidad */}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <p className="font-bold text-slate-900 dark:text-white text-xs truncate">{entry.nombreCentro || '—'}</p>
+                        {entry.esBorrador && (
+                          <span className="shrink-0 text-[8px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold uppercase border border-amber-300 dark:border-amber-500/50">BORR.</span>
+                        )}
+                      </div>
+                      <p className="text-[9px] font-mono text-slate-500 dark:text-slate-500">{entry.codigoCentro} · {entry.registroId}</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{entry.titular || '—'}</p>
+                      {ds && (
+                        <p className="text-[9px] text-amber-600 dark:text-amber-400 font-bold mt-0.5">
+                          Avance {ds.completados}/{ds.total}{ds.pendientes.length > 0 ? ` · Falta: ${ds.pendientes.join(', ')}` : ''}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Columna 2 — Métricas + Estado + Documentos */}
+                    <div className="flex flex-wrap items-center gap-1">
+                      {/* Métricas */}
+                      {m && ([
+                        { label: 'Extr.', cumple: m.cumpleExtraccion, val: m.capExtraccion },
+                        { label: 'Desn.', cumple: m.cumpleDesnaturalizacion, val: m.capDesnaturalizacion },
+                        { label: 'Alm.',  cumple: m.cumpleAlmacenamiento,   val: m.capAlmacenamiento },
+                      ]).map(({ label, cumple, val }) => (
+                        <span key={label} className={cn(
+                          'px-1.5 py-0.5 rounded text-[9px] font-bold',
+                          cumple
+                            ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400'
+                            : 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400'
+                        )}>
+                          {label} {typeof val === 'number' ? val.toFixed(1) : val}
+                        </span>
+                      ))}
+                      {m && <span className="w-px h-3 bg-slate-200 dark:bg-slate-700 mx-0.5" />}
+
+                      {/* Estado chips (clickeables, igual que en grid) */}
+                      <StatusChip
+                        active={entry.aprobado ?? false}
+                        onToggle={() => updateHistoricoStatus(entry.id!, 'aprobado', !(entry.aprobado ?? false))}
+                        labelOn="Aprobado" labelOff="No aprobado"
+                        colorOn="bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/40"
+                        disabled={entry.esBorrador}
+                      />
+                      <StatusChip
+                        active={entry.firmado ?? false}
+                        onToggle={() => updateHistoricoStatus(entry.id!, 'firmado', !(entry.firmado ?? false))}
+                        labelOn="Firmado" labelOff="Sin firma"
+                        colorOn="bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-500/40"
+                        disabled={entry.esBorrador}
+                      />
+                      <StatusChip
+                        active={entry.enviado_sernapesca ?? false}
+                        onToggle={() => updateHistoricoStatus(entry.id!, 'enviado_sernapesca', !(entry.enviado_sernapesca ?? false))}
+                        labelOn="SERNAPESCA" labelOff="Sin enviar"
+                        colorOn="bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400 border-violet-300 dark:border-violet-500/40"
+                        disabled={entry.esBorrador}
+                      />
+                      <StatusChip
+                        active={entry.cliente_notificado ?? false}
+                        onToggle={() => updateHistoricoStatus(entry.id!, 'cliente_notificado', !(entry.cliente_notificado ?? false))}
+                        labelOn="Notificado" labelOff="Sin notificar"
+                        colorOn="bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/40"
+                        disabled={entry.esBorrador}
+                      />
+                      <span className="w-px h-3 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+
+                      {/* Documentos */}
+                      {docs.map(d => {
+                        const url = urls[d as keyof typeof urls];
+                        return (
+                          <button
+                            key={d}
+                            onClick={() => setConfirmDownload({ entry, tipo: d, url: url || undefined })}
+                            title={url ? `Descargar ${d}` : `${d} — sin versión guardada`}
+                            className={cn(
+                              'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase transition-colors',
+                              url
+                                ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200'
+                                : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-600 hover:bg-indigo-100 hover:text-indigo-700 dark:hover:bg-indigo-500/20 dark:hover:text-indigo-400'
+                            )}
+                          >
+                            ↓ {d}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Columna 3 — Fecha + Acciones */}
+                    <div className="flex flex-col items-end gap-1.5">
+                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">{entry.fechaInspeccion || '—'}</span>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => setSelectedHistoricoEntry(entry)}
+                          className="px-2 py-1 text-[10px] font-bold rounded-md bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors border border-indigo-200 dark:border-indigo-500/30"
+                        >
+                          Ver
+                        </button>
+                        <button
+                          onClick={() => loadFromHistorico(entry)}
+                          title="Cargar datos en el formulario"
+                          className={cn(
+                            'px-2 py-1 rounded-md text-[10px] font-bold transition-colors border flex items-center gap-1',
+                            entry.esBorrador
+                              ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/30 hover:bg-amber-100'
+                              : 'bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100'
+                          )}
+                        >
+                          <Pencil size={10} />
+                          {entry.esBorrador ? 'Continuar' : 'Cargar'}
+                        </button>
+                        <button
+                          onClick={() => { setVersionesModal({ registroId: entry.id!, entry }); loadVersiones(entry.id!); }}
+                          title="Historial de versiones"
+                          className="px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors border border-indigo-200 dark:border-indigo-500/30"
+                        >
+                          <Clock size={10} />
+                        </button>
+                        <button
+                          onClick={() => deleteFromHistorico(entry)}
+                          title="Eliminar registro"
+                          className="px-2 py-1 rounded-md bg-rose-50 dark:bg-rose-500/10 text-rose-500 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors border border-rose-200 dark:border-rose-500/30"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            )
           )}
         </FormCard>
           );
