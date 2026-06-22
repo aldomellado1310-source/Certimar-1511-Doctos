@@ -190,7 +190,8 @@ export interface AppState {
   denaturation: DenaturationData;
   storage: StorageData;
   images: ReportImage[];
-  registroId?: string;  // correlativo interno (REG-001…), nunca incluido en documentos
+  registroId?: string;  // correlativo interno (REG-001…) — SOLO etiqueta visible, nunca incluido en documentos
+  docId?: string;       // ID único y estable del documento en Firestore (historico/registros/respaldos/Storage)
 }
 
 export type EventoTipo =
@@ -263,8 +264,8 @@ export interface CatalogoCustomEntry {
 }
 
 export interface RegistroHistorico {
-  id?: string;               // Firestore doc ID (= registroId)
-  registroId: string;
+  id?: string;               // Firestore doc ID (único y estable; ya NO es igual a registroId en registros nuevos)
+  registroId: string;        // correlativo interno REG-XXX — solo etiqueta visible
   codigoCentro: string;
   nombreCentro: string;
   titular: string;

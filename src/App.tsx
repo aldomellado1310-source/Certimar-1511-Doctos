@@ -135,6 +135,7 @@ async function ensurePdfLibs() {
   }
 }
 import { cn } from './lib/utils';
+import { resolveDocId, newRecordDocId } from './domain/recordId';
 import { AppState, ReportImage, RegistroHistorico, RespaldoVersion, EventoUso, CatalogoCustomEntry, TipoEquipoCatalogo } from './types';
 import {
   ID_NUEVO_INCINERADOR,
@@ -1997,6 +1998,13 @@ export default function App() {
           if (parsed.extraction?.parametros?.sistema_principal === 'LIFT-UP (Novatech)') {
             parsed.extraction.parametros.sistema_principal = 'LIFT-UP';
           }
+          // Continuidad con borradores guardados antes del fix de docId único:
+          // en registros pre-fix el ID de documento era el propio registroId, así
+          // que al reabrir el borrador seguimos escribiendo sobre el mismo doc en
+          // vez de bifurcarlo en uno nuevo.
+          if (parsed.docId === undefined && parsed.registroId) {
+            parsed.docId = parsed.registroId;
+          }
           return parsed;
         }
         localStorage.removeItem('certimar-draft-state');
@@ -2138,6 +2146,27 @@ export default function App() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  // ID de documento único y estable del registro actual. NO se deriva del
+  // correlativo local (que colisiona entre dispositivos). Se mantiene en un ref
+  // para que esté disponible de inmediato en callbacks, aún antes del re-render.
+  const docIdRef = useRef<string | null>(state.docId ?? null);
+  useEffect(() => { if (state.docId && state.docId !== docIdRef.current) docIdRef.current = state.docId; }, [state.docId]);
+
+  /**
+   * Devuelve el ID de documento Firestore del registro actual; si todavía no
+   * tiene uno, acuña uno único y lo persiste en el estado. Todas las rutas de
+   * guardado (historico/registros/respaldos/Storage) deben usar esta función
+   * para evitar que dos registros distintos compartan ID y se sobrescriban.
+   */
+  const ensureDocId = (): string => {
+    const id = resolveDocId(docIdRef.current);
+    if (id !== docIdRef.current) {
+      docIdRef.current = id;
+      setState(prev => (prev.docId ? prev : { ...prev, docId: id }));
+    }
+    return id;
+  };
+
   // Auto-guardado silencioso en localStorage en cada cambio de estado
   useEffect(() => {
     const stateForStorage = {
@@ -2155,9 +2184,10 @@ export default function App() {
 
   const resetState = () => {
     if (window.confirm("¿Está seguro de que desea borrar el borrador actual y comenzar de nuevo?")) {
-      if (state.registroId) releaseLock(state.registroId);
+      if (state.docId) releaseLock(state.docId);
       setBloqueoActivo(null);
       idbClear();
+      docIdRef.current = null;
       setState(DEFAULT_STATE);
       localStorage.removeItem('certimar-draft-state');
       setSavedAt(null);
@@ -2169,9 +2199,10 @@ export default function App() {
   // Nuevo registro — limpia datos del centro pero preserva el certificador
   const newRecord = () => {
     if (window.confirm('¿Iniciar un nuevo registro?\nSe limpiarán los datos del centro, extracción, desnaturalización, almacenamiento e imágenes.\nLos datos del certificador se conservan.')) {
-      if (state.registroId) releaseLock(state.registroId);
+      if (state.docId) releaseLock(state.docId);
       setBloqueoActivo(null);
       idbClear();
+      docIdRef.current = null;
       setState(prev => ({
         ...DEFAULT_STATE,
         general: {
@@ -2231,9 +2262,12 @@ export default function App() {
     idbClear();
     const { registroId, nextCounter } = getNextCorrelativo();
     localStorage.setItem('certimar-correlativo-counter', String(nextCounter));
+    const docId = newRecordDocId();
+    docIdRef.current = docId;
     setState(prev => ({
       ...DEFAULT_STATE,
       registroId,
+      docId,
       general: {
         ...DEFAULT_STATE.general,
         certificador: prev.general.certificador,
@@ -2257,7 +2291,7 @@ export default function App() {
       const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
       const { db } = await import('./firebase');
       const cc = state.general.centro_cultivo;
-      const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
+      const docId = ensureDocId();
       const imagesMetadata = state.images.map(img => ({
         ...img,
         url: img.url?.startsWith('https://') ? img.url : '',
@@ -2279,7 +2313,7 @@ export default function App() {
       if (!keepNonBorrador) {
         const esEntradaNueva = !existingEntry?.creadoEn;
         await setDoc(doc(db, 'historico', docId), {
-          registroId: docId,
+          registroId: state.registroId ?? docId,
           codigoCentro: cc.codigo_centro,
           nombreCentro: cc.nombre_centro,
           titular: cc.titular,
@@ -2308,7 +2342,7 @@ export default function App() {
           const updated: RegistroHistorico = {
             ...(idx >= 0 ? prev[idx] : {}),
             id: docId,
-            registroId: docId,
+            registroId: state.registroId ?? docId,
             codigoCentro: cc.codigo_centro,
             nombreCentro: cc.nombre_centro,
             titular: cc.titular,
@@ -2357,8 +2391,7 @@ export default function App() {
       const { collection, addDoc, serverTimestamp, getDocs, query, orderBy, deleteDoc, doc } = await import('firebase/firestore');
       const { db, auth } = await import('./firebase');
       const user = (auth as any).currentUser;
-      const cc = state.general.centro_cultivo;
-      const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
+      const docId = ensureDocId();
       const imagesMetadata = state.images.map(img => ({
         ...img,
         url: img.url?.startsWith('https://') ? img.url : '',
@@ -2424,9 +2457,9 @@ export default function App() {
     setRestaurandoVersion(true);
     try {
       await crearRespaldo('guardado_manual');
-      const targetId = versionesModal!.registroId;
-      if (state.registroId && state.registroId !== targetId) {
-        await releaseLock(state.registroId);
+      const targetId = versionesModal!.registroId; // doc ID del registro (clave Firestore)
+      if (state.docId && state.docId !== targetId) {
+        await releaseLock(state.docId);
       }
       const urlMap = await idbGetAll();
       const imagesFromVersion = (version.snapshot.images as any[]).map(img => ({
@@ -2434,10 +2467,12 @@ export default function App() {
         url: urlMap[img.id] ?? img.url ?? '',
         croppedUrl: urlMap[`crop_${img.id}`] ?? '',
       }));
+      docIdRef.current = targetId;
       setState({
         ...(version.snapshot as AppState),
         images: imagesFromVersion,
-        registroId: targetId,
+        docId: targetId,
+        registroId: versionesModal!.entry.registroId,
       });
       await acquireLock(targetId);
       setVersionesModal(null);
@@ -2477,7 +2512,7 @@ export default function App() {
       const { doc, setDoc, serverTimestamp, arrayUnion } = await import('firebase/firestore');
       const { db } = await import('./firebase');
       const cc = state.general.centro_cultivo;
-      const docId = state.registroId ?? `sin-reg_${cc.codigo_centro || 'borrador'}`;
+      const docId = ensureDocId();
       const snapshotImgs = state.images.map(img => {
         const { croppedUrl: _crop, ...imgRest } = img as any;
         void _crop; // croppedUrl se almacena solo en IDB, no en Firestore
@@ -2486,7 +2521,7 @@ export default function App() {
       // JSON.parse/stringify elimina undefined — Firestore v9 lanza error en campos undefined
       const snapshotClean = JSON.parse(JSON.stringify({ ...state, images: snapshotImgs }));
       const payload: Record<string, any> = {
-        registroId: docId,
+        registroId: state.registroId ?? docId,
         codigoCentro: cc.codigo_centro,
         nombreCentro: cc.nombre_centro,
         titular: cc.titular,
@@ -2525,7 +2560,7 @@ export default function App() {
         const updated: RegistroHistorico = {
           ...base,
           id: docId,
-          registroId: docId,
+          registroId: state.registroId ?? docId,
           codigoCentro: cc.codigo_centro,
           nombreCentro: cc.nombre_centro,
           titular: cc.titular,
@@ -2769,7 +2804,7 @@ export default function App() {
     )) return;
 
     // Verificar bloqueo antes de abrir
-    const lock = await checkLock(entry.registroId);
+    const lock = await checkLock(entry.id!);
     if (lock) {
       const hora = lock.desde.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
       const continuar = window.confirm(
@@ -2784,7 +2819,7 @@ export default function App() {
     }
 
     // Liberar bloqueo anterior si había un registro abierto
-    if (state.registroId) await releaseLock(state.registroId);
+    if (state.docId) await releaseLock(state.docId);
     if (!(await autosaveBeforeSwitch())) return;
 
     // Limpiar el Registro de Visita del registro anterior antes de cargar el nuevo
@@ -2809,10 +2844,12 @@ export default function App() {
       },
       images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: img.url ?? '' })),
       registroId: entry.registroId,
+      docId: entry.id!,
     });
+    docIdRef.current = entry.id!;
 
     // Adquirir bloqueo (incluso si otro lo tiene — el usuario confirmó)
-    await acquireLock(entry.registroId);
+    await acquireLock(entry.id!);
 
     // Segunda pasada: fusionar URLs del IDB local (cubre registros creados en este dispositivo
     // antes del fix que guarda URLs en Firestore)
@@ -2985,8 +3022,8 @@ export default function App() {
     e.target.value = '';
     setRegistroVisitaProcessing(true);
     setRegistroVisitaProgress(0);
-    // Upload original PDF to Storage if registroId is set
-    const rvDocId = state.registroId;
+    // Upload original PDF to Storage if the record already has a doc ID
+    const rvDocId = state.docId;
     if (rvDocId) {
       const rvBlob = new Blob([await file.arrayBuffer()], { type: 'application/pdf' });
       uploadDocToStorage(rvBlob, rvDocId, 'registro_visita').then(url => {
@@ -5024,7 +5061,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       const certBlob = doc.output('blob');
       doc.save(`${codigo}-${formatFileDate(state.general.fechas.emision_certificado)}-CERTIFICADO.pdf`);
       setShowEmailModal(true);
-      const certDocId = state.registroId ?? `sin-reg_${codigo || 'borrador'}`;
+      const certDocId = ensureDocId();
       uploadDocToStorage(certBlob, certDocId, 'certificado')
         .then(url => saveToHistorico('certificado', url))
         .catch(() => saveToHistorico('certificado'));
@@ -6120,7 +6157,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       const informeBlob = doc.output('blob');
       doc.save(filename);
       setShowEmailModal(true);
-      const informeDocId = state.registroId ?? `sin-reg_${codigo || 'borrador'}`;
+      const informeDocId = ensureDocId();
       uploadDocToStorage(informeBlob, informeDocId, 'informe')
         .then(url => saveToHistorico('informe', url))
         .catch(() => saveToHistorico('informe'));
@@ -7751,7 +7788,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         {entry.esBorrador ? 'Continuar' : 'Cargar'}
                       </button>
                       <button
-                        onClick={() => { setVersionesModal({ registroId: entry.registroId, entry }); loadVersiones(entry.registroId); }}
+                        onClick={() => { setVersionesModal({ registroId: entry.id!, entry }); loadVersiones(entry.id!); }}
                         title="Historial de versiones"
                         className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors border border-indigo-200 dark:border-indigo-500/30"
                       >
@@ -7816,10 +7853,12 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         .finally(() => setGenerating(null));
                     } else {
                       // Sin PDF guardado: cargar snapshot y regenerar automáticamente
+                      docIdRef.current = entry.id!;
                       setState({
                         ...entry.snapshot,
                         images: (entry.snapshot.images as any[]).map(img => ({ ...img, url: img.url ?? '' })),
                         registroId: entry.registroId,
+                        docId: entry.id!,
                       });
                       idbGetAll().then(urlMap => {
                         if (Object.keys(urlMap).length > 0) {
@@ -7851,7 +7890,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     <Clock size={16} className="text-indigo-500" />
                     <p className="font-bold text-slate-900 dark:text-white text-sm">Historial de versiones</p>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">{versionesModal.entry.nombreCentro} · {versionesModal.registroId}</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">{versionesModal.entry.nombreCentro} · {versionesModal.entry.registroId}</p>
                 </div>
                 <button
                   onClick={() => { setVersionesModal(null); setNombreVersionInput(''); }}
@@ -9684,7 +9723,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             disabled={generating !== null || (!isAdmin && !isEditor)}
             onClick={async () => {
               setGenerating('acta');
-              const actaDocId = state.registroId ?? `sin-reg_${state.general.centro_cultivo.codigo_centro || 'borrador'}`;
+              const actaDocId = ensureDocId();
               try {
                 // Genera el PDF real una sola vez: se descarga al usuario y se reutiliza para subirlo.
                 const blob = await downloadActaPdf(state);
