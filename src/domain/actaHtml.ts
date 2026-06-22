@@ -279,7 +279,7 @@ export function buildActaHtml(state: AppState): string {
   );
   html = rep(html,
     'Duraci&oacute;n total por batch: 23 min + 10.6 min = 33,6 min / N&uacute;mero de batches por d&iacute;a: 540 &divide; 33,6 = 16,07 batches',
-    `Duración total por batch: ${batchDur.toFixed(1)} min / Número de batches por día: ${total_min} ÷ ${batchDur.toFixed(1)} = ${numBatches.toFixed(2)} batches`
+    `${calcDen.glosa_eficiencia_prepicador}Duración total por batch: ${batchDur.toFixed(1)} min / Número de batches por día: ${total_min} ÷ ${batchDur.toFixed(1)} = ${numBatches.toFixed(2)} batches`
   );
   html = rep(html,
     'Capacidad diaria: 1.400 kg * 16,07 = 22.500 kg = 22,5 toneladas',

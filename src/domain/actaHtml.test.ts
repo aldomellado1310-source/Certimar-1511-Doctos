@@ -30,3 +30,26 @@ describe('buildActaHtml — sección G. Almacenamiento', () => {
     expect(html).not.toContain('POR DENSIDAD POR DENSIDAD');
   });
 });
+
+describe('buildActaHtml — glosa de eficiencia del prepicador (ensilaje)', () => {
+  const stateConPrepicador = {
+    ...FIXTURE_STATE,
+    denaturation: {
+      ...FIXTURE_STATE.denaturation,
+      equipos: { ...FIXTURE_STATE.denaturation.equipos, cuenta_con_prepicador: true },
+    },
+  };
+
+  it('incluye la glosa cuando el prepicador está activo', () => {
+    const html = buildActaHtml(stateConPrepicador);
+    expect(html).toContain('La capacidad diaria de desnaturalización por ensilaje se calcula como:');
+    expect(html).toContain('Con prepicador activo (factor de eficiencia: 70%)');
+    expect(html).toContain('incrementa dicha capacidad de 15,1 a 21,6 TN/día (+43,0%)');
+  });
+
+  it('NO incluye la glosa cuando no hay prepicador (sin regresión)', () => {
+    const html = buildActaHtml(FIXTURE_STATE);
+    expect(html).not.toContain('incrementa dicha capacidad');
+    expect(html).not.toContain('Con prepicador activo');
+  });
+});
