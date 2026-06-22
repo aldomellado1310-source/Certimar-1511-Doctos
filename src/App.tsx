@@ -3231,7 +3231,7 @@ export default function App() {
   const [loginAquaPhase, setLoginAquaPhase] = useState<'idle' | 'in' | 'hold' | 'out'>('idle');
   const [wasLoggedOut, setWasLoggedOut] = useState(false);
 
-  const CHANGELOG_VERSION = '2026-06-04-v1';
+  const CHANGELOG_VERSION = '2026-06-22-v1';
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelogStep, setChangelogStep] = useState(0);
   const [pendingGenerate, setPendingGenerate] = useState<'certificado' | 'informe' | null>(null);
@@ -10354,6 +10354,17 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         const closeChangelog = () => { setShowChangelog(false); localStorage.setItem('certimar-changelog-seen', CHANGELOG_VERSION); };
         const neverShowChangelog = () => { localStorage.setItem('certimar-changelog-never', 'true'); closeChangelog(); };
         const steps: { Icon: React.ElementType; color: string; titulo: string; descripcion: string; detalle: string[] }[] = [
+          {
+            Icon: Database,
+            color: '#b91c1c',
+            titulo: 'Corrección importante: ya no se pierden registros',
+            descripcion: 'Crear un registro nuevo ya no puede sobrescribir ni borrar uno existente. Cada registro tiene ahora un identificador único.',
+            detalle: [
+              'Antes: el correlativo REG-XXX podía repetirse entre equipos o sesiones, y un registro nuevo pisaba a uno antiguo (parecía un tope de ~15 registros).',
+              'Ahora: cada registro recibe un ID único e independiente del correlativo; los registros existentes se siguen editando con normalidad.',
+              'El código REG-XXX se mantiene solo como etiqueta visible.',
+            ],
+          },
           {
             Icon: Settings2,
             color: '#c2410c',
