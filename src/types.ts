@@ -137,6 +137,7 @@ export interface DenaturationData {
     capacidad_diaria_ton: number;
     cumple_norma: boolean;
     observacion_automatica: string;
+    glosa_eficiencia_prepicador: string;
   };
 }
 

@@ -283,7 +283,7 @@ const DEFAULT_STATE: AppState = {
       observaciones: '',
     },
     generacion_electrica: [],
-    resultados: { duracion_total_batch_min: 0, numero_batches_dia: 0, capacidad_ensilaje_ton: 0, capacidad_incinerador_ton: 0, capacidad_diaria_ton: 0, cumple_norma: false, observacion_automatica: "" }
+    resultados: { duracion_total_batch_min: 0, numero_batches_dia: 0, capacidad_ensilaje_ton: 0, capacidad_incinerador_ton: 0, capacidad_diaria_ton: 0, cumple_norma: false, observacion_automatica: "", glosa_eficiencia_prepicador: "" }
   },
   storage: {
     parametros: {
@@ -3185,7 +3185,7 @@ export default function App() {
           observaciones: 'INCINERADOR ES EL SISTEMA SECUNDARIO DE DESNATURALIZACIÓN DEL CENTRO DE CULTIVO.',
         },
         generacion_electrica: [],
-        resultados: { duracion_total_batch_min: 0, numero_batches_dia: 0, capacidad_ensilaje_ton: 0, capacidad_incinerador_ton: 0, capacidad_diaria_ton: 0, cumple_norma: false, observacion_automatica: '' },
+        resultados: { duracion_total_batch_min: 0, numero_batches_dia: 0, capacidad_ensilaje_ton: 0, capacidad_incinerador_ton: 0, capacidad_diaria_ton: 0, cumple_norma: false, observacion_automatica: '', glosa_eficiencia_prepicador: '' },
       },
       storage: {
         parametros: { capacidad_almacenaje_m3: 21, factor_densidad: 1.2, observaciones: 'Estanque de acero inoxidable con dique de contención.' },

@@ -141,6 +141,7 @@ export function calculateDenaturation(
         `${parametros_incineracion.capacidad_carga_kg_h} kg/h. ` +
         `Operando ${equipos.horas_funcionamiento_dia} horas diarias, ` +
         `alcanza una capacidad de ${capacity_ton.toFixed(2)} toneladas/día.`,
+      glosa_eficiencia_prepicador: '',
     };
   }
 
@@ -165,6 +166,7 @@ export function calculateDenaturation(
       observacion_automatica:
         'Error de configuración: el tiempo de ciclo (proceso + pausa) debe ser mayor a cero. ' +
         'Verifique los parámetros de batch.',
+      glosa_eficiencia_prepicador: '',
     };
   }
 
@@ -220,6 +222,7 @@ export function calculateDenaturation(
     capacidad_diaria_ton: parseFloat(combined_ton.toFixed(2)),
     cumple_norma: combined_ton >= MIN_DENATURATION_TON_DIA,
     observacion_automatica: observacion,
+    glosa_eficiencia_prepicador: '',
   };
 }
 

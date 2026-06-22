@@ -119,6 +119,7 @@ export const FIXTURE_STATE: AppState = {
       capacidad_diaria_ton: 17.9,
       cumple_norma: true,
       observacion_automatica: '',
+      glosa_eficiencia_prepicador: '',
     },
   },
   storage: {

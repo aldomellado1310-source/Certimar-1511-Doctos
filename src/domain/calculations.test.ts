@@ -330,6 +330,33 @@ describe('calculateDenaturation (Ensilaje)', () => {
       );
       expect(con.capacidad_diaria_ton).toBeGreaterThan(sin.capacidad_diaria_ton);
     });
+
+    it('glosa_eficiencia_prepicador es cadena vacía cuando NO hay prepicador', () => {
+      const r = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cuenta_con_prepicador: false },
+        BASE_BATCH_PARAMS,
+        BASE_INCINERACION_PARAMS
+      );
+      expect(r.glosa_eficiencia_prepicador).toBe('');
+    });
+
+    it('glosa_eficiencia_prepicador es cadena vacía en ruta de incineración', () => {
+      const r = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, tipo_sistema: 'Incineración' as const },
+        BASE_BATCH_PARAMS,
+        { ...BASE_INCINERACION_PARAMS, capacidad_carga_kg_h: 2000 }
+      );
+      expect(r.glosa_eficiencia_prepicador).toBe('');
+    });
+
+    it('glosa_eficiencia_prepicador es cadena vacía en el guard de batch ≤ 0', () => {
+      const r = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cuenta_con_prepicador: true },
+        { ...BASE_BATCH_PARAMS, tiempo_procesamiento_min: 0, tiempo_pausa_min: 0 },
+        BASE_INCINERACION_PARAMS
+      );
+      expect(r.glosa_eficiencia_prepicador).toBe('');
+    });
   });
 
   describe('Factor de multiplicación por cantidad de ollas trituradoras', () => {
