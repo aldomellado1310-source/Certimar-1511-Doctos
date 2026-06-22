@@ -187,11 +187,31 @@ export function calculateDenaturation(
 
   const combined_ton = capacity_ton + capacidad_incinerador_ton;
 
-  const glosa_prepicador = equipos.cuenta_con_prepicador
-    ? `Con prepicador activo (factor de eficiencia: ${Math.round(factor_pre * 100)}%), ` +
-      `la duración total del batch se reduce de ${batch_duration_base.toFixed(1)} min a ` +
-      `${batch_duration.toFixed(1)} min. `
-    : '';
+  // Glosa declarativa de eficiencia del prepicador (método de cálculo + efecto).
+  // Coma decimal (es-CL), determinista y sin dependencia de locale/ICU del entorno.
+  const fmt1 = (n: number) => n.toFixed(1).replace('.', ',');
+  let glosa_eficiencia_prepicador = '';
+  if (equipos.cuenta_con_prepicador && factor_pre < 1) {
+    const cap_sin = parseFloat(
+      (((total_work_min / batch_duration_base) * parametros_batch.kilos_por_batch * n_ollas) / 1000).toFixed(1)
+    );
+    const cap_con = parseFloat(capacity_ton.toFixed(1));
+    const metodo =
+      'La capacidad diaria de desnaturalización por ensilaje se calcula como: ' +
+      '(horas de trabajo × 60 ÷ duración total del batch) × kilos por batch × ' +
+      'N° de ollas trituradoras ÷ 1.000. ';
+    const efectoCap =
+      cap_sin > 0
+        ? `, lo que incrementa dicha capacidad de ${fmt1(cap_sin)} a ${fmt1(cap_con)} TN/día ` +
+          `(+${fmt1(parseFloat(((cap_con / cap_sin - 1) * 100).toFixed(1)))}%)`
+        : '';
+    glosa_eficiencia_prepicador =
+      metodo +
+      `Con prepicador activo (factor de eficiencia: ${Math.round(factor_pre * 100)}%), ` +
+      `la duración total del batch se reduce de ${fmt1(batch_duration_base)} a ${fmt1(batch_duration)} min` +
+      efectoCap +
+      '. ';
+  }
 
   const glosa_ollas = n_ollas > 1
     ? ` × ${n_ollas} ollas trituradoras en paralelo`
@@ -203,7 +223,7 @@ export function calculateDenaturation(
     `por lo tanto, estudiar detalladamente la capacidad de procesamiento total. ` +
     `(kg/batch=${parametros_batch.kilos_por_batch} -- Horas de trabajo diario: ` +
     `${equipos.horas_funcionamiento_dia} = ${total_work_min} min) ` +
-    glosa_prepicador +
+    glosa_eficiencia_prepicador +
     `Duración total por batch: ${batch_duration.toFixed(1)} min / ` +
     `Número de batches por día: ${total_work_min} ÷ ${batch_duration.toFixed(1)} = ` +
     `${num_batches.toFixed(2)} batches ` +
@@ -222,7 +242,7 @@ export function calculateDenaturation(
     capacidad_diaria_ton: parseFloat(combined_ton.toFixed(2)),
     cumple_norma: combined_ton >= MIN_DENATURATION_TON_DIA,
     observacion_automatica: observacion,
-    glosa_eficiencia_prepicador: '',
+    glosa_eficiencia_prepicador,
   };
 }
 

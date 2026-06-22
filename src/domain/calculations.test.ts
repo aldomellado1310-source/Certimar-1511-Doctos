@@ -357,6 +357,50 @@ describe('calculateDenaturation (Ensilaje)', () => {
       );
       expect(r.glosa_eficiencia_prepicador).toBe('');
     });
+
+    it('glosa declara el método de cálculo, el factor y el incremento de capacidad', () => {
+      const r = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cuenta_con_prepicador: true },
+        BASE_BATCH_PARAMS,
+        BASE_INCINERACION_PARAMS
+      );
+      expect(r.glosa_eficiencia_prepicador).toContain(
+        'La capacidad diaria de desnaturalización por ensilaje se calcula como:'
+      );
+      expect(r.glosa_eficiencia_prepicador).toContain('factor de eficiencia: 70%');
+      expect(r.glosa_eficiencia_prepicador).toContain('se reduce de 25,0 a 17,5 min');
+      expect(r.glosa_eficiencia_prepicador).toContain(
+        'incrementa dicha capacidad de 15,1 a 21,6 TN/día (+43,0%)'
+      );
+    });
+
+    it('el método aparece ANTES de la mención del prepicador en la glosa', () => {
+      const r = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cuenta_con_prepicador: true },
+        BASE_BATCH_PARAMS,
+        BASE_INCINERACION_PARAMS
+      );
+      const g = r.glosa_eficiencia_prepicador;
+      expect(g.indexOf('se calcula como:')).toBeLessThan(g.indexOf('Con prepicador activo'));
+    });
+
+    it('glosa vacía cuando el prepicador está activo pero el factor es 1 (sin ganancia)', () => {
+      const r = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cuenta_con_prepicador: true, factor_eficiencia_prepicador: 1 },
+        BASE_BATCH_PARAMS,
+        BASE_INCINERACION_PARAMS
+      );
+      expect(r.glosa_eficiencia_prepicador).toBe('');
+    });
+
+    it('la observación en pantalla incluye la misma glosa (fuente única)', () => {
+      const r = calculateDenaturation(
+        { ...BASE_EQUIPOS_ENSILAJE, cuenta_con_prepicador: true },
+        BASE_BATCH_PARAMS,
+        BASE_INCINERACION_PARAMS
+      );
+      expect(r.observacion_automatica).toContain('incrementa dicha capacidad de 15,1 a 21,6 TN/día');
+    });
   });
 
   describe('Factor de multiplicación por cantidad de ollas trituradoras', () => {
