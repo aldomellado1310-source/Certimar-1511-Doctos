@@ -124,11 +124,18 @@ export function calculateDenaturation(
 ): DenaturationData['resultados'] {
   const total_work_min = equipos.horas_funcionamiento_dia * 60;
 
+  // Override manual de la capacidad diaria del incinerador (TN/día).
+  // Cuando está definido, reemplaza al cálculo automático (carga × horas ÷ 1.000).
+  const incOverrideRaw = incinerador?.capacidad_diaria_ton_manual;
+  const hasIncOverride = incOverrideRaw != null && Number.isFinite(incOverrideRaw);
+  const incOverride = hasIncOverride ? (incOverrideRaw as number) : 0;
+
   // --- Ruta: Incineración Térmica (primary) ---
   if (equipos.tipo_sistema === 'Incineración') {
     // Res. Exenta N°1511/2021 — Umbral mínimo Desnaturalización: 15 TN/día
-    const capacity_ton =
+    const capacity_auto =
       (parametros_incineracion.capacidad_carga_kg_h * equipos.horas_funcionamiento_dia) / 1000;
+    const capacity_ton = hasIncOverride ? incOverride : capacity_auto;
     return {
       duracion_total_batch_min: 0,
       numero_batches_dia: 0,
@@ -136,11 +143,14 @@ export function calculateDenaturation(
       capacidad_incinerador_ton: 0,
       capacidad_diaria_ton: parseFloat(capacity_ton.toFixed(2)),
       cumple_norma: capacity_ton >= MIN_DENATURATION_TON_DIA,
-      observacion_automatica:
-        `Sistema de incineración térmica con capacidad de carga de ` +
-        `${parametros_incineracion.capacidad_carga_kg_h} kg/h. ` +
-        `Operando ${equipos.horas_funcionamiento_dia} horas diarias, ` +
-        `alcanza una capacidad de ${capacity_ton.toFixed(2)} toneladas/día.`,
+      observacion_automatica: hasIncOverride
+        ? `Capacidad diaria de incineración declarada manualmente en ${capacity_ton.toFixed(2)} toneladas/día ` +
+          `(reemplaza el cálculo automático de ${capacity_auto.toFixed(2)} TN/día = ` +
+          `${parametros_incineracion.capacidad_carga_kg_h} kg/h × ${equipos.horas_funcionamiento_dia} h ÷ 1.000).`
+        : `Sistema de incineración térmica con capacidad de carga de ` +
+          `${parametros_incineracion.capacidad_carga_kg_h} kg/h. ` +
+          `Operando ${equipos.horas_funcionamiento_dia} horas diarias, ` +
+          `alcanza una capacidad de ${capacity_ton.toFixed(2)} toneladas/día.`,
       glosa_eficiencia_prepicador: '',
     };
   }
@@ -179,10 +189,13 @@ export function calculateDenaturation(
   const capacity_kg = num_batches * parametros_batch.kilos_por_batch * n_ollas;
   const capacity_ton = capacity_kg / 1000;
 
-  // Secondary incinerador capacity (only for Ensilaje primary route)
+  // Secondary incinerador capacity (only for Ensilaje primary route).
+  // Respeta el override manual cuando está definido.
   const capacidad_incinerador_ton =
     incinerador?.activo
-      ? (incinerador.capacidad_carga_kg_h * incinerador.horas_funcionamiento_dia) / 1000
+      ? (hasIncOverride
+          ? incOverride
+          : (incinerador.capacidad_carga_kg_h * incinerador.horas_funcionamiento_dia) / 1000)
       : 0;
 
   const combined_ton = capacity_ton + capacidad_incinerador_ton;
@@ -217,6 +230,27 @@ export function calculateDenaturation(
     ? ` × ${n_ollas} ollas trituradoras en paralelo`
     : '';
 
+  // Glosa de composición de la capacidad de desnaturalización cuando el centro
+  // dispone simultáneamente de olla trituradora (ensilaje) e incinerador.
+  // Explica que la capacidad total es la SUMA de ambos sistemas, porque operan
+  // de forma independiente y pueden funcionar en paralelo.
+  let glosa_incinerador = '';
+  if (incinerador?.activo) {
+    const incStr   = capacidad_incinerador_ton.toFixed(2);
+    const ollaStr  = capacity_ton.toFixed(2);
+    const totalStr = combined_ton.toFixed(2);
+    const detalleInc = hasIncOverride
+      ? `declarada manualmente en ${incStr} TN/día`
+      : `equivalente a su capacidad de carga por las horas de funcionamiento diario ` +
+        `(${incinerador.capacidad_carga_kg_h} kg/h × ${incinerador.horas_funcionamiento_dia} h ÷ 1.000 = ${incStr} TN/día)`;
+    glosa_incinerador =
+      ` Adicionalmente, el centro cuenta con un incinerador que complementa la desnaturalización por ensilaje, ` +
+      `con una capacidad diaria ${detalleInc}. ` +
+      `La capacidad total de desnaturalización corresponde a la SUMA de ambos sistemas, ` +
+      `dado que la olla trituradora (ensilaje) y el incinerador operan de forma independiente y pueden funcionar en paralelo: ` +
+      `${ollaStr} TN/día (ensilaje) + ${incStr} TN/día (incineración) = ${totalStr} TN/día.`;
+  }
+
   const observacion =
     `La eficiencia del sistema depende directamente del tiempo total de cada ciclo (batch + pausa). ` +
     `Los tiempos de pausas y de procesamiento permite determinar la cantidad de batches por día, ` +
@@ -229,9 +263,7 @@ export function calculateDenaturation(
     `${num_batches.toFixed(2)} batches ` +
     `Capacidad diaria: ${parametros_batch.kilos_por_batch.toLocaleString('es-CL')} kg × ` +
     `${num_batches.toFixed(2)}${glosa_ollas} = ${capacity_kg.toFixed(0)} kg = ${capacity_ton.toFixed(2)} toneladas` +
-    (incinerador?.activo
-      ? ` + Incinerador secundario: ${capacidad_incinerador_ton.toFixed(2)} TN/día. Total combinado: ${combined_ton.toFixed(2)} TN/día.`
-      : '');
+    glosa_incinerador;
 
   // Res. Exenta N°1511/2021 — Umbral mínimo Desnaturalización: 15 TN/día
   return {

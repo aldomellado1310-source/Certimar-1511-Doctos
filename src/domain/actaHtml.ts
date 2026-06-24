@@ -281,9 +281,17 @@ export function buildActaHtml(state: AppState): string {
     'Duraci&oacute;n total por batch: 23 min + 10.6 min = 33,6 min / N&uacute;mero de batches por d&iacute;a: 540 &divide; 33,6 = 16,07 batches',
     `${calcDen.glosa_eficiencia_prepicador}Duración total por batch: ${batchDur.toFixed(1)} min / Número de batches por día: ${total_min} ÷ ${batchDur.toFixed(1)} = ${numBatches.toFixed(2)} batches`
   );
+  // Glosa de capacidad. Cuando el centro tiene ensilaje (olla) E incinerador,
+  // la capacidad total es la SUMA de ambos sistemas (operan de forma
+  // independiente y pueden funcionar en paralelo); se explicita la composición.
+  const ensilajeConIncinerador = den.equipos.tipo_sistema === 'Ensilaje' && incActivo;
   html = rep(html,
     'Capacidad diaria: 1.400 kg * 16,07 = 22.500 kg = 22,5 toneladas',
-    `Capacidad diaria: ${den.parametros_batch.kilos_por_batch.toLocaleString('es-CL')} kg × ${numBatches.toFixed(2)}${glosaOllas} = ${capKg.toFixed(0)} kg = ${calcDen.capacidad_diaria_ton.toFixed(2)} toneladas`
+    ensilajeConIncinerador
+      ? `Capacidad diaria por ensilaje: ${den.parametros_batch.kilos_por_batch.toLocaleString('es-CL')} kg × ${numBatches.toFixed(2)}${glosaOllas} = ${capKg.toFixed(0)} kg = ${calcDen.capacidad_ensilaje_ton.toFixed(2)} toneladas. ` +
+        `A esta capacidad se suma la del incinerador (${calcDen.capacidad_incinerador_ton.toFixed(2)} TN/día), dado que la olla trituradora y el incinerador operan de forma independiente y pueden funcionar en paralelo. ` +
+        `Capacidad total de desnaturalización: ${calcDen.capacidad_ensilaje_ton.toFixed(2)} TN/día (ensilaje) + ${calcDen.capacidad_incinerador_ton.toFixed(2)} TN/día (incineración) = ${calcDen.capacidad_diaria_ton.toFixed(2)} toneladas/día.`
+      : `Capacidad diaria: ${den.parametros_batch.kilos_por_batch.toLocaleString('es-CL')} kg × ${numBatches.toFixed(2)}${glosaOllas} = ${capKg.toFixed(0)} kg = ${calcDen.capacidad_diaria_ton.toFixed(2)} toneladas`
   );
 
   // ── F. Desnaturalización — incinerador (placeholders fragmentados) ─────────

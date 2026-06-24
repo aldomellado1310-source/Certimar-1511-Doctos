@@ -53,3 +53,45 @@ describe('buildActaHtml — glosa de eficiencia del prepicador (ensilaje)', () =
     expect(html).not.toContain('Con prepicador activo');
   });
 });
+
+describe('buildActaHtml — Tabla F: composición de capacidad (ensilaje + incinerador)', () => {
+  const stateConIncinerador = {
+    ...FIXTURE_STATE,
+    denaturation: {
+      ...FIXTURE_STATE.denaturation,
+      incinerador: {
+        ...FIXTURE_STATE.denaturation.incinerador,
+        activo: true,
+        capacidad_carga_kg_h: 50,
+        horas_funcionamiento_dia: 8,
+      },
+    },
+  };
+
+  it('explica que la capacidad total es la suma de ensilaje e incineración', () => {
+    const html = buildActaHtml(stateConIncinerador);
+    expect(html).toContain('Capacidad diaria por ensilaje:');
+    expect(html).toContain('A esta capacidad se suma la del incinerador');
+    expect(html).toContain('Capacidad total de desnaturalización:');
+  });
+
+  it('usa el override manual del incinerador cuando está definido', () => {
+    const state = {
+      ...stateConIncinerador,
+      denaturation: {
+        ...stateConIncinerador.denaturation,
+        incinerador: {
+          ...stateConIncinerador.denaturation.incinerador,
+          capacidad_diaria_ton_manual: 5,
+        },
+      },
+    };
+    const html = buildActaHtml(state);
+    expect(html).toContain('5.00 TN/día');
+  });
+
+  it('sin incinerador activo conserva la glosa simple (sin regresión)', () => {
+    const html = buildActaHtml(FIXTURE_STATE);
+    expect(html).not.toContain('A esta capacidad se suma la del incinerador');
+  });
+});

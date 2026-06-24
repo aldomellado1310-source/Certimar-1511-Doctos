@@ -389,6 +389,24 @@ function formatSavedAt(date: Date): string {
   return `${dd}-${mm} ${HH}:${min}:${ss}`;
 }
 
+/** Email de la cuenta actualmente logueada (Google o PIN), leído de la sesión. */
+function readSessionEmail(): string {
+  try {
+    const s = JSON.parse(localStorage.getItem('certimar-session') ?? '{}');
+    return (s?.email ?? '').trim();
+  } catch {
+    return '';
+  }
+}
+
+/** Formatea una marca de tiempo de Firestore (Timestamp), Date o string a "dd mmm HH:mm". */
+function formatHistoTimestamp(ts: any): string {
+  if (!ts) return '—';
+  const d: Date = ts?.toDate ? ts.toDate() : (ts instanceof Date ? ts : new Date(ts));
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
 const MarineBackground = () => {
   const reduceMotion = useReducedMotion();
 
@@ -781,6 +799,70 @@ const InputField = ({
       )}
     </div>
   </div>
+  );
+};
+
+// Campo numérico con override manual sobre un valor calculado automáticamente.
+// - Vacío  → usa el valor automático (placeholder muestra el cálculo).
+// - Con valor → sobrescribe el cálculo.
+// Editable por cualquier usuario que pueda ver la sección.
+const OverrideNumberField = ({
+  label, autoValue, manualValue, onChange, suffix,
+}: {
+  label: string;
+  autoValue: number;
+  manualValue: number | null | undefined;
+  onChange: (v: number | null) => void;
+  suffix?: string;
+}) => {
+  const isManual = manualValue != null && Number.isFinite(manualValue);
+  const [local, setLocal] = React.useState<string>(isManual ? String(manualValue) : '');
+
+  React.useEffect(() => {
+    setLocal(manualValue != null && Number.isFinite(manualValue) ? String(manualValue) : '');
+  }, [manualValue]);
+
+  const handleChange = (raw: string) => {
+    setLocal(raw);
+    const norm = raw.trim().replace(',', '.');
+    if (norm === '') { onChange(null); return; }
+    const v = parseFloat(norm);
+    if (!isNaN(v) && v >= 0) onChange(v);
+  };
+
+  const fieldId = React.useId();
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={fieldId} className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
+      <div className="relative">
+        <input
+          id={fieldId}
+          type="text"
+          inputMode="decimal"
+          value={local}
+          placeholder={autoValue.toFixed(2)}
+          onChange={(e) => handleChange(e.target.value)}
+          className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-mono font-bold"
+        />
+        {suffix && (
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-500 text-sm font-medium pointer-events-none">
+            {suffix}
+          </div>
+        )}
+      </div>
+      <p className="text-[10px] text-slate-500 dark:text-slate-400">
+        {isManual ? (
+          <>
+            Valor manual. Automático: {autoValue.toFixed(2)}{suffix ? ` ${suffix}` : ''} ·{' '}
+            <button type="button" onClick={() => onChange(null)} className="text-indigo-500 hover:underline font-semibold">
+              volver a automático
+            </button>
+          </>
+        ) : (
+          <>Automático (carga × horas ÷ 1.000). Escribe un valor para sobrescribir.</>
+        )}
+      </p>
+    </div>
   );
 };
 
@@ -2290,9 +2372,10 @@ export default function App() {
   const persistDraft = async (motivo: 'manual' | 'auto' | 'section'): Promise<boolean> => {
     try {
       const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
-      const { db } = await import('./firebase');
+      const { db, auth } = await import('./firebase');
       const cc = state.general.centro_cultivo;
       const docId = ensureDocId();
+      const editorEmail = (auth as any).currentUser?.email || readSessionEmail() || 'desconocido';
       const imagesMetadata = state.images.map(img => ({
         ...img,
         url: img.url?.startsWith('https://') ? img.url : '',
@@ -2303,7 +2386,7 @@ export default function App() {
         images: imagesMetadata,
         __version: 'v3',
         __savedAt: serverTimestamp(),
-        __savedBy: state.general.certificador.nombre || 'desconocido',
+        __savedBy: editorEmail,
         __section: motivo,
       });
       const calcExt = calculatedExtraction;
@@ -2335,6 +2418,7 @@ export default function App() {
             jaulas_simultaneas: state.extraction.parametros.jaulas_simultaneas,
             profundidad_m: state.extraction.parametros.profundidad_operacion_m,
           },
+          modificadoPor: editorEmail,
           __updatedAt: serverTimestamp(),
           ...(esEntradaNueva && { creadoEn: serverTimestamp() }),
         }, { merge: true });
@@ -2351,6 +2435,8 @@ export default function App() {
             esBorrador: true,
             documentosGenerados: idx >= 0 ? (prev[idx].documentosGenerados ?? []) : [],
             snapshot: { ...state, images: imagesMetadata } as any,
+            modificadoPor: editorEmail,
+            __updatedAt: new Date(),
             creadoEn: idx >= 0 ? (prev[idx].creadoEn ?? 'pending') : 'pending',
           };
           return idx >= 0 ? prev.map(e => e.id === docId ? updated : e) : [updated, ...prev];
@@ -2402,8 +2488,8 @@ export default function App() {
       const versionData: Record<string, any> = {
         savedAt: serverTimestamp(),
         usuario: {
-          nombre: state.general.certificador.nombre || user?.email || 'desconocido',
-          email: user?.email || '',
+          nombre: user?.email || readSessionEmail() || 'desconocido',
+          email: user?.email || readSessionEmail() || '',
         },
         motivo,
         snapshot: snapshotClean,
@@ -7812,6 +7898,14 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       );
                     })()}
 
+                    {/* Última modificación (borradores) */}
+                    {entry.esBorrador && (entry.__updatedAt || entry.modificadoPor) && (
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                        Últ. modif.: {formatHistoTimestamp(entry.__updatedAt)}
+                        {entry.modificadoPor ? ` · ${entry.modificadoPor}` : ''}
+                      </p>
+                    )}
+
                     {/* Doc badges — clickeable para descargar con confirmación de Inspector */}
                     <div className="flex gap-1 flex-wrap">
                       {docs.map(d => {
@@ -7909,6 +8003,12 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       {ds && (
                         <p className="text-[9px] text-amber-600 dark:text-amber-400 font-bold mt-0.5">
                           Avance {ds.completados}/{ds.total}{ds.pendientes.length > 0 ? ` · Falta: ${ds.pendientes.join(', ')}` : ''}
+                        </p>
+                      )}
+                      {entry.esBorrador && (entry.__updatedAt || entry.modificadoPor) && (
+                        <p className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                          Últ. modif.: {formatHistoTimestamp(entry.__updatedAt)}
+                          {entry.modificadoPor ? ` · ${entry.modificadoPor}` : ''}
                         </p>
                       )}
                     </div>
@@ -8838,15 +8938,13 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         </select>
                       </div>
                       <InputField label="Horas Operación" type="number" value={state.denaturation.incinerador.horas_funcionamiento_dia} onChange={(v) => updateDenaturation('incinerador.horas_funcionamiento_dia', v)} suffix="Hrs/Día" min={1} max={24} />
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Capacidad Calculada</label>
-                        <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl">
-                          <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                            {((state.denaturation.incinerador.capacidad_carga_kg_h * state.denaturation.incinerador.horas_funcionamiento_dia) / 1000).toFixed(2)}
-                          </span>
-                          <span className="text-xs text-slate-500 ml-auto">TN/Día</span>
-                        </div>
-                      </div>
+                      <OverrideNumberField
+                        label="Capacidad Calculada"
+                        autoValue={(state.denaturation.incinerador.capacidad_carga_kg_h * state.denaturation.incinerador.horas_funcionamiento_dia) / 1000}
+                        manualValue={state.denaturation.incinerador.capacidad_diaria_ton_manual}
+                        onChange={(v) => updateDenaturation('incinerador.capacidad_diaria_ton_manual', v)}
+                        suffix="TN/Día"
+                      />
                       {(state.denaturation.incinerador.id_catalogo || state.denaturation.incinerador.activo) && (
                         <>
                           <InputField label="Marca / Modelo" value={state.denaturation.incinerador.marca_modelo} onChange={(v) => updateDenaturation('incinerador.marca_modelo', v)} />
@@ -10238,7 +10336,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
           {/* ── Grupo 4: Sistema ── (al fondo, empuja hacia abajo) */}
           <div className="mt-auto space-y-1 border-t border-slate-100 dark:border-slate-800 pt-4">
-            {isAdmin && <NavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={Settings2} label="Configuración" collapsed={isSidebarCollapsed} />}
+            <NavItem active={activeTab === 'config'} onClick={() => setActiveTab('config')} icon={Settings2} label="Configuración" collapsed={isSidebarCollapsed} />
             <button
               onClick={async () => {
                 try { const { signOut } = await import('firebase/auth'); const { auth } = await import('./firebase'); await signOut(auth); } catch {}

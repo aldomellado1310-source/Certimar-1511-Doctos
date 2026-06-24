@@ -75,6 +75,24 @@ const BASE_INCINERACION_PARAMS = {
   camara_secundaria: '2.0m',
 };
 
+const BASE_INCINERADOR = {
+  activo: true,
+  id_catalogo: '',
+  marca_modelo: 'INCINERADOR 300',
+  capacidad_carga_kg_h: 50,
+  horas_funcionamiento_dia: 8,
+  num_quemadores_primaria: 1,
+  num_quemadores_secundaria: 1,
+  temperatura_camara_primaria_c: 850,
+  temperatura_camara_secundaria_c: 1100,
+  requerimiento_energetico: '8 KW/hora',
+  sistema_carga: 'CARGA MANUAL TACHOS 60L',
+  sistema_descarga: '',
+  disposicion_final: '',
+  almacenamiento_gas: '',
+  observaciones: '',
+};
+
 const BASE_STORAGE_PARAMS = {
   capacidad_almacenaje_m3: 20,
   factor_densidad: FORMIC_ACID_DENSITY_TN_M3,
@@ -523,6 +541,94 @@ describe('calculateDenaturation (Incineración)', () => {
     );
     expect(r.capacidad_diaria_ton).toBe(0);
     expect(r.cumple_norma).toBe(false);
+  });
+
+  describe('Override manual de capacidad diaria del incinerador', () => {
+    it('el valor manual reemplaza al cálculo automático y afecta el cumplimiento', () => {
+      // Auto: 150 kg/h × 9h = 1.35 TN/día (NO cumple). Manual: 16 TN/día (cumple).
+      const r = calculateDenaturation(
+        equiposIncineracion,
+        BASE_BATCH_PARAMS,
+        { ...BASE_INCINERACION_PARAMS, capacidad_carga_kg_h: 150 },
+        { ...BASE_INCINERADOR, capacidad_diaria_ton_manual: 16 }
+      );
+      expect(r.capacidad_diaria_ton).toBe(16);
+      expect(r.cumple_norma).toBe(true);
+      expect(r.observacion_automatica).toContain('declarada manualmente');
+    });
+
+    it('manual = 0 fuerza capacidad 0 y NO cumple', () => {
+      const r = calculateDenaturation(
+        equiposIncineracion,
+        BASE_BATCH_PARAMS,
+        { ...BASE_INCINERACION_PARAMS, capacidad_carga_kg_h: 2000 },
+        { ...BASE_INCINERADOR, capacidad_diaria_ton_manual: 0 }
+      );
+      expect(r.capacidad_diaria_ton).toBe(0);
+      expect(r.cumple_norma).toBe(false);
+    });
+
+    it('null o ausente usa el cálculo automático', () => {
+      const r = calculateDenaturation(
+        equiposIncineracion,
+        BASE_BATCH_PARAMS,
+        { ...BASE_INCINERACION_PARAMS, capacidad_carga_kg_h: 2000 },
+        { ...BASE_INCINERADOR, capacidad_diaria_ton_manual: null }
+      );
+      expect(r.capacidad_diaria_ton).toBeCloseTo(18, 1);
+    });
+  });
+});
+
+// ===========================================================================
+// DESNATURALIZACIÓN — ENSILAJE + INCINERADOR (capacidad combinada)
+// ===========================================================================
+
+describe('calculateDenaturation (Ensilaje + Incinerador)', () => {
+  it('la capacidad total es la suma del ensilaje y del incinerador', () => {
+    const r = calculateDenaturation(
+      BASE_EQUIPOS_ENSILAJE,
+      BASE_BATCH_PARAMS,
+      BASE_INCINERACION_PARAMS,
+      BASE_INCINERADOR // 50 kg/h × 8h = 0.4 TN/día
+    );
+    expect(r.capacidad_incinerador_ton).toBeCloseTo(0.4, 2);
+    expect(r.capacidad_diaria_ton).toBeCloseTo(r.capacidad_ensilaje_ton + r.capacidad_incinerador_ton, 2);
+  });
+
+  it('la glosa explica la composición (ensilaje + incineración = total)', () => {
+    const r = calculateDenaturation(
+      BASE_EQUIPOS_ENSILAJE,
+      BASE_BATCH_PARAMS,
+      BASE_INCINERACION_PARAMS,
+      BASE_INCINERADOR
+    );
+    expect(r.observacion_automatica).toContain('SUMA de ambos sistemas');
+    expect(r.observacion_automatica).toContain('(ensilaje)');
+    expect(r.observacion_automatica).toContain('(incineración)');
+  });
+
+  it('el override manual del incinerador se refleja en la capacidad combinada', () => {
+    const r = calculateDenaturation(
+      BASE_EQUIPOS_ENSILAJE,
+      BASE_BATCH_PARAMS,
+      BASE_INCINERACION_PARAMS,
+      { ...BASE_INCINERADOR, capacidad_diaria_ton_manual: 5 }
+    );
+    expect(r.capacidad_incinerador_ton).toBe(5);
+    expect(r.capacidad_diaria_ton).toBeCloseTo(r.capacidad_ensilaje_ton + 5, 2);
+    expect(r.observacion_automatica).toContain('declarada manualmente');
+  });
+
+  it('sin incinerador activo no agrega la glosa de composición', () => {
+    const r = calculateDenaturation(
+      BASE_EQUIPOS_ENSILAJE,
+      BASE_BATCH_PARAMS,
+      BASE_INCINERACION_PARAMS,
+      { ...BASE_INCINERADOR, activo: false }
+    );
+    expect(r.capacidad_incinerador_ton).toBe(0);
+    expect(r.observacion_automatica).not.toContain('SUMA de ambos sistemas');
   });
 });
 

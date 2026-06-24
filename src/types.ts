@@ -110,6 +110,13 @@ export interface DenaturationData {
     marca_modelo: string;
     capacidad_carga_kg_h: number;
     horas_funcionamiento_dia: number;
+    /**
+     * Override manual de la capacidad diaria del incinerador (TN/día).
+     * Si está definido (no null/undefined), reemplaza al cálculo automático
+     * (carga × horas ÷ 1.000) en el acta y en la evaluación de cumplimiento.
+     * Vacío/null = capacidad automática.
+     */
+    capacidad_diaria_ton_manual?: number | null;
     num_quemadores_primaria: number;
     num_quemadores_secundaria: number;
     temperatura_camara_primaria_c: number;
@@ -303,6 +310,8 @@ export interface RegistroHistorico {
     registro_visita?: string;
   };
   __updatedAt?: any;
+  /** Email de la cuenta que realizó la última modificación del registro/borrador. */
+  modificadoPor?: string;
   creadoEn?: any;
 }
 
