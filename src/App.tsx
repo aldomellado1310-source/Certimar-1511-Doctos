@@ -2304,12 +2304,33 @@ export default function App() {
     }
   };
 
-  // Correlativo interno REG-001…
-  const getNextCorrelativo = (): { registroId: string; nextCounter: number } => {
-    const raw = localStorage.getItem('certimar-correlativo-counter');
-    const current = raw ? parseInt(raw, 10) : 0;
-    const next = current + 1;
-    return { registroId: `REG-${String(next).padStart(3, '0')}`, nextCounter: next };
+  // Correlativo interno REG-001… — contador ATÓMICO global en Firestore
+  // (config/correlativo). Antes salía de un contador en localStorage, local a
+  // cada navegador, por lo que distintos usuarios/dispositivos generaban el
+  // mismo REG-NNN. La transacción garantiza unicidad global.
+  // Fallback a localStorage SOLO si Firestore no responde (sin conexión), para
+  // no bloquear la creación; ese caso puede colisionar y se corrige renumerando.
+  const getNextCorrelativo = async (): Promise<string> => {
+    try {
+      const { doc, runTransaction } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      const ref = doc(db, 'config', 'correlativo');
+      const next = await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        const current = snap.exists() ? Number(snap.data().value ?? 0) : 0;
+        const n = current + 1;
+        tx.set(ref, { value: n }, { merge: true });
+        return n;
+      });
+      localStorage.setItem('certimar-correlativo-counter', String(next));
+      return `REG-${String(next).padStart(3, '0')}`;
+    } catch (err) {
+      console.error('Correlativo: Firestore no disponible, usando contador local:', err);
+      const raw = localStorage.getItem('certimar-correlativo-counter');
+      const next = (raw ? parseInt(raw, 10) : 0) + 1;
+      localStorage.setItem('certimar-correlativo-counter', String(next));
+      return `REG-${String(next).padStart(3, '0')}`;
+    }
   };
 
   /** Hay datos del registro actual dignos de guardar como borrador. */
@@ -2343,8 +2364,7 @@ export default function App() {
     if (!(await autosaveBeforeSwitch())) return;
     logEvento('crear_registro');
     idbClear();
-    const { registroId, nextCounter } = getNextCorrelativo();
-    localStorage.setItem('certimar-correlativo-counter', String(nextCounter));
+    const registroId = await getNextCorrelativo();
     const docId = newRecordDocId();
     docIdRef.current = docId;
     setState(prev => ({
@@ -3729,6 +3749,7 @@ export default function App() {
   const normalizeCampo = (v: string) => v.toUpperCase().trim().replace(/\s+/g, '_');
 
   const [normalizandoHistorico, setNormalizandoHistorico] = useState<'idle' | 'running' | 'done'>('idle');
+  const [renumerando, setRenumerando] = useState<'idle' | 'running' | 'done'>('idle');
   const [recuperandoRegistros, setRecuperandoRegistros] = useState<'idle' | 'running' | 'done'>('idle');
   const [registrosHuerfanos, setRegistrosHuerfanos] = useState<Array<{id: string; codigo: string; nombre: string; fecha: string; snapshot: any}>>([]);
 
@@ -3848,6 +3869,63 @@ export default function App() {
       console.error('Error normalizando histórico:', err);
       alert('No se pudo completar la normalización. Verifica tu conexión.');
       setNormalizandoHistorico('idle');
+    }
+  };
+
+  // Renumera TODO el histórico: REG-001, REG-002… por fecha de creación,
+  // eliminando duplicados, y fija el contador global al máximo asignado.
+  const renumerarCorrelativos = async () => {
+    if (!window.confirm(
+      '¿Renumerar TODOS los correlativos del histórico?\n' +
+      'Se reasignarán REG-001, REG-002, … por fecha de creación, eliminando duplicados.\n' +
+      'Esto modifica las etiquetas (REG-NNN) de registros existentes.'
+    )) return;
+    setRenumerando('running');
+    try {
+      const { collection, getDocs, doc, writeBatch, runTransaction } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      const snap = await getDocs(collection(db, 'historico'));
+      const toMs = (ts: any): number => {
+        if (!ts) return 0;
+        if (ts?.toDate) return ts.toDate().getTime();
+        if (ts?.seconds) return ts.seconds * 1000;
+        return 0;
+      };
+      // Orden estable por fecha de creación (fallback a __updatedAt, luego id).
+      const docs = snap.docs.slice().sort((a, b) => {
+        const ta = toMs(a.data().creadoEn) || toMs(a.data().__updatedAt);
+        const tb = toMs(b.data().creadoEn) || toMs(b.data().__updatedAt);
+        return ta !== tb ? ta - tb : a.id.localeCompare(b.id);
+      });
+      const labelOf = (i: number) => `REG-${String(i + 1).padStart(3, '0')}`;
+      // writeBatch admite hasta 500 operaciones; se procesa por lotes por si crece.
+      for (let start = 0; start < docs.length; start += 450) {
+        const batch = writeBatch(db);
+        docs.slice(start, start + 450).forEach((d, j) => {
+          const registroId = labelOf(start + j);
+          const data = d.data();
+          const patch: Record<string, any> = { registroId };
+          if (data.snapshot) patch.snapshot = { ...data.snapshot, registroId };
+          batch.update(doc(db, 'historico', d.id), patch);
+        });
+        await batch.commit();
+      }
+      const total = docs.length;
+      await runTransaction(db, async (tx) => {
+        tx.set(doc(db, 'config', 'correlativo'), { value: total }, { merge: true });
+      });
+      localStorage.setItem('certimar-correlativo-counter', String(total));
+      // Reflejar en la UI sin recargar.
+      const order = new Map(docs.map((d, i) => [d.id, labelOf(i)]));
+      setHistoricoEntries(prev => prev.map(e =>
+        e.id && order.has(e.id) ? { ...e, registroId: order.get(e.id)! } : e
+      ));
+      setRenumerando('done');
+      setTimeout(() => setRenumerando('idle'), 3000);
+    } catch (err) {
+      console.error('Error renumerando correlativos:', err);
+      alert('No se pudo renumerar. Verifica tu conexión.');
+      setRenumerando('idle');
     }
   };
 
@@ -7445,6 +7523,25 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 {normalizandoHistorico === 'running' ? 'Normalizando…' : normalizandoHistorico === 'done' ? 'Histórico normalizado ✓' : 'Normalizar Histórico'}
               </p>
               <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">Aplica MAYÚSCULAS + espacios→_ a todos los registros en Firestore</p>
+            </div>
+          </button>
+        )}
+
+        {/* Renumerar correlativos */}
+        {isAdmin && (
+          <button
+            onClick={renumerarCorrelativos}
+            disabled={renumerando === 'running'}
+            className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 disabled:opacity-60 disabled:cursor-wait transition-all text-left"
+          >
+            {renumerando === 'running'
+              ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}><RefreshCw size={20} className="shrink-0" /></motion.div>
+              : <RefreshCw size={20} className="shrink-0" />}
+            <div>
+              <p className="font-bold text-sm">
+                {renumerando === 'running' ? 'Renumerando…' : renumerando === 'done' ? 'Correlativos renumerados ✓' : 'Renumerar Correlativos'}
+              </p>
+              <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">Reasigna REG-NNN únicos por fecha de creación (elimina duplicados) y fija el contador global</p>
             </div>
           </button>
         )}
