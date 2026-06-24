@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -14,5 +14,8 @@ const firebaseConfig = {
 
 export const app     = initializeApp(firebaseConfig);
 export const auth    = getAuth(app);
-export const db      = getFirestore(app);
+// ignoreUndefinedProperties: los campos `undefined` (p. ej. opcionales de
+// ReportImage como croppedUrl/slotUbicacion) se omiten en vez de lanzar
+// "Unsupported field value: undefined" al guardar en Firestore.
+export const db      = initializeFirestore(app, { ignoreUndefinedProperties: true });
 export const storage = getStorage(app, 'gs://certimar-1511-doctos-storage');

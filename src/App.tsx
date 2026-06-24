@@ -2376,10 +2376,14 @@ export default function App() {
       const cc = state.general.centro_cultivo;
       const docId = ensureDocId();
       const editorEmail = (auth as any).currentUser?.email || readSessionEmail() || 'desconocido';
-      const imagesMetadata = state.images.map(img => ({
-        ...img,
-        url: img.url?.startsWith('https://') ? img.url : '',
-      }));
+      // JSON-clean para eliminar campos undefined (opcionales de ReportImage)
+      // que Firestore rechaza; consistente con crearRespaldo y el snapshot histórico.
+      const imagesMetadata = JSON.parse(JSON.stringify(
+        state.images.map(img => ({
+          ...img,
+          url: img.url?.startsWith('https://') ? img.url : '',
+        }))
+      ));
       const stateClean = JSON.parse(JSON.stringify(state));
       await setDoc(doc(db, 'registros', docId), {
         ...stateClean,
