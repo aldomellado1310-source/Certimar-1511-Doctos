@@ -2776,7 +2776,7 @@ export default function App() {
     const cc = st.general.centro_cultivo;
     const [anio = '', mesStr = '', diaStr = ''] =
       st.general.fechas.emision_certificado.split('-');
-    const filename = `${cc.codigo_centro}_${diaStr}_${mesStr}_${anio}-ACTA.pdf`;
+    const filename = `${cc.codigo_centro}-${anio}-${mesStr}-${diaStr}-acta.pdf`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -4048,22 +4048,19 @@ export default function App() {
     return `${codigo}${day}${month}${year.slice(2)}MOR`;
   };
 
-  /** Convierte yyyy-mm-dd → dd-mm-yyyy para nombres de archivo */
+  /** Fecha para nombres de archivo (Oficio DN-03435/2025): AAAA-MM-DD */
   const formatFileDate = (iso: string): string => {
-    if (!iso) return '00-00-0000';
+    if (!iso) return '0000-00-00';
     const [year, month, day] = iso.split('-');
-    return `${day}-${month}-${year}`;
+    return `${year}-${month}-${day}`;
   };
 
   const buildEmailSubject = (): string => {
     const cc = state.general.centro_cultivo;
-    const iso = state.general.fechas.emision_certificado;
-    let datePart = '';
-    if (iso) {
-      const [year, month, day] = iso.split('-');
-      datePart = `${day} ${month} ${year}`;
-    }
-    return `${cc.codigo_centro}-${datePart}-Documentos Asociados`;
+    // Oficio DN-03435/2025 — asunto: {codigo}_{AAAA-MM-DD}_documentos_asociados
+    // (separador guion bajo entre campos; la fecha ISO ya está en AAAA-MM-DD)
+    const datePart = state.general.fechas.emision_certificado || '0000-00-00';
+    return `${cc.codigo_centro}_${datePart}_documentos_asociados`;
   };
 
   const buildEmailText = (): string => {
@@ -5146,7 +5143,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       }
 
       const certBlob = doc.output('blob');
-      doc.save(`${codigo}-${formatFileDate(state.general.fechas.emision_certificado)}-CERTIFICADO.pdf`);
+      doc.save(`${codigo}-${formatFileDate(state.general.fechas.emision_certificado)}-certificado.pdf`);
       setShowEmailModal(true);
       const certDocId = ensureDocId();
       uploadDocToStorage(certBlob, certDocId, 'certificado')
@@ -6240,7 +6237,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
       // Añadir frames (header/footer + ondas) a todas las páginas excepto portada
       addInformePageFrame(doc, docCode, logo, 'Informe Técnico');
 
-      const filename = `${codigo}-${formatFileDate(g.fechas.emision_certificado)}-INFORME.pdf`;
+      const filename = `${codigo}-${formatFileDate(g.fechas.emision_certificado)}-informe.pdf`;
       const informeBlob = doc.output('blob');
       doc.save(filename);
       setShowEmailModal(true);
