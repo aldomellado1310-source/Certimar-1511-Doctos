@@ -2485,7 +2485,7 @@ export default function App() {
       const ok = await persistDraftRef.current('auto');
       if (ok) {
         setSavedAt(new Date());
-        setSavedBy(stateRef.current.general.certificador.nombre.trim() || null);
+        setSavedBy(readSessionEmail() || null);
         setSaveAnim(true);
         setTimeout(() => setSaveAnim(false), 1800);
       }
@@ -2604,7 +2604,7 @@ export default function App() {
       setGuardadoSection(section);
       setTimeout(() => setGuardadoSection(null), 2500);
       setSavedAt(new Date());
-      setSavedBy(state.general.certificador.nombre.trim() || null);
+      setSavedBy(readSessionEmail() || null);
       setSaveAnim(true);
       setTimeout(() => setSaveAnim(false), 1800);
     } else {
@@ -6871,7 +6871,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   setGuardadoSection('borrador');
                   setTimeout(() => setGuardadoSection(null), 2500);
                   setSavedAt(new Date());
-                  setSavedBy(state.general.certificador.nombre.trim() || null);
+                  setSavedBy(readSessionEmail() || null);
                   setSaveAnim(true);
                   setTimeout(() => setSaveAnim(false), 1800);
                 } else {
