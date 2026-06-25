@@ -1710,7 +1710,7 @@ const CROP_TUTORIAL_KEY = 'certimar-crop-tutorial-seen';
 
 const CropModal: React.FC<{
   img: { url: string; leyenda: string; slotUbicacion?: string };
-  targetAr: number;
+  targetAr: number | null;   // null = recorte libre (sin relación de aspecto fija)
   onSave: (croppedUrl: string) => void;
   onClose: () => void;
 }> = ({ img, targetAr, onSave, onClose }) => {
@@ -1718,8 +1718,9 @@ const CropModal: React.FC<{
   const imgRef  = useRef<HTMLImageElement>(null);
   // imgBounds: rendered image position (px) relative to wrapRef
   const [imgBounds, setImgBounds] = useState({ left: 0, top: 0, w: 1, h: 1 });
-  // crop in [0..1] relative to rendered image bounds
-  const [crop, setCrop] = useState({ x: 0.05, y: 0.05, w: 0.9 });
+  // crop in [0..1] relative to rendered image bounds. En modo con AR fija, h se
+  // deriva de w/targetAr; en modo libre, h es independiente.
+  const [crop, setCrop] = useState(() => ({ x: 0.05, y: 0.05, w: 0.9, h: targetAr ? 0.9 / targetAr : 0.9 }));
   const dragging = useRef<{ mx: number; my: number; c0: typeof crop; mode: 'move' | 'resize' } | null>(null);
   // Tutorial: mostrar la primera vez, o si el usuario lo abre manualmente
   const [tutStep, setTutStep] = useState<number | null>(() =>
@@ -1761,11 +1762,11 @@ const CropModal: React.FC<{
   };
 
   const clamp = (c: typeof crop): typeof crop => {
-    const h = c.w / targetAr;
-    const x = Math.max(0, Math.min(1 - c.w, c.x));
+    const w = Math.max(0.05, Math.min(1, c.w));
+    const h = targetAr ? w / targetAr : Math.max(0.05, Math.min(1, c.h));
+    const x = Math.max(0, Math.min(1 - w, c.x));
     const y = Math.max(0, Math.min(1 - h, c.y));
-    const w = Math.max(0.05, Math.min(1 - x, c.w));
-    return { x, y, w };
+    return { x, y, w, h };
   };
 
   const onPointerDown = (e: React.PointerEvent, mode: 'move' | 'resize') => {
@@ -1781,8 +1782,10 @@ const CropModal: React.FC<{
     const c0 = dragging.current.c0;
     if (dragging.current.mode === 'move') {
       setCrop(clamp({ ...c0, x: c0.x + dx, y: c0.y + dy }));
-    } else {
+    } else if (targetAr) {
       setCrop(clamp({ ...c0, w: Math.max(0.05, c0.w + dx) }));
+    } else {
+      setCrop(clamp({ ...c0, w: Math.max(0.05, c0.w + dx), h: Math.max(0.05, c0.h + dy) }));
     }
   };
 
@@ -1793,10 +1796,19 @@ const CropModal: React.FC<{
     el.crossOrigin = 'anonymous';
     el.onload = () => {
       const nw = el.naturalWidth, nh = el.naturalHeight;
-      const ch = crop.w / targetAr;
+      const ch = targetAr ? crop.w / targetAr : crop.h;
       const sx = Math.round(crop.x * nw), sy = Math.round(crop.y * nh);
       const sw = Math.round(crop.w * nw), sh = Math.round(ch * nh);
-      const OUT_W = 1200, OUT_H = Math.round(OUT_W / targetAr);
+      let OUT_W: number, OUT_H: number;
+      if (targetAr) {
+        OUT_W = 1200; OUT_H = Math.round(OUT_W / targetAr);
+      } else {
+        // Modo libre: conserva la proporción real del recorte (sin distorsión).
+        const MAXD = 1400;
+        const arPx = sw / Math.max(1, sh);
+        if (arPx >= 1) { OUT_W = Math.min(MAXD, sw); OUT_H = Math.round(OUT_W / arPx); }
+        else { OUT_H = Math.min(MAXD, sh); OUT_W = Math.round(OUT_H * arPx); }
+      }
       const canvas = document.createElement('canvas');
       canvas.width = OUT_W; canvas.height = OUT_H;
       canvas.getContext('2d')!.drawImage(el, sx, sy, sw, sh, 0, 0, OUT_W, OUT_H);
@@ -1806,7 +1818,7 @@ const CropModal: React.FC<{
     el.src = img.url;
   };
 
-  const cropH = crop.w / targetAr;
+  const cropH = targetAr ? crop.w / targetAr : crop.h;
   const slotLabel = img.slotUbicacion === 'top' ? 'Arriba' : img.slotUbicacion === 'bottom' ? 'Abajo'
     : img.slotUbicacion === 'left' ? 'Centro izq.' : img.slotUbicacion === 'right' ? 'Centro der.' : '—';
 
@@ -1916,7 +1928,9 @@ const CropModal: React.FC<{
           <div>
             <h3 className="font-bold text-slate-800 dark:text-slate-100">Recorte manual</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Slot: <span className="font-semibold text-sky-600">{slotLabel}</span> · Relación {targetAr.toFixed(2)}:1 · Arrastra el recuadro
+              {targetAr
+                ? <>Slot: <span className="font-semibold text-sky-600">{slotLabel}</span> · Relación {targetAr.toFixed(2)}:1 · Arrastra el recuadro</>
+                : <>Recorte libre · Arrastra el recuadro y la esquina para redimensionar</>}
             </p>
           </div>
           <div className="flex items-center gap-1.5">
@@ -4616,6 +4630,43 @@ Se despide atentamente`;
       ...prev,
       images: prev.images.map(img => img.id === id ? { ...img, ...updates } : img)
     }));
+  };
+
+  // ── Drag-and-drop (mouse + táctil) de una imagen sobre una pestaña de sección.
+  // Usa Pointer Events para funcionar también en móvil/tablet.
+  const [dragImg, setDragImg] = useState<{ id: string; x: number; y: number; thumb: string } | null>(null);
+  const dragOverSecRef = useRef<string | null>(null);
+  const [dragOverSec, setDragOverSec] = useState<string | null>(null);
+
+  const startImageDrag = (e: React.PointerEvent, img: ReportImage) => {
+    if (e.button !== undefined && e.button > 0) return; // solo botón principal / toque
+    e.preventDefault();
+    e.stopPropagation();
+    const thumb = img.croppedUrl ?? img.url;
+    setDragImg({ id: img.id, x: e.clientX, y: e.clientY, thumb });
+    dragOverSecRef.current = null;
+    setDragOverSec(null);
+    const move = (ev: PointerEvent) => {
+      ev.preventDefault();
+      setDragImg(d => (d ? { ...d, x: ev.clientX, y: ev.clientY } : d));
+      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+      const drop = el?.closest('[data-seccion-drop]') as HTMLElement | null;
+      const sec = drop?.getAttribute('data-seccion-drop') ?? null;
+      if (sec !== dragOverSecRef.current) { dragOverSecRef.current = sec; setDragOverSec(sec); }
+    };
+    const end = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      const sec = dragOverSecRef.current;
+      if (sec) updateImage(img.id, { seccion: sec as ImageSeccion });
+      setDragImg(null);
+      setDragOverSec(null);
+      dragOverSecRef.current = null;
+    };
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
   };
 
   // ─── Helpers PDF compartidos ───────────────────────────────────────────────
@@ -9579,9 +9630,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             return (
               <button
                 key={key}
+                data-seccion-drop={key}
                 onClick={() => toggleFilter(key)}
                 className={cn(
                   "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all",
+                  dragOverSec === key && "ring-2 ring-emerald-400 ring-offset-2 dark:ring-offset-slate-900 scale-110 z-10",
                   isActive
                     ? "bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/30"
                     : count > 0
@@ -9853,6 +9906,16 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     )}>
                       {img.estado}
                     </div>
+                    {/* Asa de arrastre → soltar sobre una pestaña para asignar sección */}
+                    <button
+                      onPointerDown={(e) => startImageDrag(e, img)}
+                      onClick={(e) => e.stopPropagation()}
+                      title="Arrastra a una categoría para asignar su sección"
+                      className="absolute bottom-3 right-3 p-2 bg-slate-900/70 hover:bg-slate-900/90 text-white rounded-lg shadow-lg cursor-grab active:cursor-grabbing opacity-80 group-hover:opacity-100 transition-opacity"
+                      style={{ touchAction: 'none' }}
+                    >
+                      <Move size={15} />
+                    </button>
                   </div>
 
                   <div className="p-5 space-y-4">
@@ -9949,6 +10012,20 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                       </div>
                     )}
                     {isUbicacion && (
+                      <button
+                        onClick={() => setCropModalId(img.id)}
+                        className={cn(
+                          "w-full flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold border transition-all",
+                          img.croppedUrl
+                            ? "bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-500/40"
+                            : "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-sky-50 dark:hover:bg-sky-500/10 hover:text-sky-600 hover:border-sky-200"
+                        )}
+                      >
+                        <SlidersHorizontal size={11} />
+                        {img.croppedUrl ? 'Recortada · Editar' : 'Recortar para PDF'}
+                      </button>
+                    )}
+                    {isTecnica && (
                       <button
                         onClick={() => setCropModalId(img.id)}
                         className={cn(
@@ -10761,14 +10838,16 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           onClose={() => setAnnotatingImageId(null)}
         />
       )}
-      {/* ── Recortador manual para Ubicación Espacial ── */}
+      {/* ── Recortador manual (Ubicación Espacial con AR de slot; resto, libre) ── */}
       {cropModalImg && (
         <CropModal
           img={cropModalImg}
           targetAr={
-            cropModalImg.slotUbicacion === 'left' || cropModalImg.slotUbicacion === 'right'
-              ? 91 / 50   // HALF_W / HALF_H
-              : 182 / 65  // FULL_W / FULL_H (top, bottom, o sin slot)
+            cropModalImg.seccion === 'Ubicación Espacial'
+              ? (cropModalImg.slotUbicacion === 'left' || cropModalImg.slotUbicacion === 'right'
+                  ? 91 / 50   // HALF_W / HALF_H
+                  : 182 / 65) // FULL_W / FULL_H (top, bottom, o sin slot)
+              : null          // recorte libre para fotos técnicas
           }
           onSave={(croppedUrl) => {
             updateImage(cropModalImg.id, { croppedUrl });
@@ -10777,6 +10856,19 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
           }}
           onClose={() => setCropModalId(null)}
         />
+      )}
+      {/* Fantasma flotante mientras se arrastra una imagen a una categoría */}
+      {dragImg && (
+        <div
+          className="fixed z-[9999] pointer-events-none -translate-x-1/2 -translate-y-1/2"
+          style={{ left: dragImg.x, top: dragImg.y }}
+        >
+          <img
+            src={dragImg.thumb}
+            alt=""
+            className="w-24 h-16 object-cover rounded-lg shadow-2xl ring-2 ring-emerald-400 rotate-3 opacity-90"
+          />
+        </div>
       )}
       {/* ── Modal "Novedades" paso a paso ── */}
       {showChangelog && !showWelcome && (() => {
