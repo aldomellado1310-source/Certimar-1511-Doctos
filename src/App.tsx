@@ -1711,9 +1711,15 @@ const CROP_TUTORIAL_KEY = 'certimar-crop-tutorial-seen';
 const CropModal: React.FC<{
   img: { url: string; leyenda: string; slotUbicacion?: string };
   targetAr: number | null;   // null = recorte libre (sin relación de aspecto fija)
-  onSave: (croppedUrl: string) => void;
+  onSave: (croppedUrl: string, after: 'close' | 'next') => void;
   onClose: () => void;
-}> = ({ img, targetAr, onSave, onClose }) => {
+  index?: number;
+  total?: number;
+  hasPrev?: boolean;
+  hasNext?: boolean;
+  onPrev?: () => void;
+  onNext?: () => void;
+}> = ({ img, targetAr, onSave, onClose, index, total, hasPrev, hasNext, onPrev, onNext }) => {
   const wrapRef = useRef<HTMLDivElement>(null);
   const imgRef  = useRef<HTMLImageElement>(null);
   // imgBounds: rendered image position (px) relative to wrapRef
@@ -1791,7 +1797,7 @@ const CropModal: React.FC<{
 
   const onPointerUp = () => { dragging.current = null; };
 
-  const applyCrop = () => {
+  const applyCrop = (after: 'close' | 'next' = 'close') => {
     const el = new Image();
     el.crossOrigin = 'anonymous';
     el.onload = () => {
@@ -1812,11 +1818,25 @@ const CropModal: React.FC<{
       const canvas = document.createElement('canvas');
       canvas.width = OUT_W; canvas.height = OUT_H;
       canvas.getContext('2d')!.drawImage(el, sx, sy, sw, sh, 0, 0, OUT_W, OUT_H);
-      onSave(canvas.toDataURL('image/jpeg', 0.92));
+      onSave(canvas.toDataURL('image/jpeg', 0.92), after);
     };
     el.onerror = () => onClose();
     el.src = img.url;
   };
+
+  // Atajos de teclado: Enter = aplicar y siguiente · ←/→ = cambiar foto (sin
+  // aplicar) · Esc = cerrar. Inactivos mientras se muestra el tutorial.
+  useEffect(() => {
+    if (tutStep !== null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Enter')      { e.preventDefault(); applyCrop(hasNext ? 'next' : 'close'); }
+      else if (e.key === 'Escape') { onClose(); }
+      else if (e.key === 'ArrowRight' && hasNext && onNext) { e.preventDefault(); onNext(); }
+      else if (e.key === 'ArrowLeft'  && hasPrev && onPrev) { e.preventDefault(); onPrev(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [tutStep, crop, targetAr, hasNext, hasPrev, onNext, onPrev]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cropH = targetAr ? crop.w / targetAr : crop.h;
   const slotLabel = img.slotUbicacion === 'top' ? 'Arriba' : img.slotUbicacion === 'bottom' ? 'Abajo'
@@ -1934,6 +1954,19 @@ const CropModal: React.FC<{
             </p>
           </div>
           <div className="flex items-center gap-1.5">
+            {typeof total === 'number' && total > 1 && (
+              <div className="flex items-center gap-1 mr-1">
+                <button onClick={onPrev} disabled={!hasPrev} title="Foto anterior (←)"
+                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">{(index ?? 0) + 1}/{total}</span>
+                <button onClick={onNext} disabled={!hasNext} title="Foto siguiente (→)"
+                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
             <button
               onClick={() => setTutStep(0)}
               title="Ver tutorial"
@@ -1998,7 +2031,7 @@ const CropModal: React.FC<{
           </button>
         </div>
 
-        <div className="flex gap-3 justify-end">
+        <div className="flex flex-wrap gap-3 justify-end items-center">
           <button
             onClick={onClose}
             className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
@@ -2006,11 +2039,24 @@ const CropModal: React.FC<{
             Cancelar
           </button>
           <button
-            onClick={applyCrop}
-            className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold shadow flex items-center gap-2"
+            onClick={() => applyCrop('close')}
+            className={cn(
+              "px-5 py-2 rounded-xl text-sm font-semibold shadow flex items-center gap-2",
+              hasNext
+                ? "border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+                : "bg-sky-600 hover:bg-sky-500 text-white"
+            )}
           >
-            <Crop size={14} /> Aplicar recorte
+            <Crop size={14} /> {hasNext ? 'Aplicar y cerrar' : 'Aplicar recorte'}
           </button>
+          {hasNext && (
+            <button
+              onClick={() => applyCrop('next')}
+              className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold shadow flex items-center gap-2"
+            >
+              Aplicar y siguiente <ChevronRight size={14} />
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -4654,11 +4700,15 @@ Se despide atentamente`;
       const sec = drop?.getAttribute('data-seccion-drop') ?? null;
       if (sec !== dragOverSecRef.current) { dragOverSecRef.current = sec; setDragOverSec(sec); }
     };
-    const end = () => {
+    const end = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', end);
       window.removeEventListener('pointercancel', end);
-      const sec = dragOverSecRef.current;
+      // Recalcular el destino en el punto exacto de soltado (más fiable que el
+      // último pointermove, sobre todo en toques rápidos).
+      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+      const drop = el?.closest('[data-seccion-drop]') as HTMLElement | null;
+      const sec = drop?.getAttribute('data-seccion-drop') ?? dragOverSecRef.current;
       if (sec) updateImage(img.id, { seccion: sec as ImageSeccion });
       setDragImg(null);
       setDragOverSec(null);
@@ -9634,6 +9684,7 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 onClick={() => toggleFilter(key)}
                 className={cn(
                   "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all",
+                  dragImg && "outline-dashed outline-2 outline-offset-2 outline-indigo-300 dark:outline-indigo-500",
                   dragOverSec === key && "ring-2 ring-emerald-400 ring-offset-2 dark:ring-offset-slate-900 scale-110 z-10",
                   isActive
                     ? "bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/30"
@@ -9674,6 +9725,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                 {sinClasificar}
               </span>
             </button>
+          )}
+          {total > 0 && (
+            <span className="w-full text-[11px] text-slate-400 dark:text-slate-500">
+              Consejo: arrastra el botón <span className="font-semibold text-indigo-500">Mover</span> de una foto hasta una categoría de arriba para reclasificarla.
+            </span>
           )}
           {isAdmin && total > 0 && (
             <>
@@ -9910,11 +9966,11 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                     <button
                       onPointerDown={(e) => startImageDrag(e, img)}
                       onClick={(e) => e.stopPropagation()}
-                      title="Arrastra a una categoría para asignar su sección"
-                      className="absolute bottom-3 right-3 p-2 bg-slate-900/70 hover:bg-slate-900/90 text-white rounded-lg shadow-lg cursor-grab active:cursor-grabbing opacity-80 group-hover:opacity-100 transition-opacity"
+                      title="Arrastra esta asa hasta una categoría (arriba) para asignar su sección"
+                      className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900/80 hover:bg-indigo-600 text-white rounded-lg shadow-lg cursor-grab active:cursor-grabbing text-[10px] font-bold uppercase tracking-wide select-none"
                       style={{ touchAction: 'none' }}
                     >
-                      <Move size={15} />
+                      <Move size={13} /> Mover
                     </button>
                   </div>
 
@@ -10839,24 +10895,42 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
         />
       )}
       {/* ── Recortador manual (Ubicación Espacial con AR de slot; resto, libre) ── */}
-      {cropModalImg && (
-        <CropModal
-          img={cropModalImg}
-          targetAr={
-            cropModalImg.seccion === 'Ubicación Espacial'
-              ? (cropModalImg.slotUbicacion === 'left' || cropModalImg.slotUbicacion === 'right'
-                  ? 91 / 50   // HALF_W / HALF_H
-                  : 182 / 65) // FULL_W / FULL_H (top, bottom, o sin slot)
-              : null          // recorte libre para fotos técnicas
-          }
-          onSave={(croppedUrl) => {
-            updateImage(cropModalImg.id, { croppedUrl });
-            idbSave(`crop_${cropModalImg.id}`, croppedUrl).catch(() => {});
-            setCropModalId(null);
-          }}
-          onClose={() => setCropModalId(null)}
-        />
-      )}
+      {cropModalImg && (() => {
+        const CROPPABLE = ['General', 'Extracción', 'Desnaturalización', 'Almacenamiento', 'Ubicación Espacial'];
+        const list = state.images.filter(i => CROPPABLE.includes(i.seccion));
+        const idx = list.findIndex(i => i.id === cropModalImg.id);
+        const go = (d: number) => { const n = list[idx + d]; if (n) setCropModalId(n.id); };
+        return (
+          <CropModal
+            key={cropModalImg.id}
+            img={cropModalImg}
+            targetAr={
+              cropModalImg.seccion === 'Ubicación Espacial'
+                ? (cropModalImg.slotUbicacion === 'left' || cropModalImg.slotUbicacion === 'right'
+                    ? 91 / 50   // HALF_W / HALF_H
+                    : 182 / 65) // FULL_W / FULL_H (top, bottom, o sin slot)
+                : null          // recorte libre para fotos técnicas
+            }
+            index={idx}
+            total={list.length}
+            hasPrev={idx > 0}
+            hasNext={idx >= 0 && idx < list.length - 1}
+            onPrev={() => go(-1)}
+            onNext={() => go(1)}
+            onSave={(croppedUrl, after) => {
+              updateImage(cropModalImg.id, { croppedUrl });
+              idbSave(`crop_${cropModalImg.id}`, croppedUrl).catch(() => {});
+              if (after === 'next') {
+                const n = list[idx + 1];
+                setCropModalId(n ? n.id : null);
+              } else {
+                setCropModalId(null);
+              }
+            }}
+            onClose={() => setCropModalId(null)}
+          />
+        );
+      })()}
       {/* Fantasma flotante mientras se arrastra una imagen a una categoría */}
       {dragImg && (
         <div
