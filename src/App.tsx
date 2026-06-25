@@ -188,6 +188,8 @@ import { CatalogoEquiposAdmin } from './components/CatalogoEquiposAdmin';
 // ─── Credenciales desde variables de entorno (.env — no subir a git) ────────
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 const ADMIN_PIN        = import.meta.env.VITE_ADMIN_PIN        as string | undefined;
+// Cuentas que pueden acceder como administrador (vía paso de PIN). En minúsculas.
+const ADMIN_EMAILS = ['eflores@certimar.cl', 'apoyo-1511@certimar.cl'];
 
 // --- Constants & Defaults ---
 const DEFAULT_STATE: AppState = {
@@ -1300,7 +1302,7 @@ const WelcomeScreen = ({
         await result.user.delete().catch(() => {});
         return;
       }
-      if (email === 'operaciones@certimar.cl') {
+      if (ADMIN_EMAILS.includes(email)) {
         setGoogleEmail(email);
         setStep('pin');
       } else {
@@ -3920,6 +3922,12 @@ export default function App() {
       setHistoricoEntries(prev => prev.map(e =>
         e.id && order.has(e.id) ? { ...e, registroId: order.get(e.id)! } : e
       ));
+      // Sincroniza el correlativo del registro abierto: sin esto, el auto-guardado
+      // reescribiría su doc con el REG-NNN antiguo en memoria y recrearía el duplicado.
+      const currentDocId = docIdRef.current;
+      if (currentDocId && order.has(currentDocId)) {
+        setState(prev => ({ ...prev, registroId: order.get(currentDocId)! }));
+      }
       setRenumerando('done');
       setTimeout(() => setRenumerando('idle'), 3000);
     } catch (err) {
