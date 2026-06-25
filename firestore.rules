@@ -14,6 +14,11 @@ service cloud.firestore {
     match /historico/{docId} {
       allow read, write: if isCertimar();
     }
+    // respaldos/{docId}/versiones/{versionId} — wildcard recursivo para cubrir
+    // el documento y su subcolección de versiones.
+    match /respaldos/{docId}/{document=**} {
+      allow read, write: if isCertimar();
+    }
     match /eventos_uso/{docId} {
       allow read, write: if isCertimar();
     }
