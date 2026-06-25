@@ -1303,8 +1303,9 @@ const WelcomeScreen = ({
         return;
       }
       if (ADMIN_EMAILS.includes(email)) {
-        setGoogleEmail(email);
-        setStep('pin');
+        // Admin directo por correo (sin PIN) para las cuentas autorizadas.
+        localStorage.setItem('certimar-session', JSON.stringify({ role: 'admin', email, expiry: Date.now() + 8 * 60 * 60 * 1000 }));
+        triggerAquaLogin('admin');
       } else {
         localStorage.setItem('certimar-session', JSON.stringify({ role: 'editor', email, expiry: Date.now() + 8 * 60 * 60 * 1000 }));
         triggerAquaLogin('editor');
