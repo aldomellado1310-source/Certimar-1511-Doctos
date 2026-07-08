@@ -90,6 +90,7 @@ export interface ExtractionData {
  */
 export interface OllaAdicional {
   id: string;
+  id_catalogo_trituradora: string;
   marca_modelo: string;
   material_construccion: string;
   estado_olla: 'Bueno' | 'Regular' | 'Malo';

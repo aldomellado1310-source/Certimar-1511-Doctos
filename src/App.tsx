@@ -4364,6 +4364,24 @@ Se despide atentamente`;
     }
   };
 
+  // Misma lógica que handleSelectTrituradora, aplicada a una olla adicional puntual.
+  const handleSelectOllaAdicionalTrituradora = (index: number, id: string) => {
+    const tri = CATALOGO_DESNATURALIZACION.trituradoras.find(t => t.id === id)
+      ?? catalogoCustom.find(c => c.tipo === 'trituradora' && c.marca_modelo === id) as any;
+    if (tri) {
+      const ollas = [...(state.denaturation.ollas_adicionales ?? [])];
+      ollas[index] = {
+        ...ollas[index],
+        id_catalogo_trituradora: id,
+        marca_modelo: tri.marca_modelo,
+        velocidad_nominal_kg_hr: tri.capacidad_nominal_kg_h ?? 0,
+        material_construccion: tri.material ?? '',
+        capacidad_prepicador_kg_hr: tri.capacidad_prepicador_kg_h || 0
+      };
+      setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, ollas_adicionales: ollas } }));
+    }
+  };
+
   const handleSelectIncinerador = (id: string) => {
     const inc = CATALOGO_DESNATURALIZACION.incineradores.find(i => i.id === id);
     if (inc) {
@@ -4441,6 +4459,7 @@ Se despide atentamente`;
   const handleAddOllaAdicional = () => {
     const newOlla = {
       id: crypto.randomUUID(),
+      id_catalogo_trituradora: '',
       marca_modelo: '',
       material_construccion: '',
       estado_olla: 'Bueno' as const,
@@ -9242,7 +9261,30 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                         <button onClick={() => handleRemoveOllaAdicional(idx)} className="text-xs text-red-400 hover:text-red-600 transition-colors">✕ Quitar</button>
                       </div>
 
-                      <InputField label="Marca/Modelo" value={olla.marca_modelo} onChange={(v) => handleUpdateOllaAdicional(idx, 'marca_modelo', v)} />
+                      <div className="space-y-1.5 md:col-span-2">
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Olla Trituradora (Catálogo)</label>
+                        <select
+                          aria-label="Olla Trituradora (Catálogo)" value={olla.id_catalogo_trituradora}
+                          onChange={(e) => handleSelectOllaAdicionalTrituradora(idx, e.target.value)}
+                          className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
+                        >
+                          <option value="">Seleccionar trituradora...</option>
+                          {CATALOGO_DESNATURALIZACION.trituradoras.map(t => (
+                            <option key={t.id} value={t.id}>{t.marca_modelo}</option>
+                          ))}
+                          {catalogoCustom.filter(c => c.tipo === 'trituradora').length > 0 && (
+                            <optgroup label="— Equipos personalizados —">
+                              {catalogoCustom.filter(c => c.tipo === 'trituradora').map(c => (
+                                <option key={c.marca_modelo} value={c.marca_modelo}>{c.marca_modelo}</option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                      </div>
+                      <InputField label="Marca/Modelo Olla" value={olla.marca_modelo}
+                        onChange={(v) => handleUpdateOllaAdicional(idx, 'marca_modelo', v)}
+                        onBlur={() => checkNuevoEquipo(olla.marca_modelo, 'trituradora')}
+                      />
                       <InputField label="Material Construcción" value={olla.material_construccion} onChange={(v) => handleUpdateOllaAdicional(idx, 'material_construccion', v)} />
 
                       <div className="space-y-1.5">

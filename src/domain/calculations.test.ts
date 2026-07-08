@@ -493,6 +493,7 @@ describe('calculateDenaturation (Ensilaje)', () => {
   describe('Ollas trituradoras adicionales (configuración independiente)', () => {
     const OLLA_ADICIONAL_BASE = {
       id: 'olla-2',
+      id_catalogo_trituradora: '',
       marca_modelo: 'ACUIMASTER AC-500',
       material_construccion: 'Acero inoxidable AISI 304',
       estado_olla: 'Bueno' as const,
