@@ -23,6 +23,13 @@ export interface GeneralData {
   modo_operacion_minima?: boolean;
   observaciones_acta: string;
   revisionConfirmada?: boolean;
+  // Decisión explícita del certificador sobre el informe (independiente del
+  // cumplimiento normativo automático): aprueba o rechaza provisoriamente,
+  // detallando el motivo en este último caso.
+  evaluacionInforme?: {
+    estado: 'aprobado' | 'rechazado_provisorio';
+    motivoRechazo?: string;
+  };
 }
 
 export type FishSize = 'Pequeño (<1.5kg)' | 'Mediano (1.5-4.5kg)' | 'Grande (>=4.5kg)';
@@ -74,10 +81,34 @@ export interface ExtractionData {
   }>;
 }
 
+/**
+ * Olla trituradora adicional con configuración propia e independiente de la
+ * olla principal (`equipos`): puede tener o no prepicador y operar una
+ * cantidad de horas distinta. Su capacidad diaria se SUMA a la de la olla
+ * principal (no la multiplica), ya que cada una procesa su propia secuencia
+ * de batches.
+ */
+export interface OllaAdicional {
+  id: string;
+  id_catalogo_trituradora: string;
+  marca_modelo: string;
+  material_construccion: string;
+  estado_olla: 'Bueno' | 'Regular' | 'Malo';
+  velocidad_nominal_kg_hr: number;
+  horas_funcionamiento_dia: number;
+  kilos_por_batch: number;
+  tiempo_procesamiento_min: number;
+  tiempo_pausa_min: number;
+  cuenta_con_prepicador: boolean;
+  marca_modelo_prepicador: string;
+  capacidad_prepicador_kg_hr: number;
+  factor_eficiencia_prepicador: number;   // 0–1, ej. 0.70 = 30% reducción de tiempo proceso
+}
+
 export interface DenaturationData {
   equipos: {
     cantidad_sistemas: number;       // N° de sistemas de ensilaje (descriptivo, requerido por el acta)
-    cantidad_ollas: number;          // N° de ollas/trituradoras en paralelo — multiplica la capacidad diaria
+    cantidad_ollas: number;          // N° de ollas/trituradoras IDÉNTICAS en paralelo — multiplica la capacidad diaria de la olla principal
     id_catalogo_trituradora: string;
     id_catalogo_incinerador: string;
     marca_modelo: string;
@@ -93,6 +124,9 @@ export interface DenaturationData {
     tipo_sistema: 'Ensilaje' | 'Incineración';
     estado_olla: 'Bueno' | 'Regular' | 'Malo';
   };
+  // Ollas trituradoras adicionales de configuración distinta a la principal (opcional).
+  // Sus capacidades diarias se suman a la de `equipos` (multiplicada por cantidad_ollas).
+  ollas_adicionales?: OllaAdicional[];
   parametros_batch: {
     kilos_por_batch: number;
     tiempo_procesamiento_min: number;

@@ -265,6 +265,7 @@ const DEFAULT_STATE: AppState = {
       tipo_sistema: 'Ensilaje',
       estado_olla: 'Bueno' as const
     },
+    ollas_adicionales: [],
     parametros_batch: { kilos_por_batch: 0, tiempo_procesamiento_min: 0, tiempo_pausa_min: 0 },
     parametros_incineracion: { capacidad_carga_kg_h: 0, temperatura_operacion: "", camara_primaria: "", camara_secundaria: "" },
     incinerador: {
@@ -3338,6 +3339,7 @@ export default function App() {
           tipo_sistema: 'Ensilaje',
           estado_olla: 'Bueno' as const,
         },
+        ollas_adicionales: [],
         parametros_batch: { kilos_por_batch: 700, tiempo_procesamiento_min: 15, tiempo_pausa_min: 10 },
         parametros_incineracion: { capacidad_carga_kg_h: 0, temperatura_operacion: '', camara_primaria: '', camara_secundaria: '' },
         incinerador: {
@@ -4041,9 +4043,10 @@ export default function App() {
       state.denaturation.equipos,
       state.denaturation.parametros_batch,
       state.denaturation.parametros_incineracion,
-      state.denaturation.incinerador
+      state.denaturation.incinerador,
+      state.denaturation.ollas_adicionales
     ),
-    [state.denaturation.equipos, state.denaturation.parametros_batch, state.denaturation.parametros_incineracion, state.denaturation.incinerador]
+    [state.denaturation.equipos, state.denaturation.parametros_batch, state.denaturation.parametros_incineracion, state.denaturation.incinerador, state.denaturation.ollas_adicionales]
   );
 
   const calculatedStorage = useMemo(
@@ -4094,6 +4097,13 @@ export default function App() {
       // ─ General — Revisión ─
       { id: 'revision_confirmada', tab: 'general' as const, grupo: 'Revisión', label: 'Revisión confirmada',           detail: g.revisionConfirmada ? 'Confirmado' : 'Pendiente', ok: !!(g.revisionConfirmada), required: true },
       { id: 'observaciones',  tab: 'general' as const, grupo: 'Revisión',     label: 'Observaciones acta revisadas',    detail: g.observaciones_acta  ? 'Ingresadas' : 'Vacías (quedará N/A)', ok: !!g.observaciones_acta.trim(), required: false },
+      { id: 'evaluacion_informe', tab: 'general' as const, grupo: 'Revisión', label: 'Aprobación / rechazo del informe',
+        detail: g.evaluacionInforme?.estado === 'rechazado_provisorio'
+          ? `Rechazado provisoriamente${g.evaluacionInforme.motivoRechazo?.trim() ? ': ' + g.evaluacionInforme.motivoRechazo.trim() : ''}`
+          : g.evaluacionInforme?.estado === 'aprobado' ? 'Aprobado' : 'Pendiente',
+        ok: g.evaluacionInforme?.estado === 'aprobado'
+          || (g.evaluacionInforme?.estado === 'rechazado_provisorio' && !!g.evaluacionInforme.motivoRechazo?.trim()),
+        required: true },
       // ─ Extracción ─
       { id: 'jaulas',    tab: 'extraction' as const,   grupo: 'Parámetros',   label: 'N° total de jaulas',            detail: ext.numero_total_jaulas > 0 ? String(ext.numero_total_jaulas) : 'Sin ingresar', ok: ext.numero_total_jaulas > 0, required: true },
       { id: 'cfm',       tab: 'extraction' as const,   grupo: 'Parámetros',   label: 'Potencia compresor (CFM)',       detail: g.modo_operacion_minima ? 'N/A (Op. Mín.)' : (ext.potencia_cfm > 0 ? String(ext.potencia_cfm) : 'Sin ingresar'), ok: g.modo_operacion_minima || ext.potencia_cfm > 0, required: true },
@@ -4354,6 +4364,24 @@ Se despide atentamente`;
     }
   };
 
+  // Misma lógica que handleSelectTrituradora, aplicada a una olla adicional puntual.
+  const handleSelectOllaAdicionalTrituradora = (index: number, id: string) => {
+    const tri = CATALOGO_DESNATURALIZACION.trituradoras.find(t => t.id === id)
+      ?? catalogoCustom.find(c => c.tipo === 'trituradora' && c.marca_modelo === id) as any;
+    if (tri) {
+      const ollas = [...(state.denaturation.ollas_adicionales ?? [])];
+      ollas[index] = {
+        ...ollas[index],
+        id_catalogo_trituradora: id,
+        marca_modelo: tri.marca_modelo,
+        velocidad_nominal_kg_hr: tri.capacidad_nominal_kg_h ?? 0,
+        material_construccion: tri.material ?? '',
+        capacidad_prepicador_kg_hr: tri.capacidad_prepicador_kg_h || 0
+      };
+      setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, ollas_adicionales: ollas } }));
+    }
+  };
+
   const handleSelectIncinerador = (id: string) => {
     const inc = CATALOGO_DESNATURALIZACION.incineradores.find(i => i.id === id);
     if (inc) {
@@ -4424,6 +4452,42 @@ Se despide atentamente`;
   const handleRemoveGenerator = (index: number) => {
     const newGens = state.denaturation.generacion_electrica.filter((_, i) => i !== index);
     setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, generacion_electrica: newGens } }));
+  };
+
+  // Ollas trituradoras adicionales — cada una con configuración propia (puede
+  // tener o no prepicador y operar un horario distinto al de la olla principal).
+  const handleAddOllaAdicional = () => {
+    const newOlla = {
+      id: crypto.randomUUID(),
+      id_catalogo_trituradora: '',
+      marca_modelo: '',
+      material_construccion: '',
+      estado_olla: 'Bueno' as const,
+      velocidad_nominal_kg_hr: 0,
+      horas_funcionamiento_dia: 8,
+      kilos_por_batch: 0,
+      tiempo_procesamiento_min: 0,
+      tiempo_pausa_min: 0,
+      cuenta_con_prepicador: false,
+      marca_modelo_prepicador: '',
+      capacidad_prepicador_kg_hr: 0,
+      factor_eficiencia_prepicador: 0.70,
+    };
+    setState(prev => ({
+      ...prev,
+      denaturation: { ...prev.denaturation, ollas_adicionales: [...(prev.denaturation.ollas_adicionales ?? []), newOlla] }
+    }));
+  };
+
+  const handleUpdateOllaAdicional = (index: number, field: string, value: any) => {
+    const ollas = [...(state.denaturation.ollas_adicionales ?? [])];
+    ollas[index] = { ...ollas[index], [field]: value };
+    setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, ollas_adicionales: ollas } }));
+  };
+
+  const handleRemoveOllaAdicional = (index: number) => {
+    const ollas = (state.denaturation.ollas_adicionales ?? []).filter((_, i) => i !== index);
+    setState(prev => ({ ...prev, denaturation: { ...prev.denaturation, ollas_adicionales: ollas } }));
   };
 
   const handleAddExtractionEquipo = () => {
@@ -6275,8 +6339,14 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
       doc.setTextColor(0,0,0);
-      const certifica = calculatedExtraction.cumple_norma && calculatedDenaturation.cumple_norma && calculatedStorage.cumple_norma;
-      const concClusion = `Con base en las observaciones encontradas, se puede concluir que los sistemas o equipos de extracción, desnaturalización y almacenamiento de la mortalidad en el centro de cultivo ${cc.nombre_centro ? cc.nombre_centro + '  SIEP – ' + codigo : codigo}, dan cumplimiento a las capacidades mínimas establecidas en el artículo 4° A del D.S. N.º 320 de 2001, del Ministerio de Economía, Fomento y Turismo. Esto fue resuelto una vez realizada tanto la evaluación documental como la verificación en terreno el día ${formatDateES(g.fechas.inspeccion_terreno)}; por lo tanto, ${certifica ? 'ES CERTIFICABLE' : 'NO ES CERTIFICABLE'}.`;
+      const cumpleAutomatico = calculatedExtraction.cumple_norma && calculatedDenaturation.cumple_norma && calculatedStorage.cumple_norma;
+      const evaluacion = g.evaluacionInforme;
+      const rechazadoProvisorio = evaluacion?.estado === 'rechazado_provisorio';
+      const certifica = rechazadoProvisorio ? false : cumpleAutomatico;
+      const motivoRechazoTxt = rechazadoProvisorio && evaluacion?.motivoRechazo?.trim()
+        ? ` El informe queda RECHAZADO DE FORMA PROVISORIA por el certificador, por el siguiente motivo: ${evaluacion.motivoRechazo.trim()}.`
+        : '';
+      const concClusion = `Con base en las observaciones encontradas, se puede concluir que los sistemas o equipos de extracción, desnaturalización y almacenamiento de la mortalidad en el centro de cultivo ${cc.nombre_centro ? cc.nombre_centro + '  SIEP – ' + codigo : codigo}, dan cumplimiento a las capacidades mínimas establecidas en el artículo 4° A del D.S. N.º 320 de 2001, del Ministerio de Economía, Fomento y Turismo. Esto fue resuelto una vez realizada tanto la evaluación documental como la verificación en terreno el día ${formatDateES(g.fechas.inspeccion_terreno)}; por lo tanto, ${certifica ? 'ES CERTIFICABLE' : 'NO ES CERTIFICABLE'}.${motivoRechazoTxt}`;
       const cLines = doc.splitTextToSize(concClusion, 182);
       doc.text(cLines, 14, 38, { align: 'justify', maxWidth: 182 });
 
@@ -7211,6 +7281,64 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               placeholder="Observaciones para la sección H del acta (dejar vacío para N/A)"
               className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium resize-none"
             />
+          </div>
+        </FormCard>
+
+        <FormCard title="Aprobación del Informe">
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Decisión explícita sobre el informe. Si se rechaza de forma provisoria, la conclusión del Informe Técnico
+              (sección 4) reemplazará el texto "ES CERTIFICABLE" indicando el rechazo y el motivo ingresado.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => updateGeneral('evaluacionInforme', { estado: 'aprobado' })}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 font-bold text-sm transition-all",
+                  state.general.evaluacionInforme?.estado === 'aprobado'
+                    ? "border-emerald-400 dark:border-emerald-500/60 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 hover:border-emerald-300 dark:hover:border-emerald-500/40"
+                )}
+              >
+                <CheckCircle2 size={16} />
+                Aprobar
+              </button>
+              <button
+                type="button"
+                onClick={() => updateGeneral('evaluacionInforme', {
+                  estado: 'rechazado_provisorio',
+                  motivoRechazo: state.general.evaluacionInforme?.motivoRechazo ?? ''
+                })}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 font-bold text-sm transition-all",
+                  state.general.evaluacionInforme?.estado === 'rechazado_provisorio'
+                    ? "border-rose-400 dark:border-rose-500/60 bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 hover:border-rose-300 dark:hover:border-rose-500/40"
+                )}
+              >
+                <XCircle size={16} />
+                Rechazar (provisorio)
+              </button>
+            </div>
+
+            {state.general.evaluacionInforme?.estado === 'rechazado_provisorio' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                  Motivo del rechazo *
+                </label>
+                <textarea
+                  value={state.general.evaluacionInforme.motivoRechazo ?? ''}
+                  onChange={(e) => updateGeneral('evaluacionInforme', {
+                    estado: 'rechazado_provisorio',
+                    motivoRechazo: e.target.value
+                  })}
+                  rows={3}
+                  placeholder="Detalle el motivo del rechazo provisorio (obligatorio)"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-rose-200 dark:border-rose-700/60 rounded-xl focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium resize-none"
+                />
+              </div>
+            )}
           </div>
         </FormCard>
       </div>
@@ -8532,7 +8660,8 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
             snap.denaturation.equipos,
             snap.denaturation.parametros_batch,
             snap.denaturation.parametros_incineracion,
-            snap.denaturation.incinerador
+            snap.denaturation.incinerador,
+            snap.denaturation.ollas_adicionales
           );
           const calcSto = calculateStorage(snap.storage.parametros);
           const m = entry.metricas ?? {
@@ -9110,6 +9239,120 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
                   <InputField label="Kilos por Batch" type="number" value={state.denaturation.parametros_batch.kilos_por_batch} onChange={(v) => updateDenaturation('parametros_batch.kilos_por_batch', v)} suffix="Kg" min={1} max={5000} />
                   <InputField label="Tiempo Proceso" type="number" value={state.denaturation.parametros_batch.tiempo_procesamiento_min} onChange={(v) => updateDenaturation('parametros_batch.tiempo_procesamiento_min', v)} suffix="Min" min={1} max={240} />
                   <InputField label="Tiempo Pausa" type="number" value={state.denaturation.parametros_batch.tiempo_pausa_min} onChange={(v) => updateDenaturation('parametros_batch.tiempo_pausa_min', v)} suffix="Min" min={0} max={120} />
+                </div>
+              </FormCard>
+
+              <FormCard title="Ollas Trituradoras Adicionales">
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Ollas con configuración propia e independiente de la olla principal: cada una puede tener o no
+                    prepicador y operar una cantidad de horas distinta. Su capacidad diaria se SUMA a la de la olla
+                    principal.
+                  </p>
+
+                  {(state.denaturation.ollas_adicionales ?? []).length === 0 && (
+                    <p className="text-sm text-slate-500 dark:text-slate-500 text-center py-2">Sin ollas adicionales registradas.</p>
+                  )}
+
+                  {(state.denaturation.ollas_adicionales ?? []).map((olla, idx) => (
+                    <div key={olla.id} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <div className="md:col-span-2 flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Olla Adicional {idx + 1}</span>
+                        <button onClick={() => handleRemoveOllaAdicional(idx)} className="text-xs text-red-400 hover:text-red-600 transition-colors">✕ Quitar</button>
+                      </div>
+
+                      <div className="space-y-1.5 md:col-span-2">
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Olla Trituradora (Catálogo)</label>
+                        <select
+                          aria-label="Olla Trituradora (Catálogo)" value={olla.id_catalogo_trituradora}
+                          onChange={(e) => handleSelectOllaAdicionalTrituradora(idx, e.target.value)}
+                          className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium"
+                        >
+                          <option value="">Seleccionar trituradora...</option>
+                          {CATALOGO_DESNATURALIZACION.trituradoras.map(t => (
+                            <option key={t.id} value={t.id}>{t.marca_modelo}</option>
+                          ))}
+                          {catalogoCustom.filter(c => c.tipo === 'trituradora').length > 0 && (
+                            <optgroup label="— Equipos personalizados —">
+                              {catalogoCustom.filter(c => c.tipo === 'trituradora').map(c => (
+                                <option key={c.marca_modelo} value={c.marca_modelo}>{c.marca_modelo}</option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                      </div>
+                      <InputField label="Marca/Modelo Olla" value={olla.marca_modelo}
+                        onChange={(v) => handleUpdateOllaAdicional(idx, 'marca_modelo', v)}
+                        onBlur={() => checkNuevoEquipo(olla.marca_modelo, 'trituradora')}
+                      />
+                      <InputField label="Material Construcción" value={olla.material_construccion} onChange={(v) => handleUpdateOllaAdicional(idx, 'material_construccion', v)} />
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Estado Olla</label>
+                        <select
+                          aria-label="Estado Olla"
+                          value={olla.estado_olla}
+                          onChange={(e) => handleUpdateOllaAdicional(idx, 'estado_olla', e.target.value)}
+                          className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-900 dark:text-slate-100 font-medium dark:[color-scheme:dark]"
+                        >
+                          <option value="Bueno">Bueno — sin fugas</option>
+                          <option value="Regular">Regular — presenta observaciones</option>
+                          <option value="Malo">Malo — requiere revisión</option>
+                        </select>
+                      </div>
+                      <InputField label="Velocidad Nominal" type="number" value={olla.velocidad_nominal_kg_hr} onChange={(v) => handleUpdateOllaAdicional(idx, 'velocidad_nominal_kg_hr', v)} suffix="Kg/Hr" />
+                      <InputField label="Horas Operación" type="number" value={olla.horas_funcionamiento_dia} onChange={(v) => handleUpdateOllaAdicional(idx, 'horas_funcionamiento_dia', v)} suffix="Hrs/Día" />
+                      <InputField label="Kilos por Batch" type="number" value={olla.kilos_por_batch} onChange={(v) => handleUpdateOllaAdicional(idx, 'kilos_por_batch', v)} suffix="Kg" min={1} max={5000} />
+                      <InputField label="Tiempo Proceso" type="number" value={olla.tiempo_procesamiento_min} onChange={(v) => handleUpdateOllaAdicional(idx, 'tiempo_procesamiento_min', v)} suffix="Min" min={1} max={240} />
+                      <InputField label="Tiempo Pausa" type="number" value={olla.tiempo_pausa_min} onChange={(v) => handleUpdateOllaAdicional(idx, 'tiempo_pausa_min', v)} suffix="Min" min={0} max={120} />
+
+                      <div className="md:col-span-2 space-y-3 pt-1">
+                        <CheckboxField label="Prepicador" checked={olla.cuenta_con_prepicador} onChange={(v) => handleUpdateOllaAdicional(idx, 'cuenta_con_prepicador', v)} />
+                        {olla.cuenta_con_prepicador && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-700">
+                            <InputField
+                              label="Marca / Modelo Prepicador"
+                              value={olla.marca_modelo_prepicador}
+                              onChange={(v) => handleUpdateOllaAdicional(idx, 'marca_modelo_prepicador', v)}
+                            />
+                            <InputField
+                              label="Capacidad Prepicador"
+                              type="number"
+                              value={olla.capacidad_prepicador_kg_hr}
+                              onChange={(v) => handleUpdateOllaAdicional(idx, 'capacidad_prepicador_kg_hr', v)}
+                              suffix="Kg/Hr"
+                            />
+                            <div className="md:col-span-2 space-y-1.5">
+                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                                Factor Eficiencia — {Math.round(olla.factor_eficiencia_prepicador * 100)}% del tiempo de proceso
+                              </label>
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="range"
+                                  min={10}
+                                  max={100}
+                                  step={5}
+                                  value={Math.round(olla.factor_eficiencia_prepicador * 100)}
+                                  onChange={(e) => handleUpdateOllaAdicional(idx, 'factor_eficiencia_prepicador', parseFloat(e.target.value) / 100)}
+                                  className="flex-1 accent-indigo-600"
+                                />
+                                <span className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400 w-10 text-right">
+                                  {Math.round(olla.factor_eficiencia_prepicador * 100)}%
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  <button
+                    onClick={handleAddOllaAdicional}
+                    className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-500 hover:border-indigo-400 hover:text-indigo-500 transition-colors text-sm font-medium"
+                  >
+                    + Agregar Olla Adicional
+                  </button>
                 </div>
               </FormCard>
 

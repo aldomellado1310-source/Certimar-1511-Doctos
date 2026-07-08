@@ -489,6 +489,90 @@ describe('calculateDenaturation (Ensilaje)', () => {
       expect(r.capacidad_diaria_ton).toBeGreaterThan(0);
     });
   });
+
+  describe('Ollas trituradoras adicionales (configuración independiente)', () => {
+    const OLLA_ADICIONAL_BASE = {
+      id: 'olla-2',
+      id_catalogo_trituradora: '',
+      marca_modelo: 'ACUIMASTER AC-500',
+      material_construccion: 'Acero inoxidable AISI 304',
+      estado_olla: 'Bueno' as const,
+      velocidad_nominal_kg_hr: 1000,
+      horas_funcionamiento_dia: 6,
+      kilos_por_batch: 500,
+      tiempo_procesamiento_min: 20,
+      tiempo_pausa_min: 10,
+      cuenta_con_prepicador: false,
+      marca_modelo_prepicador: '',
+      capacidad_prepicador_kg_hr: 0,
+      factor_eficiencia_prepicador: 0.70,
+    };
+
+    it('suma la capacidad de una olla adicional a la de la olla principal', () => {
+      const sinAdicional = calculateDenaturation(
+        BASE_EQUIPOS_ENSILAJE, BASE_BATCH_PARAMS, BASE_INCINERACION_PARAMS, undefined, []
+      );
+      const conAdicional = calculateDenaturation(
+        BASE_EQUIPOS_ENSILAJE, BASE_BATCH_PARAMS, BASE_INCINERACION_PARAMS, undefined, [OLLA_ADICIONAL_BASE]
+      );
+      // Olla adicional: 6h×60=360 min / 30 min batch = 12 batches × 500 kg = 6.000 kg = 6 TN/día
+      expect(conAdicional.capacidad_ensilaje_ton).toBeCloseTo(sinAdicional.capacidad_ensilaje_ton + 6, 1);
+      expect(conAdicional.capacidad_diaria_ton).toBeCloseTo(sinAdicional.capacidad_diaria_ton + 6, 1);
+      expect(conAdicional.observacion_automatica).toContain('1 olla(s) trituradora(s) adicional(es)');
+      expect(conAdicional.observacion_automatica).toContain('sin prepicador');
+    });
+
+    it('cada olla adicional puede tener su propio prepicador y horario, independiente de la principal', () => {
+      const olla2 = {
+        ...OLLA_ADICIONAL_BASE,
+        id: 'olla-2',
+        cuenta_con_prepicador: true,
+        marca_modelo_prepicador: 'PREPICADOR X',
+        factor_eficiencia_prepicador: 0.5,
+        horas_funcionamiento_dia: 10,
+      };
+      const r = calculateDenaturation(
+        // Olla principal SIN prepicador
+        { ...BASE_EQUIPOS_ENSILAJE, cuenta_con_prepicador: false },
+        BASE_BATCH_PARAMS, BASE_INCINERACION_PARAMS, undefined, [olla2]
+      );
+      expect(r.observacion_automatica).toContain('con prepicador PREPICADOR X (factor de eficiencia 50%)');
+      expect(r.observacion_automatica).toContain('opera 10 horas/día');
+    });
+
+    it('varias ollas adicionales de distinta configuración se suman todas', () => {
+      const ollaA = { ...OLLA_ADICIONAL_BASE, id: 'a', kilos_por_batch: 300, horas_funcionamiento_dia: 5 };
+      const ollaB = { ...OLLA_ADICIONAL_BASE, id: 'b', kilos_por_batch: 900, horas_funcionamiento_dia: 8, cuenta_con_prepicador: true };
+      const sinAdicionales = calculateDenaturation(
+        BASE_EQUIPOS_ENSILAJE, BASE_BATCH_PARAMS, BASE_INCINERACION_PARAMS, undefined, []
+      );
+      const conDos = calculateDenaturation(
+        BASE_EQUIPOS_ENSILAJE, BASE_BATCH_PARAMS, BASE_INCINERACION_PARAMS, undefined, [ollaA, ollaB]
+      );
+      expect(conDos.capacidad_ensilaje_ton).toBeGreaterThan(sinAdicionales.capacidad_ensilaje_ton);
+      expect(conDos.observacion_automatica).toContain('2 olla(s) trituradora(s) adicional(es)');
+    });
+
+    it('una olla adicional con tiempo de ciclo 0 aporta capacidad 0 (GUARD, sin producir Infinity)', () => {
+      const ollaRota = { ...OLLA_ADICIONAL_BASE, tiempo_procesamiento_min: 0, tiempo_pausa_min: 0 };
+      const sinAdicional = calculateDenaturation(
+        BASE_EQUIPOS_ENSILAJE, BASE_BATCH_PARAMS, BASE_INCINERACION_PARAMS, undefined, []
+      );
+      const conOllaRota = calculateDenaturation(
+        BASE_EQUIPOS_ENSILAJE, BASE_BATCH_PARAMS, BASE_INCINERACION_PARAMS, undefined, [ollaRota]
+      );
+      expect(isFinite(conOllaRota.capacidad_diaria_ton)).toBe(true);
+      expect(conOllaRota.capacidad_diaria_ton).toBeCloseTo(sinAdicional.capacidad_diaria_ton, 5);
+    });
+
+    it('sin ollas adicionales, el comportamiento es idéntico al de antes (retrocompatible)', () => {
+      const sinArg = calculateDenaturation(BASE_EQUIPOS_ENSILAJE, BASE_BATCH_PARAMS, BASE_INCINERACION_PARAMS);
+      const conArrayVacio = calculateDenaturation(
+        BASE_EQUIPOS_ENSILAJE, BASE_BATCH_PARAMS, BASE_INCINERACION_PARAMS, undefined, []
+      );
+      expect(conArrayVacio).toEqual(sinArg);
+    });
+  });
 });
 
 // ===========================================================================

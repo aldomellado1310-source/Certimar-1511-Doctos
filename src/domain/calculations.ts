@@ -99,6 +99,73 @@ export function calculateExtraction(
 // DESNATURALIZACIÓN
 // ---------------------------------------------------------------------------
 
+type OllaAdicionalResultado = {
+  capacidad_ton: number;
+  duracion_batch_min: number;
+  numero_batches_dia: number;
+};
+
+/**
+ * Calcula la capacidad diaria de una olla trituradora adicional, con
+ * configuración (prepicador, horario) totalmente independiente de la olla
+ * principal. Misma GUARD F1 que la ruta principal: batch_duration u horas ≤ 0
+ * → capacidad 0 (nunca Infinity/fraude).
+ */
+function calcularOllaAdicional(olla: NonNullable<DenaturationData['ollas_adicionales']>[number]): OllaAdicionalResultado {
+  const factor_pre = olla.cuenta_con_prepicador
+    ? (olla.factor_eficiencia_prepicador || PREPICADOR_BATCH_FACTOR)
+    : 1;
+  const batch_duration = (olla.tiempo_procesamiento_min + olla.tiempo_pausa_min) * factor_pre;
+  const total_work_min = olla.horas_funcionamiento_dia * 60;
+  if (batch_duration <= 0 || total_work_min <= 0) {
+    return { capacidad_ton: 0, duracion_batch_min: 0, numero_batches_dia: 0 };
+  }
+  const numero_batches_dia = total_work_min / batch_duration;
+  const capacidad_ton = (numero_batches_dia * olla.kilos_por_batch) / 1000;
+  return { capacidad_ton, duracion_batch_min: batch_duration, numero_batches_dia };
+}
+
+/**
+ * Glosa declarativa de las ollas trituradoras adicionales (cada una con su
+ * propia configuración: puede tener o no prepicador y operar un horario
+ * distinto al de la olla principal). Se usa tanto en la observación
+ * automática del informe como en la glosa del acta, para que ambos
+ * documentos describan la misma composición de capacidad.
+ */
+export function buildGlosaOllasAdicionales(
+  ollas: DenaturationData['ollas_adicionales']
+): { texto: string; capacidadTotalTon: number } {
+  const lista = ollas ?? [];
+  if (lista.length === 0) return { texto: '', capacidadTotalTon: 0 };
+
+  const fmt1 = (n: number) => n.toFixed(1).replace('.', ',');
+
+  let capacidadTotalTon = 0;
+  const detalles = lista.map((olla, idx) => {
+    const r = calcularOllaAdicional(olla);
+    capacidadTotalTon += r.capacidad_ton;
+    const nombre = olla.marca_modelo?.trim() || `Olla adicional ${idx + 1}`;
+    const prepicadorTxt = olla.cuenta_con_prepicador
+      ? ` con prepicador${olla.marca_modelo_prepicador?.trim() ? ` ${olla.marca_modelo_prepicador.trim()}` : ''} ` +
+        `(factor de eficiencia ${Math.round((olla.factor_eficiencia_prepicador || PREPICADOR_BATCH_FACTOR) * 100)}%)`
+      : ' sin prepicador';
+    return (
+      `${nombre} (${olla.velocidad_nominal_kg_hr} kg/h, estado ${olla.estado_olla.toLowerCase()})` +
+      `${prepicadorTxt}, opera ${olla.horas_funcionamiento_dia} horas/día: ` +
+      `duración total por batch ${fmt1(r.duracion_batch_min)} min, ${r.numero_batches_dia.toFixed(2)} batches/día, ` +
+      `capacidad de ${r.capacidad_ton.toFixed(2)} TN/día.`
+    );
+  });
+
+  const texto =
+    ` Adicionalmente, el centro cuenta con ${lista.length} olla(s) trituradora(s) adicional(es), de configuración ` +
+    `independiente de la olla principal (cada una puede operar con o sin prepicador y con un horario propio): ` +
+    detalles.join(' ') +
+    ` Capacidad adicional total: ${capacidadTotalTon.toFixed(2)} TN/día.`;
+
+  return { texto, capacidadTotalTon };
+}
+
 /**
  * Calcula la capacidad diaria de desnaturalización.
  * Soporta dos rutas: Ensilaje Químico (batch) e Incineración Térmica.
@@ -120,7 +187,8 @@ export function calculateDenaturation(
   equipos: DenaturationData['equipos'],
   parametros_batch: DenaturationData['parametros_batch'],
   parametros_incineracion: DenaturationData['parametros_incineracion'],
-  incinerador?: DenaturationData['incinerador']
+  incinerador?: DenaturationData['incinerador'],
+  ollasAdicionales?: DenaturationData['ollas_adicionales']
 ): DenaturationData['resultados'] {
   const total_work_min = equipos.horas_funcionamiento_dia * 60;
 
@@ -189,6 +257,14 @@ export function calculateDenaturation(
   const capacity_kg = num_batches * parametros_batch.kilos_por_batch * n_ollas;
   const capacity_ton = capacity_kg / 1000;
 
+  // Ollas adicionales: configuración independiente (prepicador y horario propios),
+  // cuya capacidad se SUMA a la de la olla principal (cada una procesa su propia
+  // secuencia de batches, a diferencia de `n_ollas` que asume ollas idénticas).
+  const { texto: glosa_ollas_adicionales, capacidadTotalTon: capacidad_adicional_ton } =
+    buildGlosaOllasAdicionales(ollasAdicionales);
+
+  const capacidad_ensilaje_total_ton = capacity_ton + capacidad_adicional_ton;
+
   // Secondary incinerador capacity (only for Ensilaje primary route).
   // Respeta el override manual cuando está definido.
   const capacidad_incinerador_ton =
@@ -198,7 +274,7 @@ export function calculateDenaturation(
           : (incinerador.capacidad_carga_kg_h * incinerador.horas_funcionamiento_dia) / 1000)
       : 0;
 
-  const combined_ton = capacity_ton + capacidad_incinerador_ton;
+  const combined_ton = capacidad_ensilaje_total_ton + capacidad_incinerador_ton;
 
   // Glosa declarativa de eficiencia del prepicador (método de cálculo + efecto).
   // Coma decimal (es-CL), determinista y sin dependencia de locale/ICU del entorno.
@@ -237,7 +313,7 @@ export function calculateDenaturation(
   let glosa_incinerador = '';
   if (incinerador?.activo) {
     const incStr   = capacidad_incinerador_ton.toFixed(2);
-    const ollaStr  = capacity_ton.toFixed(2);
+    const ollaStr  = capacidad_ensilaje_total_ton.toFixed(2);
     const totalStr = combined_ton.toFixed(2);
     const detalleInc = hasIncOverride
       ? `declarada manualmente en ${incStr} TN/día`
@@ -263,13 +339,14 @@ export function calculateDenaturation(
     `${num_batches.toFixed(2)} batches ` +
     `Capacidad diaria: ${parametros_batch.kilos_por_batch.toLocaleString('es-CL')} kg × ` +
     `${num_batches.toFixed(2)}${glosa_ollas} = ${capacity_kg.toFixed(0)} kg = ${capacity_ton.toFixed(2)} toneladas` +
+    glosa_ollas_adicionales +
     glosa_incinerador;
 
   // Res. Exenta N°1511/2021 — Umbral mínimo Desnaturalización: 15 TN/día
   return {
     duracion_total_batch_min: parseFloat(batch_duration.toFixed(2)),
     numero_batches_dia: parseFloat(num_batches.toFixed(2)),
-    capacidad_ensilaje_ton: parseFloat(capacity_ton.toFixed(2)),
+    capacidad_ensilaje_ton: parseFloat(capacidad_ensilaje_total_ton.toFixed(2)),
     capacidad_incinerador_ton: parseFloat(capacidad_incinerador_ton.toFixed(2)),
     capacidad_diaria_ton: parseFloat(combined_ton.toFixed(2)),
     cumple_norma: combined_ton >= MIN_DENATURATION_TON_DIA,
