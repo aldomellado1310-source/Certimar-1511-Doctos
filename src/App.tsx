@@ -4094,6 +4094,13 @@ export default function App() {
       // ─ General — Revisión ─
       { id: 'revision_confirmada', tab: 'general' as const, grupo: 'Revisión', label: 'Revisión confirmada',           detail: g.revisionConfirmada ? 'Confirmado' : 'Pendiente', ok: !!(g.revisionConfirmada), required: true },
       { id: 'observaciones',  tab: 'general' as const, grupo: 'Revisión',     label: 'Observaciones acta revisadas',    detail: g.observaciones_acta  ? 'Ingresadas' : 'Vacías (quedará N/A)', ok: !!g.observaciones_acta.trim(), required: false },
+      { id: 'evaluacion_informe', tab: 'general' as const, grupo: 'Revisión', label: 'Aprobación / rechazo del informe',
+        detail: g.evaluacionInforme?.estado === 'rechazado_provisorio'
+          ? `Rechazado provisoriamente${g.evaluacionInforme.motivoRechazo?.trim() ? ': ' + g.evaluacionInforme.motivoRechazo.trim() : ''}`
+          : g.evaluacionInforme?.estado === 'aprobado' ? 'Aprobado' : 'Pendiente',
+        ok: g.evaluacionInforme?.estado === 'aprobado'
+          || (g.evaluacionInforme?.estado === 'rechazado_provisorio' && !!g.evaluacionInforme.motivoRechazo?.trim()),
+        required: true },
       // ─ Extracción ─
       { id: 'jaulas',    tab: 'extraction' as const,   grupo: 'Parámetros',   label: 'N° total de jaulas',            detail: ext.numero_total_jaulas > 0 ? String(ext.numero_total_jaulas) : 'Sin ingresar', ok: ext.numero_total_jaulas > 0, required: true },
       { id: 'cfm',       tab: 'extraction' as const,   grupo: 'Parámetros',   label: 'Potencia compresor (CFM)',       detail: g.modo_operacion_minima ? 'N/A (Op. Mín.)' : (ext.potencia_cfm > 0 ? String(ext.potencia_cfm) : 'Sin ingresar'), ok: g.modo_operacion_minima || ext.potencia_cfm > 0, required: true },
@@ -6275,8 +6282,14 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
 
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
       doc.setTextColor(0,0,0);
-      const certifica = calculatedExtraction.cumple_norma && calculatedDenaturation.cumple_norma && calculatedStorage.cumple_norma;
-      const concClusion = `Con base en las observaciones encontradas, se puede concluir que los sistemas o equipos de extracción, desnaturalización y almacenamiento de la mortalidad en el centro de cultivo ${cc.nombre_centro ? cc.nombre_centro + '  SIEP – ' + codigo : codigo}, dan cumplimiento a las capacidades mínimas establecidas en el artículo 4° A del D.S. N.º 320 de 2001, del Ministerio de Economía, Fomento y Turismo. Esto fue resuelto una vez realizada tanto la evaluación documental como la verificación en terreno el día ${formatDateES(g.fechas.inspeccion_terreno)}; por lo tanto, ${certifica ? 'ES CERTIFICABLE' : 'NO ES CERTIFICABLE'}.`;
+      const cumpleAutomatico = calculatedExtraction.cumple_norma && calculatedDenaturation.cumple_norma && calculatedStorage.cumple_norma;
+      const evaluacion = g.evaluacionInforme;
+      const rechazadoProvisorio = evaluacion?.estado === 'rechazado_provisorio';
+      const certifica = rechazadoProvisorio ? false : cumpleAutomatico;
+      const motivoRechazoTxt = rechazadoProvisorio && evaluacion?.motivoRechazo?.trim()
+        ? ` El informe queda RECHAZADO DE FORMA PROVISORIA por el certificador, por el siguiente motivo: ${evaluacion.motivoRechazo.trim()}.`
+        : '';
+      const concClusion = `Con base en las observaciones encontradas, se puede concluir que los sistemas o equipos de extracción, desnaturalización y almacenamiento de la mortalidad en el centro de cultivo ${cc.nombre_centro ? cc.nombre_centro + '  SIEP – ' + codigo : codigo}, dan cumplimiento a las capacidades mínimas establecidas en el artículo 4° A del D.S. N.º 320 de 2001, del Ministerio de Economía, Fomento y Turismo. Esto fue resuelto una vez realizada tanto la evaluación documental como la verificación en terreno el día ${formatDateES(g.fechas.inspeccion_terreno)}; por lo tanto, ${certifica ? 'ES CERTIFICABLE' : 'NO ES CERTIFICABLE'}.${motivoRechazoTxt}`;
       const cLines = doc.splitTextToSize(concClusion, 182);
       doc.text(cLines, 14, 38, { align: 'justify', maxWidth: 182 });
 
@@ -7211,6 +7224,64 @@ FORMATO DE SALIDA (Solo JSON puro, sin markdown):
               placeholder="Observaciones para la sección H del acta (dejar vacío para N/A)"
               className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium resize-none"
             />
+          </div>
+        </FormCard>
+
+        <FormCard title="Aprobación del Informe">
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Decisión explícita sobre el informe. Si se rechaza de forma provisoria, la conclusión del Informe Técnico
+              (sección 4) reemplazará el texto "ES CERTIFICABLE" indicando el rechazo y el motivo ingresado.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => updateGeneral('evaluacionInforme', { estado: 'aprobado' })}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 font-bold text-sm transition-all",
+                  state.general.evaluacionInforme?.estado === 'aprobado'
+                    ? "border-emerald-400 dark:border-emerald-500/60 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 hover:border-emerald-300 dark:hover:border-emerald-500/40"
+                )}
+              >
+                <CheckCircle2 size={16} />
+                Aprobar
+              </button>
+              <button
+                type="button"
+                onClick={() => updateGeneral('evaluacionInforme', {
+                  estado: 'rechazado_provisorio',
+                  motivoRechazo: state.general.evaluacionInforme?.motivoRechazo ?? ''
+                })}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 font-bold text-sm transition-all",
+                  state.general.evaluacionInforme?.estado === 'rechazado_provisorio'
+                    ? "border-rose-400 dark:border-rose-500/60 bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 hover:border-rose-300 dark:hover:border-rose-500/40"
+                )}
+              >
+                <XCircle size={16} />
+                Rechazar (provisorio)
+              </button>
+            </div>
+
+            {state.general.evaluacionInforme?.estado === 'rechazado_provisorio' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                  Motivo del rechazo *
+                </label>
+                <textarea
+                  value={state.general.evaluacionInforme.motivoRechazo ?? ''}
+                  onChange={(e) => updateGeneral('evaluacionInforme', {
+                    estado: 'rechazado_provisorio',
+                    motivoRechazo: e.target.value
+                  })}
+                  rows={3}
+                  placeholder="Detalle el motivo del rechazo provisorio (obligatorio)"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-rose-200 dark:border-rose-700/60 rounded-xl focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500 outline-none transition-all text-slate-900 dark:text-slate-100 font-medium resize-none"
+                />
+              </div>
+            )}
           </div>
         </FormCard>
       </div>

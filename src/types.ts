@@ -23,6 +23,13 @@ export interface GeneralData {
   modo_operacion_minima?: boolean;
   observaciones_acta: string;
   revisionConfirmada?: boolean;
+  // Decisión explícita del certificador sobre el informe (independiente del
+  // cumplimiento normativo automático): aprueba o rechaza provisoriamente,
+  // detallando el motivo en este último caso.
+  evaluacionInforme?: {
+    estado: 'aprobado' | 'rechazado_provisorio';
+    motivoRechazo?: string;
+  };
 }
 
 export type FishSize = 'Pequeño (<1.5kg)' | 'Mediano (1.5-4.5kg)' | 'Grande (>=4.5kg)';
